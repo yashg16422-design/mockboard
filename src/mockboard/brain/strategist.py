@@ -11,8 +11,10 @@ tests/test_strategist.py check every row.
 | R1   | the transcript is garbled (most words in garbled segments)                  | clarify        | chairman |
 | R2   | FEATURE_BOARD_INTERRUPT on and the answer exceeds `interrupt_after_words`   | interrupt      | chairman |
 | R3   | no words at all (silence), or a long pause before answering                 | reassure       | chairman |
-|      | (response_latency_s >= reassure_latency_s), or an honest "I don't know"     |                |          |
-|      | right after a counter/steelman/pressure/fact challenge                      |                |          |
+|      | (response_latency_s >= reassure_latency_s), or the FIRST honest "I don't    |                |          |
+|      | know" in this topic                                                         |                |          |
+| R3b  | the SECOND (or later) honest "I don't know" in this topic                   | move_on        | next     |
+|      |                                                                             |                | topic's  |
 | R4   | an unchallenged claim from an earlier turn (>= min delay) is `contradicted` | fact_challenge | owner of |
 |      | (model AND numeric check agreed), is numeric or date, and cites a card      |                | the card |
 | R5   | topic budget used up, or `strong_streak_to_move_on` strong answers in a row | move_on        | next     |
@@ -20,8 +22,21 @@ tests/test_strategist.py check every row.
 |      |                                                                             |                | member   |
 | R6   | the answer is one-sided: counter, or steelman if the last move was counter  | counter /      | topic    |
 |      |                                                                             | steelman       | member   |
-| R7   | the answer is thin (fewer than 2 reasons and under 25 words)                | pressure       | topic    |
-| R8   | otherwise                                                                   | probe          | topic    |
+| R7   | the answer is thin (fewer than 2 reasons and under 25 words) AND pressure   | pressure       | topic    |
+|      | is allowed (see "pressure caps" below)                                      |                |          |
+| R8   | otherwise (including a thin answer where pressure is not allowed)           | probe          | topic    |
+
+Honesty and anti-whiplash rules (orchestrator ruling 11, CTO_NOTES_02 M2):
+
+* An honest "I don't know" is never punished: R3/R3b always catch it before R4-R7, so it
+  never receives pressure, a counter or a fact challenge in that turn.
+* Pressure caps: `pressure` is not allowed right after `reassure`, right after another
+  `pressure` (at most `max_consecutive_pressure` in a row, default 1), once the topic has
+  used `max_pressure_per_topic` pressures (default 2), or when the candidate has just
+  conceded an error. In those cases the board probes instead.
+* Concession preface: when the candidate concedes an error, whatever move is chosen carries
+  `preface="acknowledge"`, so the actor first says a short acknowledgement. This is a field
+  on the move, not a tenth move.
 
 Safety properties enforced here, not in a prompt: a fact challenge needs a card id, a
 "contradicted" verdict (which `librarian.gate_verdict` only issues when the model and the
@@ -57,7 +72,6 @@ PRESSURE: dict[Move, int] = {
 }
 THIN_ANSWER_WORDS = 25
 CLOSE_TARGET = "close"  # move_on target meaning "no topics left: close the interview"
-CHALLENGE_AFTER = {Move.counter, Move.pressure, Move.fact_challenge, Move.steelman}
 
 
 @dataclass(frozen=True)
@@ -72,6 +86,8 @@ class StrategyConfig:
     reassure_latency_s: float = 4.0
     board_interrupt_enabled: bool = False
     interrupt_after_words: int = 150
+    max_consecutive_pressure: int = 1
+    max_pressure_per_topic: int = 2
 
     def member_for(self, topic: str) -> str:
         return self.topic_members.get(topic, self.chairman)
@@ -101,6 +117,7 @@ def merge_analyses(analyses: Sequence[Analysis]) -> Analysis:
         claims=[c for a in analyses for c in a.claims],
         balance=balance,
         honest_unknown=any(a.honest_unknown for a in analyses),
+        concedes_error=any(a.concedes_error for a in analyses),
         garbled=(total_words > 0 and garbled_words * 2 > total_words)
         or (total_words == 0 and any(a.garbled for a in analyses)),
         word_count=total_words,
@@ -140,6 +157,27 @@ def _move(move: Move, member: str, rule: str, why: str, target: str | None = Non
     )
 
 
+def pressure_blocker(ctx: StrategyContext, turn: Analysis, cfg: StrategyConfig) -> str | None:
+    """Why `pressure` is not allowed this turn, or None when it is (anti-whiplash caps)."""
+    if turn.honest_unknown:
+        return "honest 'I don't know' is never pressed"
+    if turn.concedes_error:
+        return "candidate just conceded an error"
+    if ctx.last_move == Move.reassure:
+        return "no pressure right after reassure"
+    if ctx.last_move == Move.pressure and cfg.max_consecutive_pressure <= 1:
+        return "no pressure twice in a row"
+    if ctx.pressure_in_topic >= cfg.max_pressure_per_topic:
+        return f"pressure cap for this topic reached ({cfg.max_pressure_per_topic})"
+    return None
+
+
+def _move_on(ctx: StrategyContext, cfg: StrategyConfig, rule: str, why: str) -> BoardMove:
+    nxt = ctx.next_topic
+    member = cfg.member_for(nxt) if nxt else cfg.chairman
+    return _move(Move.move_on, member, rule, why, target=nxt or CLOSE_TARGET)
+
+
 def decide_move(
     ctx: StrategyContext,
     analyses: Sequence[Analysis],
@@ -147,16 +185,21 @@ def decide_move(
     cfg: StrategyConfig,
 ) -> BoardMove:
     """Apply the rule table. `analyses` are this turn's segments so far."""
-    return _decide(ctx, analyses, ledger, cfg).model_copy(update={"for_turn": ctx.turn_id})
+    turn = merge_analyses([a for a in analyses if a.turn_id == ctx.turn_id])
+    move = _decide(ctx, turn, ledger, cfg)
+    update: dict = {"for_turn": ctx.turn_id}
+    if turn.concedes_error and move.move != Move.clarify:
+        update["preface"] = "acknowledge"
+        update["reason"] = move.reason + " (+ acknowledge the conceded error first)"
+    return move.model_copy(update=update)
 
 
 def _decide(
     ctx: StrategyContext,
-    analyses: Sequence[Analysis],
+    turn: Analysis,
     ledger: Sequence[Claim],
     cfg: StrategyConfig,
 ) -> BoardMove:
-    turn = merge_analyses([a for a in analyses if a.turn_id == ctx.turn_id])
     topic_member = cfg.member_for(ctx.topic)
     signals = ctx.voice_signals
 
@@ -180,8 +223,17 @@ def _decide(
             Move.reassure, cfg.chairman, "R3",
             f"long pause before answering ({signals.response_latency_s:.1f}s)",
         )
-    if turn.honest_unknown and ctx.last_move in CHALLENGE_AFTER:
-        return _move(Move.reassure, cfg.chairman, "R3", "honest 'I don't know' under pressure")
+    # R3/R3b: honest "I don't know". Never punished: first time reassure, then move on.
+    if turn.honest_unknown:
+        if ctx.honest_unknowns_in_topic == 0:
+            return _move(
+                Move.reassure, cfg.chairman, "R3",
+                "first honest 'I don't know' in this topic; reassure, ask something simpler",
+            )
+        return _move_on(
+            ctx, cfg, "R3b",
+            f"honest 'I don't know' #{ctx.honest_unknowns_in_topic + 1} in this topic; move on",
+        )
 
     # R4: delayed fact challenge, only on gated numeric/date contradictions with a card.
     candidates = challengeable_claims(ledger, ctx, cfg.fact_challenge_min_delay_turns)
@@ -204,9 +256,7 @@ def _decide(
             if turns_after >= ctx.max_turns_in_topic
             else f"{streak_after} strong answers in a row"
         )
-        nxt = ctx.next_topic
-        member = cfg.member_for(nxt) if nxt else cfg.chairman
-        return _move(Move.move_on, member, "R5", why, target=nxt or CLOSE_TARGET)
+        return _move_on(ctx, cfg, "R5", why)
 
     # R6: one-sided answers get a counter, then a steelman request.
     if turn.balance == Balance.one_sided:
@@ -214,12 +264,14 @@ def _decide(
             return _move(Move.steelman, topic_member, "R6", "still one-sided after a counter")
         return _move(Move.counter, topic_member, "R6", "answer argues only one side")
 
-    # R7: thin answers get polite pressure.
-    if len(turn.reasons) < 2 and turn.word_count < THIN_ANSWER_WORDS:
-        return _move(
-            Move.pressure, topic_member, "R7",
-            f"thin answer ({len(turn.reasons)} reasons, {turn.word_count} words)",
-        )
+    # R7: thin answers get polite pressure, within the anti-whiplash caps.
+    thin = len(turn.reasons) < 2 and turn.word_count < THIN_ANSWER_WORDS
+    if thin:
+        blocker = pressure_blocker(ctx, turn, cfg)
+        detail = f"thin answer ({len(turn.reasons)} reasons, {turn.word_count} words)"
+        if blocker is None:
+            return _move(Move.pressure, topic_member, "R7", detail)
+        return _move(Move.probe, topic_member, "R8", f"{detail}, but {blocker}")
 
     # R8: default follow-up.
     return _move(Move.probe, topic_member, "R8", "go one level deeper")

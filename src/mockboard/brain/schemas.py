@@ -196,6 +196,9 @@ class Analysis(_Model):
     claims: list[Claim] = Field(default_factory=list)
     balance: Balance = Balance.unclear
     honest_unknown: bool = False
+    # The candidate admits an earlier statement or figure was wrong ("shayad mera figure
+    # galat tha"). The board acknowledges this before its next move (ruling 11).
+    concedes_error: bool = False
     garbled: bool = False
     word_count: int = 0
     is_fallback: bool = False
@@ -252,6 +255,9 @@ class StrategyContext(_Model):
     strong_streak: int = 0
     challenged_claim_ids: list[str] = Field(default_factory=list)
     last_move: Move | None = None
+    # Honesty and anti-whiplash counters for the current topic (ruling 11).
+    honest_unknowns_in_topic: int = 0  # earlier honest "I don't know" turns in this topic
+    pressure_in_topic: int = 0  # `pressure` moves already used in this topic
     voice_signals: VoiceSignals = Field(default_factory=VoiceSignals)
 
 
@@ -260,11 +266,18 @@ class StrategyContext(_Model):
 # ---------------------------------------------------------------------------
 
 
+Preface = Literal["acknowledge"]
+
+
 class BoardMove(_Model):
     move: Move
     target: str | None = None  # claim id for fact_challenge, else a short focus string
     member: str  # persona id
     pressure: int = Field(default=1, ge=0, le=3)
+    # Something the actor says BEFORE the move. "acknowledge" = a short, kind recognition
+    # that the candidate conceded an error. A field on the move, not a tenth move, so the
+    # nine moves stay as PLAN_v2_DELTA §7 lists them (ruling 11).
+    preface: Preface | None = None
     reason: str  # "<rule id>: <why>", shown in the 'show your work' panel
     rule_id: str = ""
     for_turn: str = ""  # turn id this move was computed for (stale-result guard)
@@ -338,6 +351,8 @@ class SessionState(_Model):
     turn_index: int = 0
     turns_in_topic: int = 0
     strong_streak: int = 0
+    honest_unknowns_in_topic: int = 0
+    pressure_in_topic: int = 0
     turns: list[CandidateTurn] = Field(default_factory=list)
     board_lines: list[BoardLine] = Field(default_factory=list)
     moves: list[BoardMove] = Field(default_factory=list)

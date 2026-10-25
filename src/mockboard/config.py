@@ -68,7 +68,7 @@ class Settings(BaseSettings):
     cache_prefix_token_budget: int = 18000
 
     # --- Prompt versions (prompts/<id>.v<N>.md) ---
-    prompt_listener_version: int = 1
+    prompt_listener_version: int = 2
     prompt_librarian_version: int = 1
     prompt_actor_version: int = 1
     prompt_judge_version: int = 1

@@ -57,6 +57,77 @@ def test_r3_reassure(analysis, signals, last):
     assert (m.move, m.member, m.pressure) == (Move.reassure, "chairman", 0)
 
 
+@pytest.mark.parametrize("last", [None, Move.probe, Move.reassure, Move.move_on, Move.counter])
+def test_first_honest_unknown_in_topic_is_reassured_whatever_came_before(last):
+    """Defect A: an honest 'I don't know' after None/probe/reassure/move_on used to get
+    pressure. Now the first one in a topic is always reassured."""
+    thin_unknown = make_analysis(words=8, reasons=0, balance=Balance.unclear, honest_unknown=True)
+    m = decide_move(make_ctx(last_move=last), [thin_unknown], [], CFG)
+    assert (m.move, m.rule_id, m.pressure) == (Move.reassure, "R3", 0)
+
+
+def test_second_honest_unknown_in_topic_moves_on():
+    ctx = make_ctx(honest_unknowns_in_topic=1, last_move=Move.reassure)
+    m = decide_move(ctx, [make_analysis(honest_unknown=True)], [], CFG)
+    assert (m.move, m.rule_id, m.target) == (Move.move_on, "R3b", "internal_security")
+
+
+def test_honest_unknown_is_never_fact_challenged_in_that_turn():
+    m = decide_move(make_ctx(turn_index=1), [make_analysis(honest_unknown=True)],
+                    [contradicted(0)], CFG)
+    assert m.move == Move.reassure
+
+
+THIN = dict(words=10, reasons=1, balance=Balance.unclear)
+
+
+@pytest.mark.parametrize(
+    "ctx_kw, why",
+    [
+        ({"last_move": Move.reassure}, "after reassure"),
+        ({"last_move": Move.pressure}, "twice in a row"),
+        ({"pressure_in_topic": 2, "last_move": Move.probe}, "cap for this topic"),
+    ],
+    ids=["after_reassure", "twice_in_a_row", "topic_cap"],
+)
+def test_pressure_caps_fall_back_to_probe(ctx_kw, why):
+    m = decide_move(make_ctx(**ctx_kw), [make_analysis(**THIN)], [], CFG)
+    assert (m.move, m.rule_id) == (Move.probe, "R8") and why in m.reason
+
+
+def test_pressure_allowed_again_after_a_different_move():
+    m = decide_move(make_ctx(last_move=Move.probe, pressure_in_topic=1),
+                    [make_analysis(**THIN)], [], CFG)
+    assert m.move == Move.pressure
+
+
+def test_consecutive_pressure_limit_is_configurable():
+    two = StrategyConfig(**{**CFG.__dict__, "max_consecutive_pressure": 2})
+    m = decide_move(make_ctx(last_move=Move.pressure, pressure_in_topic=1),
+                    [make_analysis(**THIN)], [], two)
+    assert m.move == Move.pressure
+
+
+def test_concession_is_acknowledged_and_never_pressed():
+    conceded = make_analysis(**THIN, concedes_error=True)
+    m = decide_move(make_ctx(last_move=Move.fact_challenge), [conceded], [], CFG)
+    assert m.move == Move.probe and m.preface == "acknowledge"
+    assert "acknowledge" in m.reason
+
+
+def test_concession_preface_rides_on_any_move_without_adding_a_tenth():
+    conceded = make_analysis(concedes_error=True, balance=Balance.one_sided)
+    m = decide_move(make_ctx(), [conceded], [], CFG)
+    assert m.move == Move.counter and m.preface == "acknowledge"
+    assert len(Move) == 9
+
+
+def test_no_preface_without_a_concession_or_on_clarify():
+    assert decide_move(make_ctx(), [make_analysis()], [], CFG).preface is None
+    garbled = make_analysis(garbled=True, concedes_error=True)
+    assert decide_move(make_ctx(), [garbled], [], CFG).preface is None
+
+
 def test_r4_delayed_fact_challenge_targets_claim_and_card_owner():
     m = decide_move(make_ctx(turn_index=1), [make_analysis()], [contradicted(0)], CFG)
     assert (m.move, m.target, m.member, m.rule_id) == (
@@ -138,9 +209,7 @@ def test_r6_counter_then_steelman():
 
 
 def test_r7_thin_answer_gets_pressure():
-    m = decide_move(
-        make_ctx(), [make_analysis(words=10, reasons=1, balance=Balance.unclear)], [], CFG
-    )
+    m = decide_move(make_ctx(), [make_analysis(**THIN)], [], CFG)
     assert (m.move, m.pressure) == (Move.pressure, 3)
 
 

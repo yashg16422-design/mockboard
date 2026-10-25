@@ -114,6 +114,8 @@ class InterviewSession:
             strong_streak=s.strong_streak,
             challenged_claim_ids=list(s.challenged_claim_ids),
             last_move=s.moves[-1].move if s.moves else None,
+            honest_unknowns_in_topic=s.honest_unknowns_in_topic,
+            pressure_in_topic=s.pressure_in_topic,
             voice_signals=signals,
         )
 
@@ -229,6 +231,7 @@ class InterviewSession:
                 reason=f"CAP: session turn cap ({self.max_turns}) reached",
                 rule_id="CAP",
                 for_turn=turn_id,
+                preface=move.preface,  # a conceded error is still acknowledged at the close
             )
         tr.mark("move_ready")
 
@@ -332,6 +335,8 @@ class InterviewSession:
         if move.move == Move.move_on:
             st.strong_streak = 0
             st.turns_in_topic = 0
+            st.honest_unknowns_in_topic = 0
+            st.pressure_in_topic = 0
             if move.target == CLOSE_TARGET or self._next_topic() is None:
                 st.finished = True
             else:
@@ -339,6 +344,8 @@ class InterviewSession:
         else:
             st.turns_in_topic += 1
             st.strong_streak = st.strong_streak + 1 if analysis.is_strong else 0
+            st.honest_unknowns_in_topic += int(analysis.honest_unknown)
+            st.pressure_in_topic += int(move.move == Move.pressure)
         return st.finished
 
     async def finish(self, language: ReportLanguage | str | None = None) -> SessionReport:

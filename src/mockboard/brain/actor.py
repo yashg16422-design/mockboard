@@ -8,6 +8,11 @@ real-time critical path. Three guards live here in code, not only in the prompt:
    assertive "you are wrong" phrasing; otherwise a deterministic template replaces it.
 3. Opener guard (ruling 5): the form-driven opener must be open-ended and must not state a
    fact about a place unless it cites an existing fact card; otherwise a template replaces it.
+
+A move may carry `preface="acknowledge"` (the candidate conceded an error, ruling 11). The
+acknowledgement is a fixed sentence prepended here in code, not left to the model: it is
+always said, it never pushes the line over the word cap, and in voice mode it can be spoken
+from cached audio while the model's part is still streaming.
 """
 
 from __future__ import annotations
@@ -63,6 +68,37 @@ CLOSED_STARTS = re.compile(
     r"^kya aap(?:ne)? .*\b(?:hain|hai|tha|thi|the)\s*\?$",
     re.IGNORECASE,
 )
+
+
+# The acknowledgement said before a move when the candidate concedes an error, by language
+# mix. "hi-en" is Hinglish in Latin script (the default persona language).
+ACKNOWLEDGE_LINES: dict[str, str] = {
+    "hi-en": "Theek hai, yeh maanna achhi baat hai.",
+    "en": "Fair enough, it is good that you say so.",
+    "hi": "ठीक है, यह मानना अच्छी बात है।",
+}
+
+
+def language_mix(persona: Persona, form: CandidateForm) -> str:
+    """The language mix the board speaks in: the candidate's choice of pure English or pure
+    Hindi wins; otherwise the persona's own mix (Hinglish by default)."""
+    if form.interview_language == "english":
+        return "en"
+    if form.interview_language == "hindi":
+        return "hi"
+    return persona.language if persona.language in ACKNOWLEDGE_LINES else "hi-en"
+
+
+def preface_text(move: BoardMove, mix: str) -> str:
+    if move.preface == "acknowledge":
+        return ACKNOWLEDGE_LINES.get(mix, ACKNOWLEDGE_LINES["hi-en"])
+    return ""
+
+
+def with_preface(preface: str, line: LineResult) -> LineResult:
+    if not preface:
+        return line
+    return LineResult(f"{preface} {line.text}", is_fallback=line.is_fallback, guard=line.guard)
 
 
 def count_words(text: str) -> int:
@@ -208,6 +244,8 @@ def board_context(
         "topic": topic,
         "next_topic": move.target if move.move == Move.move_on else None,
         "interview_language": form.interview_language,
+        # Already spoken by code before the model's line; the model must not repeat it.
+        "preface_already_spoken": move.preface,
     }
     return tag("board_context", json.dumps(ctx, ensure_ascii=False, indent=1))
 
@@ -278,6 +316,33 @@ async def compose_line(
     on_first_token: Callable[[], None] | None = None,
 ) -> LineResult:
     """Collect the streamed line and apply the guards. Used by the text CLI."""
+    preface = preface_text(move, language_mix(persona, form))
+    line = await _compose_move_line(
+        llm, kit, persona, move, topic=topic, form=form, last_question=last_question,
+        last_answer=last_answer, max_words=max_words - count_words(preface),
+        max_tokens=max_tokens, turn_id=turn_id, claim=claim, card=card,
+        on_first_token=on_first_token,
+    )
+    return with_preface(preface, line)
+
+
+async def _compose_move_line(
+    llm: LLMClient,
+    kit: PromptKit,
+    persona: Persona,
+    move: BoardMove,
+    *,
+    topic: str,
+    form: CandidateForm,
+    last_question: str,
+    last_answer: str,
+    max_words: int,
+    max_tokens: int,
+    turn_id: str,
+    claim: Claim | None,
+    card: FactCard | None,
+    on_first_token: Callable[[], None] | None,
+) -> LineResult:
     if move.move == Move.fact_challenge and (claim is None or card is None):
         # Defensive: the strategist never emits this, but a challenge without a card must
         # never be spoken.

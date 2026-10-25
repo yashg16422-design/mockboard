@@ -7,6 +7,7 @@ import pytest
 
 from conftest import make_claim
 from mockboard.brain.actor import (
+    ACKNOWLEDGE_LINES,
     compose_line,
     count_words,
     generate_opener,
@@ -142,3 +143,25 @@ async def test_fact_challenge_without_card_is_never_spoken(deps, form):
     line = await _compose(deps, form, "irrelevant", make_claim(), None)
     assert line.guard == "no_card" and line.is_fallback
     assert "?" in line.text and "card" not in line.text.lower()
+
+
+async def test_acknowledgement_preface_is_spoken_first_and_within_the_cap(deps, form):
+    move = BoardMove(move=Move.probe, member="economist", reason="R8: x", preface="acknowledge")
+    llm = FakeLLMClient(script={"actor": [" ".join(["shabd"] * 40) + "?"]})
+    line = await compose_line(
+        llm, deps.kit, deps.personas["economist"], move, topic="tourism", form=form,
+        last_question="q", last_answer="a", max_words=30, max_tokens=120, turn_id="t2",
+    )
+    assert line.text.startswith(ACKNOWLEDGE_LINES["hi-en"])
+    assert count_words(line.text) <= 30
+
+
+async def test_acknowledgement_follows_the_interview_language(deps, form):
+    move = BoardMove(move=Move.probe, member="economist", reason="R8: x", preface="acknowledge")
+    english = form.model_copy(update={"interview_language": "english"})
+    llm = FakeLLMClient(script={"actor": ["Why do you say so?"]})
+    line = await compose_line(
+        llm, deps.kit, deps.personas["economist"], move, topic="tourism", form=english,
+        last_question="q", last_answer="a", max_words=30, max_tokens=120, turn_id="t2",
+    )
+    assert line.text == f"{ACKNOWLEDGE_LINES['en']} Why do you say so?"

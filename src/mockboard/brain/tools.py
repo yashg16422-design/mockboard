@@ -47,6 +47,7 @@ class ListenerOutput(_ToolModel):
     claims: list[ListenerClaim] = Field(default_factory=list)
     balance: Balance = Balance.unclear
     honest_unknown: bool = False
+    concedes_error: bool = False
     garbled: bool = False
 
 
@@ -75,9 +76,18 @@ LISTENER_TOOL = ToolSpec(
             },
             "balance": {"type": "string", "enum": [b.value for b in Balance]},
             "honest_unknown": {"type": "boolean"},
+            "concedes_error": {"type": "boolean"},
             "garbled": {"type": "boolean"},
         },
-        "required": ["stance", "reasons", "claims", "balance", "honest_unknown", "garbled"],
+        "required": [
+            "stance",
+            "reasons",
+            "claims",
+            "balance",
+            "honest_unknown",
+            "concedes_error",
+            "garbled",
+        ],
     },
 )
 

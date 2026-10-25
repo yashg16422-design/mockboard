@@ -11,3 +11,4 @@ edited, only superseded by a new file `<id>.v<N+1>.md`.
 | actor | 1 | 2026-10-25 | Initial nine moves plus opener, 30-word cap, ask-never-assert. | Not yet evaluated. |
 | judge | 1 | 2026-10-25 | Rubric = UPSC's seven published qualities (1-5 or insufficient_evidence) + Mock Board practice indicators (factual_accuracy, composure); `report_language` en/hi (ruling 6). | Not yet evaluated. |
 | opener | 1 | 2026-10-25 | Application-form-driven open-ended opener; no place facts unless card-backed (ruling 5). | Not yet evaluated. |
+| listener | 2 | 2026-10-25 | Adds `concedes_error` (candidate admits their own earlier figure or statement was wrong) for the acknowledgement preface (ruling 11, CTO_NOTES_02 M2). Tool schema requires the field. | Not yet evaluated (golden set pending); fake-LLM board-behaviour invariants pass. |

@@ -71,6 +71,7 @@ def to_analysis(
         claims=claims,
         balance=out.balance,
         honest_unknown=out.honest_unknown,
+        concedes_error=out.concedes_error,
         garbled=out.garbled,
         word_count=word_count(segment.text),
     )

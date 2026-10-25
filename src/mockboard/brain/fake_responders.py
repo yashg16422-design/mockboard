@@ -77,6 +77,12 @@ _UNKNOWN_MARKERS = (
     "not sure",
     "maloom nahi",
 )
+# "I was wrong" in English and Hinglish: a first-person subject near an error word.
+_CONCEDE = re.compile(
+    r"\b(?:mera|meri|maine|my|i was|i am|i'm)\b[^.?!]{0,30}\b(?:galat|wrong|mistake|galti)\b"
+    r"|\bi stand corrected\b|\bmeri galti\b",
+    re.IGNORECASE,
+)
 _GARBLED = re.compile(r"^(?:[^\w\s]|\b\w\b|\s)+$")
 
 
@@ -167,6 +173,7 @@ def listener_responder(system: str, user: str) -> dict[str, Any]:
         "claims": [] if garbled else extract_claims(speech),
         "balance": balance,
         "honest_unknown": any(m in low for m in _UNKNOWN_MARKERS),
+        "concedes_error": bool(_CONCEDE.search(speech)),
         "garbled": garbled,
     }
 
