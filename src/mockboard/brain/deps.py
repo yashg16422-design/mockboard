@@ -7,9 +7,10 @@ a test builds `BrainDeps` with a `FakeLLMClient`.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from mockboard.brain.cards import CardSet, load_cards
+from mockboard.brain.librarian import VoteCache
 from mockboard.brain.llm import LLMClient
 from mockboard.brain.numbers import Tolerance
 from mockboard.brain.personas import chairman, load_personas
@@ -30,6 +31,10 @@ class BrainDeps:
     tolerance: Tolerance
     strategy: StrategyConfig
     settings: Settings
+    # Process-wide cache of real librarian votes (ruling 10). One per BrainDeps, and
+    # BrainDeps is built once per process, so every session shares it. It never holds a
+    # fallback vote, which is what makes sharing it across sessions safe.
+    vote_cache: VoteCache = field(default_factory=VoteCache)
 
     @property
     def retry_max_attempts(self) -> int:
@@ -74,4 +79,5 @@ def build_deps(settings: Settings, llm: LLMClient, cards: CardSet | None = None)
         ),
         strategy=strategy_config(settings, personas, cards),
         settings=settings,
+        vote_cache=VoteCache(settings.librarian_vote_cache_size),
     )

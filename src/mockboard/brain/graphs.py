@@ -9,8 +9,9 @@ Two graphs, both OFF the real-time critical path. The actor is NOT a node here.
 
    * `listener`   one forced-tool Nova call -> typed `Analysis` (claims stamped with ids).
    * `librarian`  one call per claim, fanned out with `Send`. It returns only the model's
-                  *vote*, keyed by claim content, so its result can be cached by
-                  claim hash + card-set version (LangGraph `CachePolicy`).
+                  *vote*, keyed by claim content. It first looks in `deps.vote_cache`
+                  (claim hash + card-set version, process-wide) and writes back only
+                  real votes, never fallbacks (ruling 10).
    * `gate`       pure code: `librarian.gate_verdict` turns each vote into the final verdict.
                   "contradicted" stands only when the model AND the numeric check agree.
    * `strategist` pure deterministic rules (no LLM). Fact challenges only for numeric/date
@@ -36,9 +37,10 @@ Error handling (verified against langgraph 1.2.17 on Oct 25, 2026):
   explicit `RetryPolicy(retry_on=is_transient)` retries them; on the final attempt the node
   returns its safe default instead of raising. The node learns its attempt number from
   `runtime.execution_info.node_attempt`.
-* A fallback vote must never be cached as if it were a verdict. Each failure is recorded in
-  `lib_failures`, and the router adds the per-key failure count (a nonce) to the cache key,
-  so the next time the same claim appears, the cached fallback is bypassed.
+* A fallback vote must never be cached as if it were a verdict. We do NOT use LangGraph's
+  node cache for the librarian: it stores the node's whole return value, fallbacks
+  included, and a cache shared across sessions then served one session's throttled
+  fallback to every later session (CTO_NOTES_02 M1). `VoteCache.put` refuses fallbacks.
 """
 
 from __future__ import annotations
@@ -52,12 +54,11 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Annotated, Any, TypedDict
 
-from langgraph.cache.memory import InMemoryCache
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 from langgraph.graph import END, START, StateGraph
 from langgraph.runtime import Runtime
-from langgraph.types import CachePolicy, RetryPolicy, Send
+from langgraph.types import RetryPolicy, Send
 from pydantic import BaseModel
 
 from mockboard.brain import schemas as _schemas
@@ -133,13 +134,13 @@ class TurnState(TypedDict, total=False):
     question: str
     segment: Segment
     ctx: StrategyContext
-    card_set_version: str  # part of every librarian cache key
+    card_set_version: str  # part of every librarian vote-cache key
     # Written by the listener on every run (reset to [] when there are no claims).
     pending_claims: list[Claim]
     # Accumulating, session-long.
     analyses: Annotated[list[Analysis], operator.add]
     votes: Annotated[dict[str, LibrarianVote], merge_dict]
-    lib_failures: Annotated[list[str], operator.add]
+    lib_failures: Annotated[list[str], operator.add]  # audit only; never read by routing
     ledger: Annotated[list[Claim], upsert_claims]
     moves: Annotated[list[BoardMove], operator.add]
     fallbacks: Annotated[list[dict[str, str]], operator.add]
@@ -153,7 +154,6 @@ class LibrarianTask(TypedDict):
 
     claim: Claim
     claim_key: str
-    nonce: int
     turn_id: str
     segment_id: str
 
@@ -280,7 +280,6 @@ def route_after_listener(state: TurnState) -> list[Send] | str:
     latest = (state.get("analyses") or [None])[-1]
     if not claims or (latest is not None and latest.garbled):
         return "strategist"
-    failures = state.get("lib_failures") or []
     card_version = state.get("card_set_version", "")
     sends = []
     for claim in claims:
@@ -291,7 +290,6 @@ def route_after_listener(state: TurnState) -> list[Send] | str:
                 LibrarianTask(
                     claim=claim,
                     claim_key=key,
-                    nonce=failures.count(key),
                     turn_id=state.get("turn_id", ""),
                     segment_id=claim.segment_id,
                 ),
@@ -300,22 +298,18 @@ def route_after_listener(state: TurnState) -> list[Send] | str:
     return sends
 
 
-def librarian_cache_key(task: LibrarianTask) -> str:
-    """Claim hash (which already includes the card-set version) plus the failure nonce."""
-    # `.get`: LangGraph's graph drawing calls key functions with placeholder input.
-    if not isinstance(task, dict) or "claim_key" not in task:
-        return "lib:none"
-    return f"{task['claim_key']}#{task.get('nonce', 0)}"
-
-
 def _make_librarian(max_attempts: int) -> Callable:
     async def librarian(task: LibrarianTask, runtime: Runtime[BrainDeps]) -> dict[str, Any]:
         deps = runtime.context
         key = task["claim_key"]
+        cached = deps.vote_cache.get(key)
+        if cached is not None:  # only real votes are ever in the cache
+            return {"votes": {key: cached}}
         try:
             vote = await ask_librarian(
                 deps.llm, deps.kit, task["claim"], claim_key=key, trace_tag=task["turn_id"]
             )
+            deps.vote_cache.put(vote)  # refuses fallbacks by construction
             return {"votes": {key: vote}}
         except Exception as exc:  # per-claim isolation: never fail the superstep
             if _should_reraise(exc, runtime, max_attempts):
@@ -383,12 +377,8 @@ def build_turn_graph(*, max_attempts: int = 3, initial_interval_s: float = 0.5) 
     policy = retry_policy(max_attempts, initial_interval_s)
     g = StateGraph(TurnState, context_schema=BrainDeps)
     g.add_node("listener", _make_listener(max_attempts), retry_policy=policy)
-    g.add_node(
-        "librarian",
-        _make_librarian(max_attempts),
-        retry_policy=policy,
-        cache_policy=CachePolicy(key_func=librarian_cache_key),
-    )
+    # No cache_policy here on purpose: see the module docstring and ruling 10.
+    g.add_node("librarian", _make_librarian(max_attempts), retry_policy=policy)
     g.add_node("gate", gate)
     g.add_node("strategist", strategist)
     g.add_edge(START, "listener")
@@ -404,15 +394,14 @@ def compile_turn_graph(
     max_attempts: int = 3,
     initial_interval_s: float = 0.5,
     checkpointer: Any = None,
-    cache: Any = None,
 ):
-    """Compile once per process. In-memory checkpointer (thread per session) and an
-    in-memory node cache for librarian votes, both with an explicit type allow-list."""
+    """Compile once per process. In-memory checkpointer (thread per session) with an
+    explicit type allow-list. Librarian votes are cached in `BrainDeps.vote_cache`, not in
+    a LangGraph node cache (ruling 10)."""
     serde = make_serde()
     builder = build_turn_graph(max_attempts=max_attempts, initial_interval_s=initial_interval_s)
     return builder.compile(
         checkpointer=checkpointer if checkpointer is not None else InMemorySaver(serde=serde),
-        cache=cache if cache is not None else InMemoryCache(serde=serde),
         name="turn_analysis",
     )
 

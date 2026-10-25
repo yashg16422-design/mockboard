@@ -4,7 +4,7 @@ Two separate steps, on purpose:
 
 1. `ask_librarian` - the model's vote (supported / contradicted / unverifiable + card_id).
    It depends only on the claim's content and the card set, so it is safe to cache by
-   `claim_cache_key(claim, card_set_version)`.
+   `claim_cache_key(claim, card_set_version)` in `VoteCache`, which stores real votes only.
 2. `gate_verdict` - pure code that turns the vote into the final verdict. Per orchestrator
    ruling 1 (ADR-003), "contradicted" stands only when the model says contradicted AND the
    deterministic numeric check says mismatch. A model-only contradiction on a non-numeric
@@ -17,6 +17,8 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import threading
+from collections import OrderedDict
 
 from mockboard.brain.cards import CardSet
 from mockboard.brain.llm import LLMClient
@@ -52,6 +54,64 @@ def claim_cache_key(claim: Claim, card_set_version: str) -> str:
     }
     digest = hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()[:24]
     return f"lib:{digest}"
+
+
+class VoteCache:
+    """A small, bounded LRU of *real* librarian votes, shared by every session in a process
+    (orchestrator ruling 10, CTO_NOTES_02 M1).
+
+    Why our own cache instead of LangGraph's node cache: the node cache stores whatever the
+    node returns, fallbacks included, so one throttling burst in one session used to switch
+    off fact-checking for that claim for every later session. This cache has one rule that
+    makes it safe to share: `put` refuses fallback votes, so only a verdict the model really
+    gave is ever served to another session.
+
+    Keys come from `claim_cache_key`, which hashes the normalised claim content plus the
+    card-set version, so editing any card makes every old entry unreachable. A vote carries
+    no turn, segment or session ids, so sharing it across sessions leaks nothing.
+    """
+
+    def __init__(self, max_entries: int = 2048) -> None:
+        if max_entries < 1:
+            raise ValueError("max_entries must be at least 1")
+        self.max_entries = max_entries
+        self._data: OrderedDict[str, LibrarianVote] = OrderedDict()
+        # Graph nodes run on one event loop, but a lock keeps the cache correct if it is
+        # ever touched from worker threads (eval runs, future executors).
+        self._lock = threading.Lock()
+        self.hits = 0
+        self.misses = 0
+
+    def get(self, key: str) -> LibrarianVote | None:
+        with self._lock:
+            vote = self._data.get(key)
+            if vote is None:
+                self.misses += 1
+                return None
+            self._data.move_to_end(key)
+            self.hits += 1
+            return vote
+
+    def put(self, vote: LibrarianVote) -> bool:
+        """Store a real vote. Returns False (and stores nothing) for a fallback vote."""
+        if vote.is_fallback:
+            return False
+        with self._lock:
+            self._data[vote.claim_key] = vote
+            self._data.move_to_end(vote.claim_key)
+            while len(self._data) > self.max_entries:
+                self._data.popitem(last=False)
+        return True
+
+    def clear(self) -> None:
+        with self._lock:
+            self._data.clear()
+
+    def __len__(self) -> int:
+        return len(self._data)
+
+    def __contains__(self, key: object) -> bool:
+        return key in self._data
 
 
 def build_librarian_user(claim: Claim) -> str:

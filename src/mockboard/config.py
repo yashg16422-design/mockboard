@@ -61,6 +61,8 @@ class Settings(BaseSettings):
     graph_retry_max_attempts: int = 3
     graph_retry_initial_interval_s: float = 0.5
     analysis_wait_timeout_s: float = 60.0
+    # Bounded LRU of real librarian votes shared by all sessions (ruling 10).
+    librarian_vote_cache_size: int = Field(default=2048, ge=1)
     # Approximate budget for the cached system prefix (persona pack + fact cards).
     # Nova's prompt cache supports at most 20K tokens; we keep headroom.
     cache_prefix_token_budget: int = 18000

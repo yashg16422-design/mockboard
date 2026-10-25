@@ -1,5 +1,5 @@
 """Graph wiring: skip-librarian edge, Send fan-out, per-claim error isolation, retry policy,
-librarian node cache, session threads and stale-result stamping."""
+shared vote cache (real votes only), session threads and stale-result stamping."""
 
 from __future__ import annotations
 
@@ -90,7 +90,6 @@ def test_route_is_a_pure_function_of_state():
             "pending_claims": [claim, claim],
             "card_set_version": "v",
             "analyses": [],
-            "lib_failures": [],
         }
     )
     assert [s.node for s in sends] == ["librarian", "librarian"]
@@ -151,16 +150,49 @@ async def test_listener_failure_gives_safe_default(deps, cards):
     assert r.fallbacks[0]["stage"] == "listener"
 
 
-async def test_librarian_votes_are_cached_by_claim_and_card_version(deps, cards):
+async def test_real_verdict_is_cached_by_claim_and_card_version(deps, cards):
     llm = llm_with(cards)
     ta = analyzer(deps, llm)
-    await run(ta, CLAIMY, 0, session="A")
+    first = await run(ta, CLAIMY, 0, session="A")
     await run(ta, CLAIMY, 1, session="A")
-    await run(ta, CLAIMY, 0, session="B")  # cache is per compiled graph, across sessions
+    second = await run(ta, CLAIMY, 0, session="B")  # the vote cache is process-wide
     assert len(llm.calls_named("librarian")) == 1
+    assert first.ledger[0].verdict == second.ledger[0].verdict == Verdict.contradicted
+    assert deps.vote_cache.hits == 2
+    assert second.fallbacks == []
 
 
-async def test_cached_fallback_is_not_reused(deps, cards):
+async def test_card_set_change_misses_the_cache(deps, cards):
+    from dataclasses import replace
+
+    llm = llm_with(cards)
+    await run(analyzer(deps, llm), CLAIMY, 0, session="A")
+    edited = replace(cards, version=cards.version + "-edited")
+    await run(analyzer(replace(deps, cards=edited), llm), CLAIMY, 0, session="B")
+    assert len(llm.calls_named("librarian")) == 2
+
+
+async def test_throttled_fallback_in_one_session_is_never_served_to_another(deps, cards):
+    """CTO_NOTES_02 M1 regression: session A is throttled on every attempt and falls back to
+    unverifiable. Session B, analysing the same claim, must call the librarian itself and
+    get the real verdict, and its trace must not report a fallback that never happened."""
+    attempts = deps.settings.graph_retry_max_attempts
+    llm = llm_with(cards, librarian=[LLMTransientError("ThrottlingException")] * attempts)
+    ta = analyzer(deps, llm)
+
+    a = await run(ta, CLAIMY, 0, session="A")
+    assert a.ledger[0].verdict == Verdict.unverifiable
+    assert [f["stage"] for f in a.fallbacks] == ["librarian"]
+    assert len(deps.vote_cache) == 0  # the fallback was not cached
+
+    b = await run(ta, CLAIMY, 0, session="B")
+    assert len(llm.calls_named("librarian")) == attempts + 1  # B made its own call
+    assert b.ledger[0].verdict == Verdict.contradicted
+    assert b.fallbacks == []
+    assert len(deps.vote_cache) == 1  # B's real vote is now cached
+
+
+async def test_same_session_retries_after_its_own_fallback(deps, cards):
     attempts = deps.settings.graph_retry_max_attempts
     llm = llm_with(cards, librarian=[LLMTransientError("x")] * attempts)
     ta = analyzer(deps, llm)
@@ -168,6 +200,11 @@ async def test_cached_fallback_is_not_reused(deps, cards):
     second = await run(ta, CLAIMY, 1)
     assert first.ledger[0].verdict == Verdict.unverifiable
     assert second.ledger[-1].verdict == Verdict.contradicted
+
+
+def test_librarian_node_has_no_langgraph_cache_policy():
+    builder = compile_turn_graph().builder
+    assert builder.nodes["librarian"].cache_policy is None
 
 
 async def test_session_state_accumulates_and_enables_delayed_challenge(deps, cards):

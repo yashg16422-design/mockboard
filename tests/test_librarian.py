@@ -5,7 +5,13 @@ from __future__ import annotations
 import pytest
 
 from conftest import make_claim
-from mockboard.brain.librarian import ask_librarian, claim_cache_key, fallback_vote, gate_verdict
+from mockboard.brain.librarian import (
+    VoteCache,
+    ask_librarian,
+    claim_cache_key,
+    fallback_vote,
+    gate_verdict,
+)
 from mockboard.brain.llm import FakeLLMClient, LLMOutputError
 from mockboard.brain.schemas import ClaimKind, LibrarianVote, ModelVerdict, Verdict
 
@@ -114,3 +120,26 @@ async def test_candidate_text_is_delimited(deps):
     await ask_librarian(llm, deps.kit, claim, claim_key="k")
     user = llm.calls[0].user
     assert user.count("</candidate_speech>") == 1  # the injected closing tag is neutralised
+
+
+def test_vote_cache_refuses_fallback_votes():
+    cache = VoteCache()
+    assert cache.put(fallback_vote("lib:x", "ThrottlingException")) is False
+    assert cache.get("lib:x") is None and len(cache) == 0
+
+
+def test_vote_cache_serves_real_votes_and_counts_hits():
+    cache = VoteCache()
+    real = LibrarianVote(claim_key="lib:x", model_verdict=ModelVerdict.supported, card_id=CARD)
+    assert cache.put(real) is True
+    assert cache.get("lib:x") == real
+    assert (cache.hits, cache.misses) == (1, 0)
+
+
+def test_vote_cache_is_a_bounded_lru():
+    cache = VoteCache(max_entries=2)
+    for k in ("a", "b"):
+        cache.put(LibrarianVote(claim_key=k, model_verdict=ModelVerdict.unverifiable))
+    cache.get("a")  # "a" is now most recently used, so "b" is evicted next
+    cache.put(LibrarianVote(claim_key="c", model_verdict=ModelVerdict.unverifiable))
+    assert "a" in cache and "c" in cache and "b" not in cache
