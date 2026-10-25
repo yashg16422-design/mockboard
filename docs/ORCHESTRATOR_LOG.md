@@ -60,3 +60,10 @@ Judge scores 1-5 or "insufficient_evidence" for: mental_alertness, critical_assi
 - **Ruling 11 (accepts CTO refinements):** Defect B adds an optional `source_short` card field for spoken citations; figures are rendered in the card's own scale (lakh/crore vs millions); `actor.v2.md`; the guard checks the card's figure, not the card's text. Defect A's acknowledgement after a conceded error is a field on the existing move (moves stay at nine); listener emits `concedes_error`; strategist: first honest "don't know" in a topic → reassure, second → move_on; no pressure right after reassure; cap consecutive pressure.
 - Order of work: M6 (git — done by orchestrator), M1, M2, M3 + Nova request fixes (`topK: 1`, stricter schema check, truncated-output handling, case-insensitive tag escaping), then M4 + M5, then docs (README, WALKTHROUGH, ADR-001…005) and `make eval-gate`.
 - Note: the synthetic prompt prefix (~929 tokens) is below Nova's caching minimum; zero cache hits are expected until real cards are added.
+
+## Round 4 — Oct 25, 2026 (fix chunk M1-M3 + Nova request fixes)
+
+- **Accepted.** Orchestrator re-ran: 287/287 tests, lint clean, commits d014f50..ad13318 on main. Transcript check: honest "don't know" → `reassure` ("Koi baat nahi, aaram se…"); fact challenge → "Aapne 30 percent kaha. Exampleland test data ke 2023 ke figure ke hisaab se yeh 12 percent hai. Aapka figure kahan se hai?"; concession acknowledged. Defects A and B closed.
+- Builder's deviations accepted: the acknowledgement is a fixed code-side sentence (always said, cacheable as audio); actor.v2 told not to repeat it.
+- **Ruling 12:** when a topic's question budget is already used up, an honest "don't know" leads to `move_on` (R3b), not `reassure` — reassuring and then immediately leaving the topic reads oddly. Add an invariant test.
+- Noted (fake mode only): the offline responder stacks "Achha." after the acknowledgement; the real actor prompt already forbids repeating it. No action unless it shows up with Nova.
