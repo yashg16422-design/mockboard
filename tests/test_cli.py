@@ -50,7 +50,10 @@ def test_cli_fake_end_to_end(tmp_path, capsys):
         assert all(c["model_id"] == "fake-llm" for c in r["llm_calls"])
 
     challenge = next(r for r in turns if r["move"] == "fact_challenge")
-    assert challenge["board_line"].strip().endswith("?")
+    line = challenge["board_line"].strip()
+    assert line.endswith("?") and line[0].isupper()
+    assert "test card" not in line.lower()  # the card text is never read aloud (M3)
+    assert line.index("30 percent") < line.index("12 percent") and "2023" in line
     assert challenge["target"]
     # The challenged claim came from an EARLIER turn (delayed challenge).
     assert not challenge["target"].startswith(challenge["turn_id"] + ".")

@@ -17,6 +17,7 @@ from mockboard.brain.cards import CardSet
 from mockboard.brain.llm import FakeLLMClient
 from mockboard.brain.numbers import NumericResult, Tolerance, canonical_unit, numeric_check
 from mockboard.brain.schemas import ClaimKind, Dimension, FactCard, Move
+from mockboard.brain.spoken import challenge_sentence
 
 _TAG = r"<{0}>\n(.*?)\n</{0}>"
 _STOP = {
@@ -254,10 +255,15 @@ def actor_responder(system: str, user: str) -> str:
     ctx = json.loads(_tag(user, "board_context") or "{}")
     move = ctx.get("move", Move.probe.value)
     if move == Move.fact_challenge.value:
-        card = json.loads(_tag(user, "fact_card") or "{}")
-        return (
-            f"Ek baat par lautte hain. {card.get('source')} ke anusaar: "
-            f"{card.get('statement')} Aap ise kaise dekhte hain?"
+        # Same shape as the real template (actor.v2), from the structured fields only.
+        f = json.loads(_tag(user, "fact_challenge") or "{}")
+        return challenge_sentence(
+            claim_figure=f.get("claim_figure", ""),
+            card_figure=f.get("card_figure", ""),
+            card_year=f.get("card_year"),
+            source_short=f.get("source_short", ""),
+            is_date=bool(f.get("is_date")),
+            mix=f.get("language_mix"),
         )
     if move == Move.move_on.value:
         nxt = ctx.get("next_topic")

@@ -59,6 +59,12 @@
         "year": { "type": ["integer", "null"] },
         "source_title": { "type": ["string", "null"] },
         "source_url": { "type": ["string", "null"] },
+        "source_short": {
+          "type": ["string", "null"],
+          "minLength": 1,
+          "maxLength": 60,
+          "description": "Optional short source name the board says aloud in a fact challenge, e.g. the publication's short title without edition, table or page. If absent, the board says 'official data' (real card) or 'hamare test data' (synthetic card)."
+        },
         "as_of": {
           "type": ["string", "null"],
           "description": "Date the owner checked the source, YYYY-MM-DD."

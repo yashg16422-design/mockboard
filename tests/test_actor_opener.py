@@ -3,11 +3,16 @@ in code and ask-never-assert for fact challenges."""
 
 from __future__ import annotations
 
+import json
+import re
+
 import pytest
 
 from conftest import make_claim
 from mockboard.brain.actor import (
     ACKNOWLEDGE_LINES,
+    build_actor_user,
+    fact_challenge_template,
     compose_line,
     count_words,
     generate_opener,
@@ -17,7 +22,7 @@ from mockboard.brain.actor import (
 )
 from mockboard.brain.fake_responders import opener_responder
 from mockboard.brain.llm import FakeLLMClient, LLMTransientError
-from mockboard.brain.schemas import BoardMove, Move
+from mockboard.brain.schemas import BoardMove, ClaimKind, Move
 
 
 async def opener_with(deps, form, reply):
@@ -112,31 +117,134 @@ async def _compose(deps, form, reply, claim=None, card=None):
     )
 
 
+def assert_challenge_shape(text: str, claim_fig: str, card_fig: str, year: str | None):
+    """The required shape (ruling 11), checked as properties rather than exact wording."""
+    assert text[0].isupper(), text
+    assert text.endswith("?"), text
+    assert "test card" not in text.lower(), text
+    assert claim_fig in text and card_fig in text, text
+    assert text.index(claim_fig) < text.index(card_fig), "candidate's figure comes first"
+    if year:
+        assert year in text, text
+    # Every sentence starts with a capital letter (sentence case).
+    for sentence in re.split(r"(?<=[.?!])\s+", text):
+        assert sentence[0].isupper(), sentence
+
+
 @pytest.mark.parametrize(
     "reply",
     [
         "Aap galat hain, card 9 percent kehta hai.",
         "You are wrong about that figure, aren't you?",
         "Card kehta hai 9 percent.",
+        "Aapne 30 percent kaha, lekin data kuch aur kehta hai. Aapka source kya hai?",
+        "BUILT-IN TEST CARD: Testland tourism share of GDP is 9 percent in 2023. Kya kahenge?",
     ],
+    ids=["asserts", "asserts_en", "no_question", "no_card_figure", "reads_card_text"],
 )
-async def test_fact_challenge_must_ask_never_assert(deps, form, reply):
+async def test_bad_fact_challenge_lines_are_replaced_by_the_template(deps, form, reply):
     card = deps.cards.get("builtin_tourism_gdp_share")
     line = await _compose(deps, form, reply, make_claim(), card)
     assert line.guard == "ask_never_assert"
-    assert line.text.endswith("?") and card.statement in line.text
+    assert line.text == fact_challenge_template(make_claim(), card)
+    assert_challenge_shape(line.text, "30 percent", "9 percent", "2023")
 
 
-async def test_good_fact_challenge_passes(deps, form):
+@pytest.mark.parametrize(
+    "reply",
+    [
+        "Aapne 30 percent kaha. Hamare test data mein 2023 ka figure 9 percent hai. "
+        "Aapka figure kahan se hai?",
+        "Aapne 30% kaha tha, par 2023 ke data mein yeh 9% hai. Yeh aapne kahan padha?",
+    ],
+)
+async def test_good_fact_challenge_passes(deps, form, reply):
     card = deps.cards.get("builtin_tourism_gdp_share")
-    line = await _compose(
-        deps,
-        form,
-        "Synthetic test card 9 percent batata hai. Aap ise kaise reconcile karenge?",
-        make_claim(),
-        card,
+    line = await _compose(deps, form, reply, make_claim(), card)
+    assert not line.guard and line.text == reply
+
+
+def test_template_shape_percent(deps):
+    card = deps.cards.get("builtin_tourism_gdp_share")
+    text = fact_challenge_template(make_claim(), card)
+    assert text == (
+        "Aapne 30 percent kaha. Hamare test data ke 2023 ke figure ke hisaab se yeh 9 percent "
+        "hai. Aapka figure kahan se hai?"
+    )
+
+
+def test_template_renders_both_figures_in_the_cards_scale(deps):
+    """The CTO's experiment: a claim of 1,500,000 visitors against a card in lakh used to be
+    spoken as "1,500,000 visitors"; now both sides say lakh."""
+    card = deps.cards.get("builtin_tourism_arrivals")  # 15 lakh visitors, 2022
+    claim = make_claim(value=2_500_000, unit="visitors", year=2022,
+                       claim_en="Testland got 25 lakh foreign tourist arrivals in 2022")
+    text = fact_challenge_template(claim, card)
+    assert_challenge_shape(text, "25 lakh visitors", "15 lakh visitors", "2022")
+    assert "2500000" not in text and "2,500,000" not in text
+
+
+def test_template_uses_source_short_when_the_card_has_one(deps):
+    card = deps.cards.get("builtin_tourism_gdp_share").model_copy(
+        update={"source_short": "Exampleland test data"}
+    )
+    text = fact_challenge_template(make_claim(), card)
+    assert "Exampleland test data ke 2023 ke figure" in text
+
+
+def test_template_date_claim(deps):
+    card = deps.cards.get("builtin_tourism_policy_year")  # 2018
+    claim = make_claim(kind=ClaimKind.date, value=2012, unit="year", year=2012)
+    text = fact_challenge_template(claim, card)
+    assert text == (
+        "Aapne saal 2012 kaha. Hamare test data ke hisaab se yeh saal 2018 hai. "
+        "Aapka figure kahan se hai?"
+    )
+
+
+@pytest.mark.parametrize(
+    "mix, start, ask",
+    [
+        ("en", "You said 30 percent.", "Where is your figure from?"),
+        ("hi", "आपने 30 प्रतिशत कहा।", "आपका आँकड़ा कहाँ से है?"),
+    ],
+)
+def test_template_follows_the_language_mix(deps, mix, start, ask):
+    card = deps.cards.get("builtin_tourism_gdp_share")
+    text = fact_challenge_template(make_claim(), card, mix)
+    assert text.startswith(start) and text.endswith(ask)
+
+
+def test_actor_prompt_gets_structured_fields_not_the_card_text(deps, form):
+    card = deps.cards.get("builtin_tourism_gdp_share")
+    user = build_actor_user(
+        deps.personas["economist"], challenge_move(), topic="tourism", form=form,
+        last_question="q", last_answer="a", claim=make_claim(), card=card,
+    )
+    assert card.statement not in user
+    facts = json.loads(user.split("<fact_challenge>\n")[1].split("\n</fact_challenge>")[0])
+    assert facts == {
+        "claim_figure": "30 percent",
+        "card_figure": "9 percent",
+        "card_year": 2023,
+        "is_date": False,
+        "source_short": "hamare test data",
+        "language_mix": "hi-en",
+    }
+
+
+async def test_fake_actor_speaks_the_template(deps, form):
+    from mockboard.brain.fake_responders import actor_responder
+
+    card = deps.cards.get("builtin_tourism_gdp_share")
+    llm = FakeLLMClient(responders={"actor": actor_responder})
+    line = await compose_line(
+        llm, deps.kit, deps.personas["economist"], challenge_move(), topic="tourism",
+        form=form, last_question="q", last_answer="a", max_words=30, max_tokens=120,
+        turn_id="t1", claim=make_claim(), card=card,
     )
     assert not line.guard
+    assert line.text == fact_challenge_template(make_claim(), card)
 
 
 async def test_fact_challenge_without_card_is_never_spoken(deps, form):

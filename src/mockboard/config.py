@@ -70,7 +70,7 @@ class Settings(BaseSettings):
     # --- Prompt versions (prompts/<id>.v<N>.md) ---
     prompt_listener_version: int = 2
     prompt_librarian_version: int = 1
-    prompt_actor_version: int = 1
+    prompt_actor_version: int = 2
     prompt_judge_version: int = 1
     prompt_opener_version: int = 1
     report_language: str = Field(default="en", pattern=r"^(en|hi)$")

@@ -119,6 +119,9 @@ class FactCard(_Model):
     year: int | None = None
     source_title: str | None = None
     source_url: str | None = None
+    # Optional short source name the board says aloud ("India Tourism Statistics"), because
+    # `source_title` with edition, table and page is too long to speak (ruling 11).
+    source_short: str | None = Field(default=None, min_length=1, max_length=60)
     as_of: str | None = None
     synthetic_example: bool = False
 

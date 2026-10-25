@@ -4,8 +4,10 @@ This is a plain async streaming call, NOT a LangGraph node: it is the only model
 real-time critical path. Three guards live here in code, not only in the prompt:
 
 1. Word cap: streaming stops at `max_words` words, whatever the model does.
-2. Ask, never assert (ADR-003): a fact challenge must end as a question and must not contain
-   assertive "you are wrong" phrasing; otherwise a deterministic template replaces it.
+2. Ask, never assert (ADR-003): a fact challenge must end as a question, must not contain
+   assertive "you are wrong" phrasing, must say the card's figure (in the card's own scale,
+   see `spoken.py`) and must not read the card text aloud; otherwise a deterministic
+   template replaces it.
 3. Opener guard (ruling 5): the form-driven opener must be open-ended and must not state a
    fact about a place unless it cites an existing fact card; otherwise a template replaces it.
 
@@ -29,9 +31,16 @@ from mockboard.brain.schemas import (
     BoardMove,
     CandidateForm,
     Claim,
+    ClaimKind,
     FactCard,
     Move,
     Persona,
+)
+from mockboard.brain.spoken import (
+    GENERIC_SOURCE,
+    SYNTHETIC_SOURCE,
+    challenge_sentence,
+    spoken_parts,
 )
 
 _WORD = re.compile(r"\S+")
@@ -146,28 +155,72 @@ class LineResult:
 # ---------------------------------------------------------------------------
 
 
-def source_label(card: FactCard) -> str:
-    if card.synthetic_example:
-        return "hamare synthetic test card"
-    return card.source_title or "official data"
+def spoken_source(card: FactCard, mix: str = "hi-en") -> str:
+    """The short source name the board says aloud. Never the long `source_title`."""
+    if card.source_short:
+        return card.source_short
+    table = SYNTHETIC_SOURCE if card.synthetic_example else GENERIC_SOURCE
+    return table.get(mix, table["hi-en"])
 
 
-def claim_figure(claim: Claim) -> str:
-    """A short spoken reference to the claimed figure ("30 percent", "2015"), so a challenge
-    quotes the number, not the whole sentence (keeps the line near the word cap)."""
-    if claim.value is None:
-        return f"\"{cap_words(claim.text, 8)}\""
-    number = f"{claim.value:,.0f}" if claim.value >= 1000 or claim.value.is_integer() else (
-        f"{claim.value:g}")
-    if claim.kind.value == "date":
-        return f"saal {claim.value:.0f}"
-    return f"{number} {claim.unit}".strip() if claim.unit else number
+@dataclass(frozen=True)
+class ChallengeFacts:
+    """The structured fields of a fact challenge, all rendered in the card's own scale."""
+
+    claim_figure: str
+    card_figure: str
+    card_figure_core: str  # the part the guard requires in a model line ("15 lakh")
+    card_year: int | None
+    source_short: str
+    is_date: bool
+    mix: str
+
+    def as_prompt_json(self) -> str:
+        return json.dumps(
+            {
+                "claim_figure": self.claim_figure,
+                "card_figure": self.card_figure,
+                "card_year": self.card_year,
+                "is_date": self.is_date,
+                "source_short": self.source_short,
+                "language_mix": self.mix,
+            },
+            ensure_ascii=False,
+        )
 
 
-def fact_challenge_template(claim: Claim, card: FactCard) -> str:
-    return (
-        f"Aapne {claim_figure(claim)} kaha tha. {source_label(card)} ke anusaar: "
-        f"{card.statement} Ise aap kaise reconcile karenge?"
+def challenge_facts(claim: Claim, card: FactCard, mix: str = "hi-en") -> ChallengeFacts:
+    is_date = card.kind == ClaimKind.date or claim.kind == ClaimKind.date
+    if card.value is not None:
+        card_parts = spoken_parts(card.value, card.unit, is_date=is_date, mix=mix)
+    else:  # defensive: the strategist only challenges cards that carry a value
+        card_parts = None
+    if claim.value is not None:
+        claim_text = spoken_parts(
+            claim.value, claim.unit, like=card.unit, is_date=is_date, mix=mix
+        ).text
+    else:
+        claim_text = f"\"{cap_words(claim.text, 8)}\""
+    return ChallengeFacts(
+        claim_figure=claim_text,
+        card_figure=card_parts.text if card_parts else "",
+        card_figure_core=card_parts.core if card_parts else "",
+        card_year=card.year,
+        source_short=spoken_source(card, mix),
+        is_date=is_date,
+        mix=mix,
+    )
+
+
+def fact_challenge_template(claim: Claim, card: FactCard, mix: str = "hi-en") -> str:
+    f = challenge_facts(claim, card, mix)
+    return challenge_sentence(
+        claim_figure=f.claim_figure,
+        card_figure=f.card_figure,
+        card_year=f.card_year,
+        source_short=f.source_short,
+        is_date=f.is_date,
+        mix=f.mix,
     )
 
 
@@ -198,9 +251,39 @@ def has_assertion(text: str) -> bool:
     return any(re.search(p, low) for p in ASSERTIVE_PATTERNS)
 
 
-def guard_fact_challenge(text: str, claim: Claim, card: FactCard) -> LineResult:
-    if not text.strip().endswith("?") or has_assertion(text):
-        return LineResult(fact_challenge_template(claim, card), guard="ask_never_assert")
+def _norm(text: str) -> str:
+    return re.sub(r"\s+", " ", text.lower()).strip()
+
+
+def says_figure(text: str, core: str) -> bool:
+    """True when the line says the card's figure core ("12 percent", "15 lakh"), allowing
+    "%" for "percent" and any spacing or case."""
+    if not core:
+        return False
+    line = _norm(text).replace("%", " percent")
+    return _norm(core) in re.sub(r"\s+", " ", line)
+
+
+def fact_challenge_violations(text: str, claim: Claim, card: FactCard, mix: str) -> list[str]:
+    """Why a model-written fact challenge is not acceptable (empty list = acceptable)."""
+    problems: list[str] = []
+    if not text.strip().endswith("?"):
+        problems.append("does not end with a question")
+    if has_assertion(text):
+        problems.append("asserts instead of asking")
+    if not says_figure(text, challenge_facts(claim, card, mix).card_figure_core):
+        problems.append("does not say the card's figure")
+    low = _norm(text)
+    if "test card" in low or _norm(card.statement) in low:
+        problems.append("reads the card text aloud")
+    return problems
+
+
+def guard_fact_challenge(
+    text: str, claim: Claim, card: FactCard, mix: str = "hi-en"
+) -> LineResult:
+    if fact_challenge_violations(text, claim, card, mix):
+        return LineResult(fact_challenge_template(claim, card, mix), guard="ask_never_assert")
     return LineResult(text)
 
 
@@ -267,16 +350,11 @@ def build_actor_user(
         tag("candidate_speech", last_answer),
     ]
     if move.move == Move.fact_challenge and claim and card:
+        # Structured, pre-rendered fields only (actor.v2): the card's text is NOT passed, so
+        # the model cannot read it aloud, and both figures are already in the card's scale.
         parts.append(tag("claim_to_revisit", claim.text))
-        parts.append(
-            tag(
-                "fact_card",
-                json.dumps(
-                    {"id": card.id, "statement": card.statement, "source": source_label(card)},
-                    ensure_ascii=False,
-                ),
-            )
-        )
+        facts = challenge_facts(claim, card, language_mix(persona, form))
+        parts.append(tag("fact_challenge", facts.as_prompt_json()))
     parts.append("Say the line now.")
     return "\n".join(parts)
 
@@ -362,14 +440,15 @@ async def _compose_move_line(
     except LLMError:
         text = ""
     text = cap_words(text, max_words)
+    mix = language_mix(persona, form)
     if not text:
         if move.move == Move.fact_challenge and claim and card:
-            return LineResult(fact_challenge_template(claim, card), is_fallback=True,
+            return LineResult(fact_challenge_template(claim, card, mix), is_fallback=True,
                               guard="actor_failed")
         return LineResult(FILLER_TEMPLATES.get(move.move, FILLER_TEMPLATES[Move.probe]),
                           is_fallback=True, guard="actor_failed")
     if move.move == Move.fact_challenge and claim and card:
-        return guard_fact_challenge(text, claim, card)
+        return guard_fact_challenge(text, claim, card, mix)
     return LineResult(text)
 
 
