@@ -12,9 +12,9 @@ from conftest import make_claim
 from mockboard.brain.actor import (
     ACKNOWLEDGE_LINES,
     build_actor_user,
-    fact_challenge_template,
     compose_line,
     count_words,
+    fact_challenge_template,
     generate_opener,
     opener_template,
     opener_violations,
