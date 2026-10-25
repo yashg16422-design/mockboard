@@ -134,6 +134,12 @@ class LLMOutputError(LLMError):
         self.errors = errors
 
 
+class LLMTruncatedError(LLMOutputError):
+    """The model hit `maxTokens` (stopReason "max_tokens") even after one retry with a larger
+    limit, so its tool input is incomplete. Not transient: retrying the same limit would
+    truncate again."""
+
+
 class LLMConfigError(LLMError):
     """Non-retryable request problems: access denied, bad model id, validation errors."""
 
@@ -148,18 +154,27 @@ def is_transient(exc: BaseException) -> bool:
 # ---------------------------------------------------------------------------
 
 
+TOP_LEVEL_SCHEMA_KEYS = {"type", "properties", "required"}
+
+
 def assert_flat_schema(schema: Mapping[str, Any]) -> None:
     """Enforce the 'flat schema' rule for Nova tool inputs.
 
-    The top level may only contain `type`, `properties` and `required` (plus an optional
-    `description`), and no `$ref`/`$defs`/`anyOf`/`oneOf`/`allOf` may appear anywhere.
-    Array items may be objects of primitive fields (one level), which keeps schemas readable.
+    Amazon Nova's "Troubleshooting tool calls" page (read Oct 25, 2026): the top level must be
+    an object with only `type` ("object"), `properties` and `required`; it names `$schema`,
+    `description`, `title` and `additionalProperties` as common unsupported top-level fields.
+    We also forbid `$ref`/`$defs`/`anyOf`/`oneOf`/`allOf`/`not` and type unions anywhere, and
+    require every object's `required` names to exist in its `properties`, so a typo cannot
+    make the model chase a field the schema never defines. Array items may be objects of
+    primitive fields (one level), which keeps schemas readable.
     """
-    extra = set(schema) - {"type", "properties", "required", "description"}
+    extra = set(schema) - TOP_LEVEL_SCHEMA_KEYS
     if extra:
         raise ValueError(f"tool schema top level has unsupported keys: {sorted(extra)}")
     if schema.get("type") != "object":
         raise ValueError("tool schema top level must be type=object")
+    if not isinstance(schema.get("properties"), Mapping) or not schema["properties"]:
+        raise ValueError("tool schema top level needs a non-empty properties object")
 
     def walk(node: Any, path: str) -> None:
         if isinstance(node, Mapping):
@@ -168,7 +183,21 @@ def assert_flat_schema(schema: Mapping[str, Any]) -> None:
                 raise ValueError(f"tool schema uses {sorted(bad)} at {path}")
             if isinstance(node.get("type"), list):
                 raise ValueError(f"tool schema uses a type union at {path}")
+            props = node.get("properties")
+            required = node.get("required")
+            if node.get("type") == "object" and required is not None:
+                if not isinstance(required, list) or not all(
+                    isinstance(r, str) for r in required
+                ):
+                    raise ValueError(f"tool schema `required` must be a list of names at {path}")
+                missing = set(required) - set(props or {})
+                if missing:
+                    raise ValueError(
+                        f"tool schema requires undefined properties {sorted(missing)} at {path}"
+                    )
             for k, v in node.items():
+                # Inside `properties`, keys are field names, so a field literally called
+                # "not" or "description" is fine; only its sub-schema is walked.
                 walk(v, f"{path}.{k}")
         elif isinstance(node, list):
             for i, v in enumerate(node):
@@ -224,6 +253,11 @@ class _BaseClient:
 
     model_id: str = "unknown"
     default_max_tokens: int = 1200
+    # When a structured call is truncated (stopReason "max_tokens"), it is retried once
+    # with double the limit, but never above this ceiling.
+    # UNVERIFIED: Nova Pro's maximum output tokens per request; 5000 is a conservative
+    # ceiling, to be confirmed against the Nova model card before raising it.
+    max_tokens_ceiling: int = 5000
 
     def __init__(self, on_call: CallSink | None = None) -> None:
         self._sinks: list[CallSink] = [on_call] if on_call else []
@@ -265,12 +299,26 @@ class _BaseClient:
         prompt = user
         raw: Any = None
         errors = ""
+        limit = max_tokens or self.default_max_tokens
         try:
             for attempt in (1, 2):
                 stats.attempts = attempt
-                raw = await self._tool_call(
-                    system, prompt, tool, max_tokens or self.default_max_tokens, stats
-                )
+                raw = await self._tool_call(system, prompt, tool, limit, stats)
+                if stats.stop_reason == "max_tokens":
+                    # Truncated JSON is not a validation problem the model can fix by
+                    # being told; only a larger limit helps. Retry once with one.
+                    bigger = min(limit * 2, self.max_tokens_ceiling)
+                    if attempt == 2 or bigger <= limit:
+                        stats.error = "truncated"
+                        raise LLMTruncatedError(
+                            f"{name}: tool output truncated at maxTokens={limit} "
+                            f"(stopReason max_tokens); raise the limit for this call",
+                            raw=raw,
+                            errors="truncated",
+                        )
+                    limit = bigger
+                    prompt = user
+                    continue
                 try:
                     return output_model.model_validate(raw)
                 except ValidationError as exc:
@@ -349,14 +397,18 @@ class BedrockNovaClient(_BaseClient):
         connect_timeout_s: float = 5.0,
         read_timeout_s: float = 30.0,
         tool_stop_sequences: Sequence[str] = ("</tool>",),
+        tool_top_k: int | None = 1,
         default_max_tokens: int = 1200,
+        max_tokens_ceiling: int = 5000,
         on_call: CallSink | None = None,
         client: Any = None,
     ) -> None:
         super().__init__(on_call)
         self.model_id = model_id
         self.default_max_tokens = default_max_tokens
+        self.max_tokens_ceiling = max_tokens_ceiling
         self._tool_stop = list(tool_stop_sequences)
+        self._tool_top_k = tool_top_k
         if client is None:
             import boto3
             from botocore.config import Config
@@ -383,7 +435,9 @@ class BedrockNovaClient(_BaseClient):
             connect_timeout_s=settings.bedrock_connect_timeout_s,
             read_timeout_s=settings.bedrock_read_timeout_s,
             tool_stop_sequences=settings.nova_tool_stop_sequences,
+            tool_top_k=settings.nova_tool_top_k,
             default_max_tokens=settings.structured_max_tokens,
+            max_tokens_ceiling=settings.structured_max_tokens_ceiling,
             on_call=on_call,
         )
 
@@ -417,7 +471,7 @@ class BedrockNovaClient(_BaseClient):
         if self._tool_stop:
             # Nova's tool-use guide recommends a stop sequence when forcing a tool.
             inference["stopSequences"] = self._tool_stop
-        return {
+        request: dict[str, Any] = {
             "modelId": self.model_id,
             "system": self.system_blocks(system),
             "messages": [{"role": "user", "content": [{"text": user}]}],
@@ -435,6 +489,15 @@ class BedrockNovaClient(_BaseClient):
             },
             "inferenceConfig": inference,
         }
+        if self._tool_top_k is not None:
+            # Greedy decoding for tool calls. Placement copied from Amazon Nova's
+            # "Troubleshooting tool calls" page (read Oct 25, 2026), which shows
+            # `additionalModelRequestFields={"inferenceConfig": {"topK": 1}}` next to
+            # temperature 0: topK is NOT a Converse `inferenceConfig` field.
+            request["additionalModelRequestFields"] = {
+                "inferenceConfig": {"topK": self._tool_top_k}
+            }
+        return request
 
     @staticmethod
     def extract_tool_input(response: Mapping[str, Any], tool_name: str) -> Any:
@@ -570,6 +633,16 @@ class FakeCall:
     system: str
     user: str
     tag: str
+    max_tokens: int | None = None
+
+
+@dataclass(frozen=True)
+class FakeToolReply:
+    """A scripted tool reply with an explicit stop reason, e.g. a truncated output:
+    `FakeToolReply({"stance": "half"}, stop_reason="max_tokens")`."""
+
+    payload: Any
+    stop_reason: str = "tool_use"
 
 
 class FakeLLMClient(_BaseClient):
@@ -626,9 +699,12 @@ class FakeLLMClient(_BaseClient):
         stats: CallStats,
     ) -> Any:
         sys_text = system_text(system)
-        self.calls.append(FakeCall(stats.name, sys_text, user, stats.tag))
+        self.calls.append(FakeCall(stats.name, sys_text, user, stats.tag, max_tokens))
         await asyncio.sleep(0)
         payload = self._next(stats.name, sys_text, user)
+        stop_reason = "tool_use"
+        if isinstance(payload, FakeToolReply):
+            payload, stop_reason = payload.payload, payload.stop_reason
         stats.first_token = stats.first_token or time.monotonic()
         stats.add_usage(
             {
@@ -637,7 +713,7 @@ class FakeLLMClient(_BaseClient):
                 "cacheReadInputTokens": approx_tokens(sys_text),
             }
         )
-        stats.stop_reason = "tool_use"
+        stats.stop_reason = stop_reason
         return payload
 
     async def stream_text(

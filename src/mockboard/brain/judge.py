@@ -105,6 +105,7 @@ async def run_judge(
     *,
     session_id: str,
     failed: Sequence[JudgeEvidence] = (),
+    max_tokens: int = 2500,
 ) -> JudgeOutput:
     return await llm.structured(
         name="judge",
@@ -113,7 +114,7 @@ async def run_judge(
         tool=JUDGE_TOOL,
         output_model=JudgeOutput,
         tag=session_id,
-        max_tokens=2500,
+        max_tokens=max_tokens,
     )
 
 

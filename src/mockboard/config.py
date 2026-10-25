@@ -46,7 +46,16 @@ class Settings(BaseSettings):
     # Nova's tool-use guide recommends a stop sequence when forcing a tool, so the model
     # does not keep generating after the tool call.
     nova_tool_stop_sequences: list[str] = Field(default_factory=lambda: ["</tool>"])
+    # Greedy decoding for forced tool calls (Nova "Troubleshooting tool calls" page). Sent as
+    # additionalModelRequestFields.inferenceConfig.topK. Set to None to omit it.
+    nova_tool_top_k: int | None = 1
     structured_max_tokens: int = 1200
+    # A truncated structured call (stopReason "max_tokens") is retried once with double the
+    # limit, never above this ceiling. UNVERIFIED: Nova Pro's per-request output maximum.
+    structured_max_tokens_ceiling: int = 5000
+    # The judge writes nine rationales plus evidence; a Hindi (Devanagari) report may need
+    # more tokens than an English one (UNVERIFIED for Nova's tokenizer).
+    judge_max_tokens: int = 2500
     actor_max_tokens: int = 120
 
     # --- Brain tuning (all deterministic thresholds) ---

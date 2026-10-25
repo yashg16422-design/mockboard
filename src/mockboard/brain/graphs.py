@@ -533,6 +533,7 @@ def _make_judge(max_attempts: int) -> Callable:
                 state.get("language", ReportLanguage.en),
                 session_id=state["session_id"],
                 failed=failed,
+                max_tokens=deps.settings.judge_max_tokens,
             )
             return {"draft": draft, "revisions": revisions}
         except Exception as exc:

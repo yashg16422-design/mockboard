@@ -107,7 +107,28 @@ def check_prefix_budget(prefix: str, budget_tokens: int) -> int:
     return tokens
 
 
+# Anything that looks like an XML/HTML tag: "<x>", "</X >", "< /x>", "<x a='1'>", "<x/>".
+_TAG_LIKE = re.compile(r"<\s*/?\s*[A-Za-z_][\w:.\-]*(?:\s[^<>]*)?\s*/?\s*>")
+
+
+def _defang(match: re.Match[str]) -> str:
+    return match.group(0).replace("<", "\u2039").replace(">", "\u203a")
+
+
+def escape_tags(content: str, name: str) -> str:
+    """Neutralise every tag-like token in untrusted content, whatever its case or spacing,
+    by swapping its angle brackets for look-alike quotation marks (U+2039/U+203A).
+
+    The model still reads the words, but nothing inside can close our delimiter or open a
+    fake one (CTO_NOTES_02 should-fix 5). An unterminated closing tag for our own name
+    ("</candidate_speech" with no ">") is neutralised too.
+    """
+    safe = _TAG_LIKE.sub(_defang, content)
+    return re.sub(
+        rf"<(\s*/\s*{re.escape(name)})", "\u2039\\1", safe, flags=re.IGNORECASE
+    )
+
+
 def tag(name: str, content: str) -> str:
-    """Wrap untrusted content in a named tag, neutralising any closing tag inside it."""
-    safe = content.replace(f"</{name}>", f"</ {name}>")
-    return f"<{name}>\n{safe}\n</{name}>"
+    """Wrap untrusted content in a named tag; nothing inside can close or forge a tag."""
+    return f"<{name}>\n{escape_tags(content, name)}\n</{name}>"
