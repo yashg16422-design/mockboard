@@ -1,0 +1,20 @@
+# Exact pins, tested together on Oct 25, 2026 (Python 3.11+; tested on 3.13).
+# Runtime
+langgraph==1.2.17
+langgraph-checkpoint==4.3.0
+langchain-core==1.7.0
+pydantic==2.13.5
+pydantic-settings==2.16.1
+boto3==1.43.118
+botocore==1.43.118
+websockets==17.3
+httpx==0.28.1
+PyYAML==6.0.3
+jsonschema==4.26.0
+# Dev / test
+pytest==9.1.1
+pytest-asyncio==1.4.0
+ruff==0.17.2
+# Phase 2 (NOT installed yet): pipecat-ai==1.5.0 and pipecat-gnani pinned to the version
+# tested with it. # UNVERIFIED: exact pipecat-gnani version; check PyPI before phase 2.
+# Probes extra (numpy, scipy): see requirements-probes.txt.

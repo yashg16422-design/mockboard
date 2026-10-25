@@ -1,0 +1,27 @@
+# Secrets
+.env
+*.pem
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.venv/
+venv/
+build/
+dist/
+
+# Local run outputs
+runs/
+traces/
+probes/results/audio/
+probes/results/*.jsonl
+eval/results/*.json
+!eval/results/.gitkeep
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/

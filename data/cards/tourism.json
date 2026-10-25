@@ -1,0 +1,45 @@
+{
+  "topic": "tourism",
+  "description": "SYNTHETIC TEST CARDS ONLY. Every statement is about the fictional country Exampleland and is invented for tests. Replace with real, sourced cards before any demo (see data/cards/README.md).",
+  "cards": [
+    {
+      "id": "test_tourism_gdp_share",
+      "statement": "TEST CARD: Exampleland tourism share of GDP is 12 percent in 2023.",
+      "aliases": ["TEST CARD: Exampleland tourism GDP share", "Exampleland mein tourism ka GDP share"],
+      "kind": "numeric",
+      "value": 12,
+      "unit": "percent",
+      "year": 2023,
+      "source_title": "SYNTHETIC EXAMPLE (no source)",
+      "source_url": null,
+      "as_of": null,
+      "synthetic_example": true
+    },
+    {
+      "id": "test_tourism_foreign_arrivals",
+      "statement": "TEST CARD: Exampleland received 42 lakh foreign tourist arrivals in 2022.",
+      "aliases": ["TEST CARD: Exampleland foreign tourist arrivals", "Exampleland FTA"],
+      "kind": "numeric",
+      "value": 42,
+      "unit": "lakh visitors",
+      "year": 2022,
+      "source_title": "SYNTHETIC EXAMPLE (no source)",
+      "source_url": null,
+      "as_of": null,
+      "synthetic_example": true
+    },
+    {
+      "id": "test_tourism_policy_year",
+      "statement": "TEST CARD: Exampleland adopted its National Test Tourism Policy in the year 2019.",
+      "aliases": ["TEST CARD: Exampleland tourism policy year"],
+      "kind": "date",
+      "value": 2019,
+      "unit": "year",
+      "year": 2019,
+      "source_title": "SYNTHETIC EXAMPLE (no source)",
+      "source_url": null,
+      "as_of": null,
+      "synthetic_example": true
+    }
+  ]
+}

@@ -1,0 +1,5 @@
+# Optional extra for the day-1 probes (probes/): resampling and speech-length checks only.
+# Mirrors the `probes` extra in pyproject.toml. Tested together on Oct 25, 2026 (Python 3.13).
+# Install: pip install -r requirements.txt -r requirements-probes.txt
+numpy==2.5.3
+scipy==1.18.1
