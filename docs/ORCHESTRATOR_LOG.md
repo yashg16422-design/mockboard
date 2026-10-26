@@ -81,3 +81,9 @@ Judge scores 1-5 or "insufficient_evidence" for: mental_alertness, critical_assi
 - Builder additions accepted: no retry jitter on the listener lane (LangGraph 1.2.17 adds up to 1 s); `stale_analyses` in the trace; no `pressure` when the listener failed.
 - **Ruling 14 (from builder disagreement 2):** the actor lane gets **one attempt, no botocore retry**. If the actor call fails or exceeds its budget, the board speaks a cached, persona-matched fallback line ("Ek minute… aap apni baat jaari rakhiye" style, stored per persona as data) and the turn continues. Rationale: roughly 8 s of silence is worse than a graceful filler; a board member pausing is natural, a frozen board is not. Masking filler (plan: play a cached acknowledgement if the first sentence is not ready by ~1.5 s) arrives with the voice loop; the fallback line is its text-mode equivalent now.
 - Timeouts stay UNVERIFIED until the Nova probe runs; the fast read timeout must cover a whole Converse listener call.
+
+## Round 7 — Oct 26, 2026 (Ruling 14 + docs + eval gate) — phase 1 complete
+
+- **Accepted.** Orchestrator re-ran: 342/342 tests, lint clean, `make eval-gate` exit 0; commits 403c41e..7056524. README (1,697 words), WALKTHROUGH (7,042 words; LangGraph concepts introduced in order; one analogy per component; commands state machine and folder), ADR-001..006.
+- Builder deviations accepted: a failed actor call on a fact challenge or topic change still speaks the template (the challenge must be heard; the topic really changes); unspoken moves still count toward pressure limits (conservative); fallback lines are Hinglish only for now (add per-language lines when the language toggle lands); eval-gate recall 0.8 is a placeholder until the frozen golden dev set exists.
+- Phase 1 is done. Next: owner runs the day-1 probes with real keys; CTO round 3 reviews docs accuracy and proposes the voice-loop phase.
