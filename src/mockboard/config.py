@@ -70,6 +70,14 @@ class Settings(BaseSettings):
     # takes the same fallback. Must stay below the read timeout to matter.
     # UNVERIFIED: placeholder until the Nova probe measures the actor's TTFT from EC2.
     actor_first_token_budget_s: float = Field(default=2.5, gt=0)
+    # Ruling 17 (CTO_NOTES_03 §5.2): one exception to "the actor is never retried". When on,
+    # an actor call that fails with a ThrottlingException within
+    # `actor_fast_throttle_window_ms` of its request, before any token arrived, is retried
+    # ONCE, inside what is left of the first-token budget. A throttle that comes back that
+    # fast leaves room for a second try; a slow failure does not. Off by default: the Nova
+    # probe's throttle counts and throttle timings (rule N3) decide whether to turn it on.
+    actor_fast_throttle_retry: bool = False
+    actor_fast_throttle_window_ms: int = Field(default=300, gt=0)
     # Fast lane (ruling 13): the listener. Converse returns nothing until generation ends, so
     # the read timeout must cover one whole listener call. botocore retries stay off here;
     # the fast graph's RetryPolicy retries, capped by `fast_graph_max_attempts`.

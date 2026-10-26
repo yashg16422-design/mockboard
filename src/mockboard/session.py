@@ -31,6 +31,13 @@ One candidate turn (CTO_NOTES_02 M4, orchestrator ruling 9):
    says a cached fallback line (usually the speaking persona's own, from its YAML file),
    the trace records `actor_fallback`, `actor_fallback_kind`, `actor_error` and a
    `{"stage": "actor"}` entry in `fallbacks`, and the interview simply continues.
+   Voice mode (ruling 17): when Pipecat plays a masking filler because the actor's first
+   sentence is late, it calls `mark_filler_played()` (or passes `speak(filler_played=True)`
+   if the filler was already played before `speak` is called). If the actor then fails, the
+   board says the move's template question, never the persona's fallback line straight
+   after a filler. Text mode never plays a filler, so its behaviour is unchanged. With
+   `actor_fast_throttle_retry` on (off by default), a throttle that comes back within
+   `actor_fast_throttle_window_ms` is retried once inside the first-token budget.
 
 Fact checks are never awaited by a move. Their gated verdicts are upserted into the ledger
 when they end; the strategist sees them through the ledger snapshot of the NEXT turn that
@@ -131,6 +138,8 @@ class OpenTurn:
     deadline_s: float | None = None
     move_wait_ms: float = 0.0
     analysis: Analysis | None = None
+    # Voice mode (ruling 17): a masking filler has been played this turn.
+    filler_played: bool = False
 
     @property
     def ended(self) -> bool:
@@ -561,15 +570,32 @@ class InterviewSession:
         turn.move = move
         return move
 
-    async def speak(self) -> TurnOutcome:
-        """Phrase the move chosen by `end_of_turn`, update counters, write the trace line."""
+    def mark_filler_played(self) -> None:
+        """Voice mode (ruling 17): Pipecat has played a masking filler for the current turn.
+
+        Safe to call while `speak()` is waiting for the actor (the filler starts when the
+        first sentence is late). If the actor then fails, the fallback is the move's template
+        question rather than the persona's fallback line, so two pauses never play in a row.
+        """
+        if self.turn is None:
+            raise RuntimeError("no open turn to mark a filler on")
+        self.turn.filler_played = True
+
+    async def speak(self, *, filler_played: bool = False) -> TurnOutcome:
+        """Phrase the move chosen by `end_of_turn`, update counters, write the trace line.
+
+        `filler_played=True` (voice mode, ruling 17) says a masking filler was already
+        played before this call; a filler that starts during the call is reported with
+        `mark_filler_played()` instead. Text mode leaves both alone."""
         turn = self.turn
         if turn is None or turn.move is None:
             raise RuntimeError("call end_of_turn() before speak()")
+        if filler_played:
+            turn.filler_played = True
         st, s = self.state, self.deps.settings
         move, tr, analysis = turn.move, turn.trace, turn.analysis or Analysis()
         answer = " ".join(seg.text for seg in turn.segments).strip()
-        line = await self._speak(move, answer, turn.turn_id, tr)
+        line = await self._speak(move, answer, turn, tr)
         if line.error:  # ruling 14: the actor failed or missed its budget
             turn.fallbacks.append(
                 {
@@ -604,6 +630,8 @@ class InterviewSession:
             actor_fallback=line.is_fallback,
             actor_fallback_kind=line.fallback_kind or None,
             actor_error=line.error or None,
+            actor_fast_retry=line.retried,
+            filler_played=turn.filler_played,
             librarian_skipped=not checked,
             segments=len(turn.segments),
             # Deadline and timing of the move (ruling 9): the fast graph is the only work
@@ -636,8 +664,9 @@ class InterviewSession:
             turn.turn_id, move, line, turn.results, trace, finished, turn.fallback_reason
         )
 
-    async def _speak(self, move: BoardMove, answer: str, turn_id: str, tr) -> LineResult:
+    async def _speak(self, move: BoardMove, answer: str, turn: OpenTurn, tr) -> LineResult:
         s = self.deps.settings
+        turn_id = turn.turn_id
         claim = card = None
         if move.move == Move.fact_challenge:
             claim = self._claim(move.target)
@@ -667,6 +696,10 @@ class InterviewSession:
             card=card,
             on_first_token=lambda: tr.mark("actor_first_token"),
             first_token_budget_s=s.actor_first_token_budget_s,
+            filler_played=lambda: turn.filler_played,
+            fast_throttle_retry_window_s=(
+                s.actor_fast_throttle_window_ms / 1000 if s.actor_fast_throttle_retry else None
+            ),
         )
         tr.mark("actor_done")
         return line

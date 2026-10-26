@@ -2,8 +2,8 @@
 
 - **Status:** Accepted and implemented. All timeout values are UNVERIFIED placeholders until the Nova probe runs from EC2.
 - **Date:** October 26, 2026
-- **Source:** [ORCHESTRATOR_LOG.md](../ORCHESTRATOR_LOG.md), rulings 13, 14 and 16; [CTO_NOTES_02.md](../CTO_NOTES_02.md), M5; [CTO_NOTES_03.md](../CTO_NOTES_03.md) §1.
-- **Revised:** October 26, 2026: the timeout wording (ruling 16).
+- **Source:** [ORCHESTRATOR_LOG.md](../ORCHESTRATOR_LOG.md), rulings 13, 14, 16 and 17; [CTO_NOTES_02.md](../CTO_NOTES_02.md), M5; [CTO_NOTES_03.md](../CTO_NOTES_03.md) §1 and §5.
+- **Revised:** October 26, 2026: the timeout wording (ruling 16), and the voice-mode actor fallback and optional fast-throttle retry (ruling 17).
 
 ## Context
 
@@ -15,7 +15,8 @@ A second problem: botocore's default read timeout is 60 seconds, and our backgro
 
 Every Bedrock call runs on one of three lanes, chosen from the call's name, and each lane has its own thread pool and its own boto3 client, with its own connection pool and timeouts:
 
-- **Actor lane** (the actor and the opener): short connect and read timeouts (2 and 4 seconds), and **one attempt, with no retry anywhere** (ruling 14). A first-token budget (`actor_first_token_budget_s`, 2.5 seconds) bounds the wait; if the call fails or misses the budget, the board says a cached fallback line: the speaking persona's own line from its YAML file, or the deterministic template for a fact challenge or a topic change.
+- **Actor lane** (the actor and the opener): short connect and read timeouts (2 and 4 seconds), and **one attempt, with no retry anywhere** (ruling 14; the one optional exception, off by default, is below). A first-token budget (`actor_first_token_budget_s`, 2.5 seconds) bounds the wait; if the call fails or misses the budget, the board says a cached fallback line: the speaking persona's own line from its YAML file, or the deterministic template for a fact challenge or a topic change.
+  Ruling 17 refines this in two ways. In voice mode, if a masking filler has already played this turn, the fallback is the move's template question rather than the persona line, so the candidate never hears two pauses in a row (`filler_played`, set by Pipecat through the session). And the setting `actor_fast_throttle_retry` (off by default) allows exactly one retry, only when a ThrottlingException comes back within `actor_fast_throttle_window_ms` (300 ms) of the request and before any token, inside what is left of the first-token budget. The Nova probe records how fast throttles come back, which decides whether to turn it on.
 - **Fast lane** (the listener): short timeouts (2 and 5 seconds; the read timeout must cover a whole listener call), botocore retries off, and at most two attempts in total through the fast graph's own retry policy, without LangGraph's jitter (which adds up to a second). The listener node also stops waiting after `fast_listener_timeout_s` (3 seconds) or when the turn's deadline passes, records a fallback analysis, and parks the call; if it returns, its claims are still fact-checked (ruling 13).
 - **Background lane** (the librarian and the judge): the long timeouts (5 and 30 seconds) and three attempts with backoff and jitter.
 

@@ -21,6 +21,18 @@ only after the candidate stops (ADR-002). Guards live here in code, not only in 
    falls back to one of the speaking persona's `fallback_lines` from its YAML file, which
    hands the turn back to the candidate ("Ek minute... aap apni baat jaari rakhiye").
 
+5. Voice mode (ruling 17). If a masking filler ("Hmm...") has already been played this turn,
+   a failed actor call falls back to the move's template question instead of the persona
+   line: a filler followed by "Ek minute... aap apni baat jaari rakhiye" sounds broken and
+   asks nothing. Pipecat tells us through `filler_played` (a callable read at failure time,
+   because the filler starts while the actor call is still pending). Text mode has no
+   filler, so it never sets it and nothing changes there.
+
+6. Fast-throttle retry (ruling 17, off by default). With `fast_throttle_retry_window_s` set,
+   a call that fails with a ThrottlingException within that window of its request, before
+   any token, is retried ONCE inside what is left of the first-token budget. Any other
+   failure, a slow throttle, or a second failure takes the fallback above.
+
 A move may carry `preface="acknowledge"` (the candidate conceded an error, ruling 11). The
 acknowledgement is a fixed sentence prepended here in code, not left to the model: it is
 always said, it never pushes the line over the word cap, and in voice mode it can be spoken
@@ -32,12 +44,13 @@ from __future__ import annotations
 import asyncio
 import json
 import re
+import time
 import zlib
 from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass, replace
 
 from mockboard.brain.cards import CardSet
-from mockboard.brain.llm import LLMClient, LLMError, PromptBlock
+from mockboard.brain.llm import LLMClient, LLMError, LLMThrottledError, PromptBlock
 from mockboard.brain.prompts import PromptKit, tag
 from mockboard.brain.schemas import (
     BoardMove,
@@ -164,6 +177,8 @@ class LineResult:
     # "move_template", "challenge_template", "opener_template") and why the actor failed.
     fallback_kind: str = ""
     error: str = ""
+    # Ruling 17: True when the actor's first attempt was throttled fast and retried once.
+    retried: bool = False
 
 
 class ActorBudgetExceeded(Exception):
@@ -222,12 +237,20 @@ def actor_fallback(
     claim: Claim | None = None,
     card: FactCard | None = None,
     mix: str = "hi-en",
+    filler_played: bool = False,
 ) -> LineResult:
-    """What the board says when the actor call failed or missed its budget (ruling 14)."""
+    """What the board says when the actor call failed or missed its budget (ruling 14).
+
+    `filler_played` (voice mode, ruling 17): a masking filler was already played this turn,
+    so the persona's fallback line (itself a pause) is replaced by the move's template
+    question, and the candidate never hears two pauses in a row."""
     if move.move == Move.fact_challenge and claim and card:
         text, kind = fact_challenge_template(claim, card, mix), "challenge_template"
     elif move.move == Move.move_on:
         text, kind = FILLER_TEMPLATES[Move.move_on], "move_template"
+    elif filler_played:
+        text = FILLER_TEMPLATES.get(move.move, FILLER_TEMPLATES[Move.probe])
+        kind = "move_template"
     else:
         text, kind = persona_fallback_line(persona, turn_id), "persona_line"
     return LineResult(text, is_fallback=True, guard=guard, fallback_kind=kind, error=error)
@@ -482,16 +505,22 @@ async def compose_line(
     card: FactCard | None = None,
     on_first_token: Callable[[], None] | None = None,
     first_token_budget_s: float | None = None,
+    filler_played: Callable[[], bool] | None = None,
+    fast_throttle_retry_window_s: float | None = None,
 ) -> LineResult:
     """Collect the streamed line and apply the guards. Used by the text CLI.
 
-    `first_token_budget_s` is the actor's time budget (ruling 14); None means no budget."""
+    `first_token_budget_s` is the actor's time budget (ruling 14); None means no budget.
+    `filler_played` is read if the call fails: True means a masking filler already played
+    this turn (voice mode, ruling 17). `fast_throttle_retry_window_s` enables the one
+    fast-throttle retry (ruling 17); None (the default) means no retry at all."""
     preface = preface_text(move, language_mix(persona, form))
     line = await _compose_move_line(
         llm, kit, persona, move, topic=topic, form=form, last_question=last_question,
         last_answer=last_answer, max_words=max_words - count_words(preface),
         max_tokens=max_tokens, turn_id=turn_id, claim=claim, card=card,
         on_first_token=on_first_token, first_token_budget_s=first_token_budget_s,
+        filler_played=filler_played, fast_throttle_retry_window_s=fast_throttle_retry_window_s,
     )
     return with_preface(preface, line)
 
@@ -513,6 +542,8 @@ async def _compose_move_line(
     card: FactCard | None,
     on_first_token: Callable[[], None] | None,
     first_token_budget_s: float | None,
+    filler_played: Callable[[], bool] | None = None,
+    fast_throttle_retry_window_s: float | None = None,
 ) -> LineResult:
     if move.move == Move.fact_challenge and (claim is None or card is None):
         # Defensive: the strategist never emits this, but a challenge without a card must
@@ -523,27 +554,58 @@ async def _compose_move_line(
         last_answer=last_answer, claim=claim, card=card,
     )
     mix = language_mix(persona, form)
-    # One attempt only (ruling 14): any failure is answered with a fallback line, not a retry.
-    try:
-        text = await collect_line(
-            stream_line(llm, kit, user, max_words=max_words, max_tokens=max_tokens,
-                        tag_=turn_id),
-            first_token_budget_s=first_token_budget_s,
-            on_first_token=on_first_token,
-        )
-    except ActorBudgetExceeded as exc:
-        return actor_fallback(move, persona, turn_id, error=str(exc), guard="actor_budget",
-                              claim=claim, card=card, mix=mix)
-    except LLMError as exc:
-        return actor_fallback(move, persona, turn_id, error=f"{type(exc).__name__}: {exc}"[:300],
-                              guard="actor_failed", claim=claim, card=card, mix=mix)
+
+    def fallback(error: str, guard: str) -> LineResult:
+        played = bool(filler_played()) if filler_played is not None else False
+        line = actor_fallback(move, persona, turn_id, error=error, guard=guard, claim=claim,
+                              card=card, mix=mix, filler_played=played)
+        return replace(line, retried=retried)
+
+    # One attempt (ruling 14): any failure is answered with a fallback line, not a retry. The
+    # single exception is the optional fast-throttle retry (ruling 17).
+    started = time.monotonic()
+    budget = first_token_budget_s
+    retried = False
+    while True:
+        got_token = False
+
+        def first_token() -> None:
+            nonlocal got_token
+            got_token = True
+            if on_first_token is not None:
+                on_first_token()
+
+        attempt_started = time.monotonic()
+        try:
+            text = await collect_line(
+                stream_line(llm, kit, user, max_words=max_words, max_tokens=max_tokens,
+                            tag_=turn_id),
+                first_token_budget_s=budget,
+                on_first_token=first_token,
+            )
+            break
+        except ActorBudgetExceeded as exc:
+            return fallback(str(exc), "actor_budget")
+        except LLMError as exc:
+            now = time.monotonic()
+            left = None if first_token_budget_s is None else first_token_budget_s - (now - started)
+            if (
+                fast_throttle_retry_window_s is not None
+                and not retried
+                and not got_token
+                and isinstance(exc, LLMThrottledError)
+                and now - attempt_started <= fast_throttle_retry_window_s
+                and (left is None or left > 0)
+            ):
+                retried, budget = True, left
+                continue
+            return fallback(f"{type(exc).__name__}: {exc}"[:300], "actor_failed")
     text = cap_words(text, max_words)
     if not text:
-        return actor_fallback(move, persona, turn_id, error="empty line", guard="actor_failed",
-                              claim=claim, card=card, mix=mix)
+        return fallback("empty line", "actor_failed")
     if move.move == Move.fact_challenge and claim and card:
-        return guard_fact_challenge(text, claim, card, mix)
-    return LineResult(text)
+        return replace(guard_fact_challenge(text, claim, card, mix), retried=retried)
+    return LineResult(text, retried=retried)
 
 
 def build_opener_user(form: CandidateForm, cards: CardSet) -> str:

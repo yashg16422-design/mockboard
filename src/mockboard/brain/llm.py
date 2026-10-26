@@ -82,8 +82,10 @@ class LaneConfig:
 
     `max_attempts` is botocore's `total_max_attempts` for this lane's client. It is 1 on
     every lane: the fast and background lanes are retried by a LangGraph `RetryPolicy`
-    (so attempts never multiply across layers), and the actor lane is never retried at all
-    (ruling 14: a failed actor call is answered with a cached persona fallback line).
+    (so attempts never multiply across layers), and the actor lane is not retried by
+    botocore at all (ruling 14: a failed actor call is answered with a cached fallback
+    line). The only actor retry is the optional fast-throttle retry in `actor.py`
+    (ruling 17, `actor_fast_throttle_retry`, off by default).
     """
 
     workers: int
@@ -211,6 +213,12 @@ class LLMError(Exception):
 
 class LLMTransientError(LLMError):
     """Throttling, timeouts and 5xx errors. Safe to retry (graph RetryPolicy does so)."""
+
+
+class LLMThrottledError(LLMTransientError):
+    """Bedrock's ThrottlingException (before or inside a stream). A subclass, so every
+    `LLMTransientError` handler still catches it; the actor's optional fast-throttle retry
+    (ruling 17) needs to tell a throttle apart from a timeout."""
 
 
 class LLMOutputError(LLMError):
@@ -438,6 +446,7 @@ def _short_errors(exc: ValidationError, limit: int = 4) -> str:
 # Bedrock / Nova Pro
 # ---------------------------------------------------------------------------
 
+_THROTTLE_CODES = {"ThrottlingException", "throttlingException"}
 _TRANSIENT_CODES = {
     "ThrottlingException",
     "ServiceUnavailableException",
@@ -468,6 +477,8 @@ def _map_boto_error(exc: Exception) -> LLMError:
         return LLMTransientError(f"connection closed: {exc}")
     if isinstance(exc, ClientError | EventStreamError):
         code = exc.response.get("Error", {}).get("Code", "")
+        if code in _THROTTLE_CODES:
+            return LLMThrottledError(f"{code}: {exc}")
         if code in _TRANSIENT_CODES:
             return LLMTransientError(f"{code}: {exc}")
         return LLMConfigError(f"{code}: {exc}")
@@ -754,6 +765,8 @@ class BedrockNovaClient(_BaseClient):
                             msg = item[key].get("message", key)
                             if key == "validationException":
                                 raise LLMConfigError(msg)
+                            if key == "throttlingException":
+                                raise LLMThrottledError(f"{key}: {msg}")
                             raise LLMTransientError(msg)
         except asyncio.CancelledError:
             # The caller gave up waiting (the actor's first-token budget, ruling 14).
