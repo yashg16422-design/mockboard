@@ -99,9 +99,15 @@ class Settings(BaseSettings):
     # Background graphs (fact check, report): retries on throttling/timeouts.
     graph_retry_max_attempts: int = 3
     graph_retry_initial_interval_s: float = 0.5
+    # LangGraph's jitter adds uniform(0, 1) SECONDS to each retry (langgraph 1.2.17), which
+    # spreads retries of throttled background calls; off only to make offline tests faster.
+    graph_retry_jitter: bool = True
     # Fast analysis graph (ruling 13): fewer, quicker retries. UNVERIFIED: until probe data.
     fast_graph_max_attempts: int = Field(default=2, ge=1)
     fast_graph_retry_initial_interval_s: float = Field(default=0.1, ge=0)
+    # Off: up to a whole extra second per retry is unaffordable on the hot path, and with at
+    # most one fast retry there is little herd to spread.
+    fast_graph_retry_jitter: bool = False
     # How long the fast graph waits for one listener call before abandoning it for the move
     # (ruling 13). The call itself keeps running; if it returns, its claims still go to the
     # fact checker. This keeps a hung call from blocking the session's later segments; the

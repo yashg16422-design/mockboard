@@ -262,17 +262,21 @@ def make_serde() -> JsonPlusSerializer:
     return JsonPlusSerializer(allowed_msgpack_modules=_serde_types())
 
 
-def retry_policy(max_attempts: int, initial_interval_s: float) -> RetryPolicy:
+def retry_policy(max_attempts: int, initial_interval_s: float, jitter: bool = True) -> RetryPolicy:
     """Explicit retry on our transient errors only (throttling, timeouts, 5xx).
 
     botocore errors are mapped to `LLMTransientError` in `llm.py`, so the default LangGraph
     retry behaviour toward botocore exceptions (unverified) never matters.
+
+    LangGraph's jitter is ABSOLUTE: langgraph 1.2.17 (pregel/_retry.py, read Oct 26, 2026)
+    adds `random.uniform(0, 1)` seconds to every retry interval. Fine for background work,
+    too slow for the fast graph, which therefore turns it off (`fast_graph_retry_jitter`).
     """
     return RetryPolicy(
         max_attempts=max_attempts,
         initial_interval=initial_interval_s,
         backoff_factor=2.0,
-        jitter=True,
+        jitter=jitter,
         retry_on=is_transient,
     )
 
@@ -439,12 +443,13 @@ def build_fast_graph(
     max_attempts: int = 3,
     initial_interval_s: float = 0.5,
     late: LateListens | None = None,
+    jitter: bool = True,
 ) -> StateGraph:
     g = StateGraph(FastState, context_schema=BrainDeps)
     g.add_node(
         "listener",
         _make_listener(max_attempts, late if late is not None else LateListens()),
-        retry_policy=retry_policy(max_attempts, initial_interval_s),
+        retry_policy=retry_policy(max_attempts, initial_interval_s, jitter),
     )
     g.add_node("strategist", strategist)
     g.add_edge(START, "listener")
@@ -459,13 +464,14 @@ def compile_fast_graph(
     initial_interval_s: float = 0.5,
     checkpointer: Any = None,
     late: LateListens | None = None,
+    jitter: bool = True,
 ):
     """Compile once per process. In-memory checkpointer (thread per session) with an
     explicit type allow-list. `late` receives listener calls the graph stopped waiting for
     (without it they are simply dropped)."""
     serde = make_serde()
     builder = build_fast_graph(
-        max_attempts=max_attempts, initial_interval_s=initial_interval_s, late=late
+        max_attempts=max_attempts, initial_interval_s=initial_interval_s, late=late, jitter=jitter
     )
     return builder.compile(
         checkpointer=checkpointer if checkpointer is not None else InMemorySaver(serde=serde),
@@ -545,14 +551,14 @@ async def gate(state: FactCheckState, runtime: Runtime[BrainDeps]) -> dict[str, 
 
 
 def build_factcheck_graph(
-    *, max_attempts: int = 3, initial_interval_s: float = 0.5
+    *, max_attempts: int = 3, initial_interval_s: float = 0.5, jitter: bool = True
 ) -> StateGraph:
     g = StateGraph(FactCheckState, context_schema=BrainDeps)
     # No cache_policy here on purpose: see the module docstring and ruling 10.
     g.add_node(
         "librarian",
         _make_librarian(max_attempts),
-        retry_policy=retry_policy(max_attempts, initial_interval_s),
+        retry_policy=retry_policy(max_attempts, initial_interval_s, jitter),
     )
     g.add_node("gate", gate)
     g.add_conditional_edges(START, route_claims, ["librarian", END])
@@ -561,10 +567,12 @@ def build_factcheck_graph(
     return g
 
 
-def compile_factcheck_graph(*, max_attempts: int = 3, initial_interval_s: float = 0.5):
+def compile_factcheck_graph(
+    *, max_attempts: int = 3, initial_interval_s: float = 0.5, jitter: bool = True
+):
     """Stateless: no checkpointer. Each run checks one segment's claims and returns them."""
     builder = build_factcheck_graph(
-        max_attempts=max_attempts, initial_interval_s=initial_interval_s
+        max_attempts=max_attempts, initial_interval_s=initial_interval_s, jitter=jitter
     )
     return builder.compile(name="fact_check")
 
@@ -625,6 +633,7 @@ class TurnAnalyzer:
                 max_attempts=s.fast_graph_max_attempts,
                 initial_interval_s=s.fast_graph_retry_initial_interval_s,
                 late=self.late,
+                jitter=s.fast_graph_retry_jitter,
             )
 
     def abandon(self, session_id: str, turn_id: str) -> None:
@@ -761,6 +770,7 @@ class FactChecker:
             self.graph = compile_factcheck_graph(
                 max_attempts=s.graph_retry_max_attempts,
                 initial_interval_s=s.graph_retry_initial_interval_s,
+                jitter=s.graph_retry_jitter,
             )
 
     async def check(
@@ -883,12 +893,14 @@ async def report(state: ReportState, runtime: Runtime[BrainDeps]) -> dict[str, A
     return {"report": rep}
 
 
-def build_report_graph(*, max_attempts: int = 3, initial_interval_s: float = 0.5) -> StateGraph:
+def build_report_graph(
+    *, max_attempts: int = 3, initial_interval_s: float = 0.5, jitter: bool = True
+) -> StateGraph:
     g = StateGraph(ReportState, context_schema=BrainDeps)
     g.add_node(
         "judge",
         _make_judge(max_attempts),
-        retry_policy=retry_policy(max_attempts, initial_interval_s),
+        retry_policy=retry_policy(max_attempts, initial_interval_s, jitter),
     )
     g.add_node("citation_check", citation_check)
     g.add_node("report", report)
@@ -900,12 +912,16 @@ def build_report_graph(*, max_attempts: int = 3, initial_interval_s: float = 0.5
 
 
 def compile_report_graph(
-    *, max_attempts: int = 3, initial_interval_s: float = 0.5, checkpointer: Any = None
+    *,
+    max_attempts: int = 3,
+    initial_interval_s: float = 0.5,
+    checkpointer: Any = None,
+    jitter: bool = True,
 ):
     # The CTO suggests a durable SQLite checkpointer so a crashed report can resume; that
     # needs the separate `langgraph-checkpoint-sqlite` package, which is not installed yet.
     return build_report_graph(
-        max_attempts=max_attempts, initial_interval_s=initial_interval_s
+        max_attempts=max_attempts, initial_interval_s=initial_interval_s, jitter=jitter
     ).compile(checkpointer=checkpointer, name="session_report")
 
 
@@ -923,7 +939,9 @@ async def generate_report(
     """Run the post-session graph and return the validated report."""
     s = deps.settings
     graph = graph or compile_report_graph(
-        max_attempts=s.graph_retry_max_attempts, initial_interval_s=s.graph_retry_initial_interval_s
+        max_attempts=s.graph_retry_max_attempts,
+        initial_interval_s=s.graph_retry_initial_interval_s,
+        jitter=s.graph_retry_jitter,
     )
     lang = ReportLanguage(language or s.report_language)
     cfg: dict[str, Any] = {"callbacks": list(callbacks)} if callbacks else {}

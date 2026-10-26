@@ -37,6 +37,7 @@ def settings(tmp_path) -> Settings:
         _env_file=None,
         graph_retry_initial_interval_s=0.001,
         fast_graph_retry_initial_interval_s=0.001,
+        graph_retry_jitter=False,  # LangGraph's jitter adds up to 1 s per retry
         trace_dir=tmp_path / "traces",
         report_dir=tmp_path / "reports",
     )

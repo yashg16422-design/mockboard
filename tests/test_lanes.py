@@ -48,7 +48,9 @@ def nova(stub, workers: int = 2) -> BedrockNovaClient:
 
 
 def slow_librarian(cards) -> FakeBedrockRuntime:
-    return FakeBedrockRuntime(cards, delay=lambda name: SLOW_S if name == "librarian" else 0.0)
+    return FakeBedrockRuntime(
+        cards, delay=lambda name, user: SLOW_S if name == "librarian" else 0.0
+    )
 
 
 def fact_checks(llm, deps, n: int) -> list[asyncio.Task]:

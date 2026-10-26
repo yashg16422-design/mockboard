@@ -20,7 +20,9 @@ One candidate turn (CTO_NOTES_02 M4, orchestrator ruling 9):
    turn's segments; a listener call that hangs also gives up on its own after
    `fast_listener_timeout_s`, so it cannot hold up the same turn's later segments either.
    A parked call that returns later still has its claims fact-checked (`late_listener` in
-   the trace); its move is never used.
+   the trace); its move is never used. An analysis that ends after the move was chosen is
+   written to the next trace line under `stale_analyses`, fallbacks included, so no
+   fallback goes unrecorded.
    No segments at all means silence: the strategist's rules are run directly (pure, no
    LLM), which reassures.
 3. `speak()` has the actor phrase the move (a plain streaming call, not a graph node; guards
@@ -152,6 +154,10 @@ class InterviewSession:
     # of the ones that ended since the last trace line.
     _late_listens: set[asyncio.Task] = field(init=False, default_factory=set)
     _late_done: list[dict[str, Any]] = field(init=False, default_factory=list)
+    # Fast analyses still running when their turn's move was chosen. They finish later and
+    # their moves are ignored, but their fallbacks are still written to the trace.
+    _stale: set[asyncio.Task] = field(init=False, default_factory=set)
+    _stale_done: list[dict[str, Any]] = field(init=False, default_factory=list)
 
     def __post_init__(self) -> None:
         if self.fact_checker is None:
@@ -205,15 +211,39 @@ class InterviewSession:
         )
         return self.turn
 
-    def _start_fact_check(self, analysis_task: asyncio.Task[AnalysisResult]) -> None:
+    def _turn_written(self, turn_id: str) -> bool:
+        """True once `turn_id`'s trace line is written (its llm calls must go elsewhere)."""
+        return self.turn is None or self.turn.turn_id != turn_id
+
+    def _analysis_done(self, analysis_task: asyncio.Task[AnalysisResult]) -> None:
         """Done-callback of a fast analysis: start the background fact check for its claims.
 
         The task is kept in `_fact_checks` but no move ever awaits it; its gated verdicts are
         upserted into the ledger when it ends, and the strategist sees them on a later turn.
+        An analysis that ended after its turn's move was chosen is recorded as stale.
         """
-        if analysis_task.cancelled() or analysis_task.exception() is not None:
+        stale = analysis_task in self._stale
+        self._stale.discard(analysis_task)
+        if analysis_task.cancelled():
+            return
+        if analysis_task.exception() is not None:
+            if stale:
+                exc = analysis_task.exception()
+                self._stale_done.append(
+                    {"outcome": "error", "error": f"{type(exc).__name__}: {exc}"[:300]}
+                )
             return
         result = analysis_task.result()
+        if stale:
+            entry: dict[str, Any] = {
+                "for_turn": result.turn_id,
+                "segment_id": result.segment_id,
+                "outcome": "finished after the move was chosen; move ignored",
+                "fallbacks": result.fallbacks,
+            }
+            if self._turn_written(result.turn_id):
+                entry["llm_calls"] = self.recorder.pop_calls(result.turn_id)
+            self._stale_done.append(entry)
         if result.late_analysis is not None:
             late = result.late_analysis
             self._late_listens.add(late)
@@ -245,13 +275,17 @@ class InterviewSession:
             entry["claims"] = len(analysis.claims)
             entry["fact_checked"] = needs_fact_check(analysis)
             self._fact_check(analysis, result.turn_id, result.segment_id)
-        if self.turn is None or self.turn.turn_id != result.turn_id:
+        if self._turn_written(result.turn_id):
             # The turn's line is already written; keep the late call's stats with this entry.
             entry["llm_calls"] = self.recorder.pop_calls(result.turn_id)
         self._late_done.append(entry)
 
     def _late_trace(self) -> list[dict[str, Any]]:
         done, self._late_done = self._late_done, []
+        return done
+
+    def _stale_trace(self) -> list[dict[str, Any]]:
+        done, self._stale_done = self._stale_done, []
         return done
 
     def _fact_check_done(self, task: asyncio.Task[FactCheckResult]) -> None:
@@ -292,12 +326,12 @@ class InterviewSession:
         """Wait (bounded) for fact checks and late listener calls, including fact checks that
         late calls start while we wait. Returns whatever is still running."""
         deadline = time.monotonic() + timeout_s
-        while pending := self._fact_checks | self._late_listens:
+        while pending := self._fact_checks | self._late_listens | self._stale:
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 break
             await asyncio.wait(pending, timeout=remaining)
-        return self._fact_checks | self._late_listens
+        return self._fact_checks | self._late_listens | self._stale
 
     async def settle_fact_checks(self, timeout_s: float) -> bool:
         """Wait (bounded) for background fact checks without cancelling any. Returns True
@@ -409,7 +443,7 @@ class InterviewSession:
             ctx=turn.ctx,
             ledger=turn.ledger,
         )
-        task.add_done_callback(self._start_fact_check)
+        task.add_done_callback(self._analysis_done)
         turn.segments.append(segment)
         turn.tasks.append(task)
         turn.trace.mark(f"segment_{segment_index}_submitted")
@@ -441,6 +475,7 @@ class InterviewSession:
             # Ruling 13: unfinished analyses are abandoned for the move, so they cannot hold
             # up the next turn's segments. Their listener calls still run; claims still count.
             self.analyzer.abandon(self.session_id, turn.turn_id)
+            self._stale.update(pending)
 
         results: list[AnalysisResult] = []
         for task in turn.tasks:
@@ -574,6 +609,7 @@ class InterviewSession:
             fact_checks=self._fact_check_trace(),
             fact_checks_pending=self.pending_fact_checks,
             late_listener=self._late_trace(),
+            stale_analyses=self._stale_trace(),
             fallbacks=turn.fallbacks,
             prompt_versions=s.prompt_versions(),
         )
@@ -663,6 +699,7 @@ class InterviewSession:
             fact_checks=self._fact_check_trace(),
             fact_checks_cancelled=cancelled,
             late_listener=self._late_trace(),
+            stale_analyses=self._stale_trace(),
         )
         await self.analyzer.close_session(self.session_id)
         return report

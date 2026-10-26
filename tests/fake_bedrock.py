@@ -41,6 +41,7 @@ def read_timeout() -> ReadTimeoutError:
 @dataclass
 class StubCall:
     name: str
+    user: str
     thread: str
     start: float
     end: float | None = None
@@ -53,20 +54,21 @@ Fault = BaseException | str | None
 class FakeBedrockRuntime:
     """Stands in for `boto3.client("bedrock-runtime")`.
 
-    `delay(name) -> seconds` blocks the calling (lane) thread; `fault(name) -> exception |
-    MIDSTREAM | None` decides a failure. Both default to "none". Thread-safe.
+    `delay(name, user) -> seconds` blocks the calling (lane) thread; `fault(name, user) ->
+    exception | MIDSTREAM | None` decides a failure. `user` is the request's user message.
+    Both default to "none". Thread-safe.
     """
 
     def __init__(
         self,
         cards: CardSet,
         *,
-        delay: Callable[[str], float] | None = None,
-        fault: Callable[[str], Fault] | None = None,
+        delay: Callable[[str, str], float] | None = None,
+        fault: Callable[[str, str], Fault] | None = None,
     ) -> None:
         self._responders = fake_responders(cards)
-        self._delay = delay or (lambda name: 0.0)
-        self._fault = fault or (lambda name: None)
+        self._delay = delay or (lambda name, user: 0.0)
+        self._fault = fault or (lambda name, user: None)
         self._lock = threading.Lock()
         self.calls: list[StubCall] = []
 
@@ -74,11 +76,11 @@ class FakeBedrockRuntime:
         with self._lock:
             return [c for c in self.calls if c.name == name]
 
-    def _begin(self, name: str) -> tuple[StubCall, Fault]:
+    def _begin(self, name: str, user: str) -> tuple[StubCall, Fault]:
         with self._lock:
-            fault = self._fault(name)
-            delay = self._delay(name)
-            call = StubCall(name, threading.current_thread().name, time.monotonic())
+            fault = self._fault(name, user)
+            delay = self._delay(name, user)
+            call = StubCall(name, user, threading.current_thread().name, time.monotonic())
             call.fault = None if fault is None else (
                 fault if isinstance(fault, str) else type(fault).__name__
             )
@@ -96,11 +98,11 @@ class FakeBedrockRuntime:
     def converse(self, **request: Any) -> dict[str, Any]:
         tool = request["toolConfig"]["tools"][0]["toolSpec"]["name"]
         name = TOOL_TO_CALL[tool]
-        call, fault = self._begin(name)
+        system, user = self._texts(request)
+        call, fault = self._begin(name, user)
         try:
             if isinstance(fault, BaseException):
                 raise fault
-            system, user = self._texts(request)
             payload = self._responders[name](system, user)
             return {
                 "output": {
@@ -120,7 +122,7 @@ class FakeBedrockRuntime:
     def converse_stream(self, **request: Any) -> dict[str, Any]:
         system, user = self._texts(request)
         name = "opener" if "Say the opening line now." in user else "actor"
-        call, fault = self._begin(name)
+        call, fault = self._begin(name, user)
         if isinstance(fault, BaseException):
             call.end = time.monotonic()
             raise fault
