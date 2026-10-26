@@ -15,8 +15,12 @@ One candidate turn (CTO_NOTES_02 M4, orchestrator ruling 9):
    * deadline hit, some segments done: the move computed after the latest finished one;
    * deadline hit, none done: a deterministic fallback (silence -> reassure, else probe).
    Every deadline fallback is recorded as `fallback_reason` in the turn's trace line.
-   Analyses still running after the deadline are not cancelled: their claims still get
-   fact-checked, but their moves are ignored (stale guard).
+   At the deadline the turn's unfinished analyses are abandoned (ruling 13): each waiting
+   listener node gives up at once and parks its Bedrock call, so it cannot hold up the next
+   turn's segments; a listener call that hangs also gives up on its own after
+   `fast_listener_timeout_s`, so it cannot hold up the same turn's later segments either.
+   A parked call that returns later still has its claims fact-checked (`late_listener` in
+   the trace); its move is never used.
    No segments at all means silence: the strategist's rules are run directly (pure, no
    LLM), which reassures.
 3. `speak()` has the actor phrase the move (a plain streaming call, not a graph node; guards
@@ -32,6 +36,7 @@ mid-turn waits for the next turn: the move never depends on how fast a fact chec
 from __future__ import annotations
 
 import asyncio
+import functools
 import re
 import time
 import uuid
@@ -143,6 +148,10 @@ class InterviewSession:
     # trace line was written.
     _fact_checks: set[asyncio.Task] = field(init=False, default_factory=set)
     _fact_checks_done: list[FactCheckResult] = field(init=False, default_factory=list)
+    # Listener calls abandoned for the move but still running (ruling 13), and what became
+    # of the ones that ended since the last trace line.
+    _late_listens: set[asyncio.Task] = field(init=False, default_factory=set)
+    _late_done: list[dict[str, Any]] = field(init=False, default_factory=list)
 
     def __post_init__(self) -> None:
         if self.fact_checker is None:
@@ -205,15 +214,45 @@ class InterviewSession:
         if analysis_task.cancelled() or analysis_task.exception() is not None:
             return
         result = analysis_task.result()
-        if not needs_fact_check(result.analysis):
+        if result.late_analysis is not None:
+            late = result.late_analysis
+            self._late_listens.add(late)
+            late.add_done_callback(functools.partial(self._late_listen_done, result))
+        self._fact_check(result.analysis, result.turn_id, result.segment_id)
+
+    def _fact_check(self, analysis: Analysis, turn_id: str, segment_id: str) -> None:
+        if not needs_fact_check(analysis):
             return
         task = asyncio.create_task(
-            self.fact_checker.check(
-                result.analysis.claims, turn_id=result.turn_id, segment_id=result.segment_id
-            )
+            self.fact_checker.check(analysis.claims, turn_id=turn_id, segment_id=segment_id)
         )
         self._fact_checks.add(task)
         task.add_done_callback(self._fact_check_done)
+
+    def _late_listen_done(self, result: AnalysisResult, task: asyncio.Task[Analysis]) -> None:
+        """An abandoned listener call ended: fact-check its claims if it returned any."""
+        self._late_listens.discard(task)
+        entry: dict[str, Any] = {"for_turn": result.turn_id, "segment_id": result.segment_id}
+        if task.cancelled():
+            entry["outcome"] = "cancelled"
+        elif task.exception() is not None:
+            exc = task.exception()
+            entry["outcome"] = "error"
+            entry["error"] = f"{type(exc).__name__}: {exc}"[:300]
+        else:
+            analysis = task.result()
+            entry["outcome"] = "returned"
+            entry["claims"] = len(analysis.claims)
+            entry["fact_checked"] = needs_fact_check(analysis)
+            self._fact_check(analysis, result.turn_id, result.segment_id)
+        if self.turn is None or self.turn.turn_id != result.turn_id:
+            # The turn's line is already written; keep the late call's stats with this entry.
+            entry["llm_calls"] = self.recorder.pop_calls(result.turn_id)
+        self._late_done.append(entry)
+
+    def _late_trace(self) -> list[dict[str, Any]]:
+        done, self._late_done = self._late_done, []
+        return done
 
     def _fact_check_done(self, task: asyncio.Task[FactCheckResult]) -> None:
         self._fact_checks.discard(task)
@@ -245,22 +284,31 @@ class InterviewSession:
     def pending_fact_checks(self) -> int:
         return len(self._fact_checks)
 
+    @property
+    def pending_late_listens(self) -> int:
+        return len(self._late_listens)
+
+    async def _wait_background(self, timeout_s: float) -> set[asyncio.Task]:
+        """Wait (bounded) for fact checks and late listener calls, including fact checks that
+        late calls start while we wait. Returns whatever is still running."""
+        deadline = time.monotonic() + timeout_s
+        while pending := self._fact_checks | self._late_listens:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
+            await asyncio.wait(pending, timeout=remaining)
+        return self._fact_checks | self._late_listens
+
     async def settle_fact_checks(self, timeout_s: float) -> bool:
         """Wait (bounded) for background fact checks without cancelling any. Returns True
         when none is left. Only for scripted text runs, where the "candidate" answers with zero
         thinking time; never called between end of turn and the actor."""
-        pending = set(self._fact_checks)
-        if pending:
-            await asyncio.wait(pending, timeout=timeout_s)
-        return not self._fact_checks
+        return not await self._wait_background(timeout_s)
 
     async def drain_fact_checks(self, timeout_s: float) -> int:
         """Wait (bounded) for background fact checks; cancel the rest. Returns how many were
         cancelled. Used before the report, never on the move's path."""
-        pending = set(self._fact_checks)
-        if not pending:
-            return 0
-        _, still = await asyncio.wait(pending, timeout=timeout_s)
+        still = await self._wait_background(timeout_s)
         for task in still:
             task.cancel()
         return len(still)
@@ -389,6 +437,10 @@ class InterviewSession:
             _, pending = await asyncio.wait(turn.tasks, timeout=deadline_s)
         turn.move_wait_ms = round((time.monotonic() - waited_from) * 1000, 2)
         tr.mark("analysis_done")
+        if pending:
+            # Ruling 13: unfinished analyses are abandoned for the move, so they cannot hold
+            # up the next turn's segments. Their listener calls still run; claims still count.
+            self.analyzer.abandon(self.session_id, turn.turn_id)
 
         results: list[AnalysisResult] = []
         for task in turn.tasks:
@@ -521,6 +573,7 @@ class InterviewSession:
             ],
             fact_checks=self._fact_check_trace(),
             fact_checks_pending=self.pending_fact_checks,
+            late_listener=self._late_trace(),
             fallbacks=turn.fallbacks,
             prompt_versions=s.prompt_versions(),
         )
@@ -609,6 +662,7 @@ class InterviewSession:
             report_language=report.report_language.value,
             fact_checks=self._fact_check_trace(),
             fact_checks_cancelled=cancelled,
+            late_listener=self._late_trace(),
         )
         await self.analyzer.close_session(self.session_id)
         return report

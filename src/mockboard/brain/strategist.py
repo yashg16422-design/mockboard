@@ -32,8 +32,9 @@ Honesty and anti-whiplash rules (orchestrator ruling 11, CTO_NOTES_02 M2):
   never receives pressure, a counter or a fact challenge in that turn.
 * Pressure caps: `pressure` is not allowed right after `reassure`, right after another
   `pressure` (at most `max_consecutive_pressure` in a row, default 1), once the topic has
-  used `max_pressure_per_topic` pressures (default 2), or when the candidate has just
-  conceded an error. In those cases the board probes instead.
+  used `max_pressure_per_topic` pressures (default 2), when the candidate has just
+  conceded an error, or when the turn has no real analysis (every segment's listener call
+  failed or was abandoned, so "thin" is only a guess). In those cases the board probes.
 * Concession preface: when the candidate concedes an error, whatever move is chosen carries
   `preface="acknowledge"`, so the actor first says a short acknowledgement. This is a field
   on the move, not a tenth move.
@@ -167,6 +168,8 @@ def pressure_blocker(ctx: StrategyContext, turn: Analysis, cfg: StrategyConfig) 
     """Why `pressure` is not allowed this turn, or None when it is (anti-whiplash caps)."""
     if turn.honest_unknown:
         return "honest 'I don't know' is never pressed"
+    if turn.is_fallback:
+        return "no real analysis of this answer (listener fallback): never press on a guess"
     if turn.concedes_error:
         return "candidate just conceded an error"
     if ctx.last_move == Move.reassure:

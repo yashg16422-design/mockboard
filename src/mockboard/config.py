@@ -56,6 +56,20 @@ class Settings(BaseSettings):
     # Background lane: generous timeouts; retries come only from the graph RetryPolicy.
     bedrock_connect_timeout_s: float = 5.0
     bedrock_read_timeout_s: float = 30.0
+    # Actor lane (ruling 13): short timeouts, so a hung call ends in the filler line quickly.
+    # The actor has no graph RetryPolicy, so botocore's own retry is its only retry
+    # (ENGINEERING §9: at most one retry on the hot path). For ConverseStream botocore can
+    # only retry before the stream starts, never after words were spoken.
+    # UNVERIFIED: all three until the Nova probe measures TTFT from EC2 (should-fix 6).
+    bedrock_actor_connect_timeout_s: float = Field(default=2.0, gt=0)
+    bedrock_actor_read_timeout_s: float = Field(default=4.0, gt=0)
+    bedrock_actor_max_attempts: int = Field(default=2, ge=1, le=3)
+    # Fast lane (ruling 13): the listener. Converse returns nothing until generation ends, so
+    # the read timeout must cover one whole listener call. botocore retries stay off here;
+    # the fast graph's RetryPolicy retries, capped by `fast_graph_max_attempts`.
+    # UNVERIFIED: both until the --app-prompts Nova probe times real listener calls.
+    bedrock_fast_connect_timeout_s: float = Field(default=2.0, gt=0)
+    bedrock_fast_read_timeout_s: float = Field(default=5.0, gt=0)
     # Nova's tool-use guide recommends a stop sequence when forcing a tool, so the model
     # does not keep generating after the tool call.
     nova_tool_stop_sequences: list[str] = Field(default_factory=lambda: ["</tool>"])
@@ -82,8 +96,18 @@ class Settings(BaseSettings):
     reassure_latency_s: float = 4.0
     interrupt_after_words: int = 150
     actor_max_words: int = 30
+    # Background graphs (fact check, report): retries on throttling/timeouts.
     graph_retry_max_attempts: int = 3
     graph_retry_initial_interval_s: float = 0.5
+    # Fast analysis graph (ruling 13): fewer, quicker retries. UNVERIFIED: until probe data.
+    fast_graph_max_attempts: int = Field(default=2, ge=1)
+    fast_graph_retry_initial_interval_s: float = Field(default=0.1, ge=0)
+    # How long the fast graph waits for one listener call before abandoning it for the move
+    # (ruling 13). The call itself keeps running; if it returns, its claims still go to the
+    # fact checker. This keeps a hung call from blocking the session's later segments; the
+    # end-of-turn deadline abandons a turn's unfinished analyses sooner.
+    # UNVERIFIED: must sit above a normal listener call's latency (Nova probe).
+    fast_listener_timeout_s: float = Field(default=3.0, gt=0)
     # End-of-turn deadline for the move in the voice path (ruling 9): `end_of_turn` waits at
     # most this long for the turn's fast analyses, then uses a deterministic fallback move.
     # UNVERIFIED: placeholder until the Nova and Prisma probes run from EC2 (CTO_NOTES_02

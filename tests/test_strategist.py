@@ -108,6 +108,16 @@ def test_consecutive_pressure_limit_is_configurable():
     assert m.move == Move.pressure
 
 
+def test_a_fallback_analysis_is_never_pressed_but_old_verdicts_still_count():
+    """When the listener failed or was abandoned, "thin" is only a guess: probe instead.
+    A gated contradiction from an earlier turn is real, so it can still be challenged."""
+    guess = make_analysis(**THIN, is_fallback=True)
+    m = decide_move(make_ctx(), [guess], [], CFG)
+    assert (m.move, m.rule_id) == (Move.probe, "R8") and "listener fallback" in m.reason
+    m = decide_move(make_ctx(turn_index=1), [guess], [contradicted(0)], CFG)
+    assert m.move == Move.fact_challenge
+
+
 def test_concession_is_acknowledged_and_never_pressed():
     conceded = make_analysis(**THIN, concedes_error=True)
     m = decide_move(make_ctx(last_move=Move.fact_challenge), [conceded], [], CFG)

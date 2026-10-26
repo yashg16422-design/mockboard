@@ -92,17 +92,19 @@ class LaneConfig:
 
 
 def lane_configs(settings: Any) -> dict[Lane, LaneConfig]:
-    """Per-lane pool sizes, timeouts and retries from Settings."""
+    """Per-lane pool sizes, timeouts and retries from Settings (ruling 13: the actor and fast
+    lanes get short timeouts; the background lane keeps the long ones)."""
     return {
         Lane.actor: LaneConfig(
             workers=settings.bedrock_actor_workers,
-            connect_timeout_s=settings.bedrock_connect_timeout_s,
-            read_timeout_s=settings.bedrock_read_timeout_s,
+            connect_timeout_s=settings.bedrock_actor_connect_timeout_s,
+            read_timeout_s=settings.bedrock_actor_read_timeout_s,
+            max_attempts=settings.bedrock_actor_max_attempts,  # the actor's only retry
         ),
         Lane.fast: LaneConfig(
             workers=settings.bedrock_fast_workers,
-            connect_timeout_s=settings.bedrock_connect_timeout_s,
-            read_timeout_s=settings.bedrock_read_timeout_s,
+            connect_timeout_s=settings.bedrock_fast_connect_timeout_s,
+            read_timeout_s=settings.bedrock_fast_read_timeout_s,
         ),
         Lane.background: LaneConfig(
             workers=settings.bedrock_background_workers,

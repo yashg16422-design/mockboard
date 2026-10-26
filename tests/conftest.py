@@ -36,6 +36,7 @@ def settings(tmp_path) -> Settings:
     return Settings(
         _env_file=None,
         graph_retry_initial_interval_s=0.001,
+        fast_graph_retry_initial_interval_s=0.001,
         trace_dir=tmp_path / "traces",
         report_dir=tmp_path / "reports",
     )

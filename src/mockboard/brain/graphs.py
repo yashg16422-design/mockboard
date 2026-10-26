@@ -14,6 +14,11 @@ Three graphs, all OFF the actor's critical path. The actor is NOT a node here.
                   opens, so every segment of a turn sees the same ledger and a verdict
                   that lands mid-turn first counts on the next turn.
 
+   The listener never waits forever (ruling 13): after `fast_listener_timeout_s`, or once
+   the session abandons the turn at its end-of-turn deadline, the node parks the still-running
+   call in `LateListens` and returns a fallback analysis, so a hung call cannot block the
+   session's later segments. A parked call that returns is fact-checked by the session.
+
    This is the only work allowed between end-of-turn and the actor call. One checkpointer
    thread per session (`thread_id = session_id`) accumulates the turn's analyses, so the
    strategist sees every segment of the turn so far. Runs for one session are queued in
@@ -283,30 +288,117 @@ def needs_fact_check(analysis: Analysis) -> bool:
 # ---------------------------------------------------------------------------
 
 
-def _make_listener(max_attempts: int) -> Callable:
+LateKey = tuple[str, str, str]  # (session_id, turn_id, segment_id)
+
+
+@dataclass
+class LateListens:
+    """Where the fast graph parks listener calls it stopped waiting for (ruling 13).
+
+    A listener node waits for its call at most `fast_listener_timeout_s`, or until the
+    session abandons the turn at its end-of-turn deadline. Then the node gives up: it
+    returns a fallback analysis (no claims), so the run ends, the session's next segment
+    can start, and the move never waits. The call itself is not cancelled (a boto3 call in
+    a thread cannot be). It is parked here; `TurnAnalyzer` hands it to the session with the
+    run's result, and if it returns, its claims still go to the fact checker.
+
+    Like a waiter who stops standing at the kitchen door: the order is still cooking, and
+    when it is ready someone else carries it out.
+    """
+
+    _abandoned: dict[tuple[str, str], asyncio.Event] = field(default_factory=dict)
+    _parked: dict[LateKey, asyncio.Task[Analysis]] = field(default_factory=dict)
+
+    def abandoned(self, session_id: str, turn_id: str) -> asyncio.Event:
+        return self._abandoned.setdefault((session_id, turn_id), asyncio.Event())
+
+    def abandon(self, session_id: str, turn_id: str) -> None:
+        """Stop waiting for this turn's unfinished listener calls, now and later."""
+        self.abandoned(session_id, turn_id).set()
+
+    def park(self, key: LateKey, task: asyncio.Task[Analysis]) -> None:
+        # Mark a late failure as retrieved, so nobody sees "exception was never retrieved".
+        task.add_done_callback(lambda t: t.cancelled() or t.exception())
+        self._parked[key] = task
+
+    def pop(self, key: LateKey) -> asyncio.Task[Analysis] | None:
+        return self._parked.pop(key, None)
+
+    def forget_session(self, session_id: str) -> None:
+        for key in [k for k in self._abandoned if k[0] == session_id]:
+            del self._abandoned[key]
+        for key in [k for k in self._parked if k[0] == session_id]:
+            self._parked.pop(key).cancel()
+
+
+async def _wait_for_call(call: asyncio.Task, abandoned: asyncio.Event, timeout_s: float) -> bool:
+    """True when `call` finished; False when the timeout passed or the turn was abandoned."""
+    if call.done():
+        return True
+    waiter = asyncio.ensure_future(abandoned.wait())
+    try:
+        await asyncio.wait({call, waiter}, timeout=timeout_s, return_when=asyncio.FIRST_COMPLETED)
+    finally:
+        waiter.cancel()
+    return call.done()
+
+
+def _make_listener(max_attempts: int, late: LateListens) -> Callable:
     async def listener(state: FastState, runtime: Runtime[BrainDeps]) -> dict[str, Any]:
         deps = runtime.context
         seg = state["segment"]
+        turn_id = state["turn_id"]
         start = _stamp(state, "listener_start")
         fallbacks: list[dict[str, str]] = []
-        try:
-            analysis = await analyse_segment(
+        call = asyncio.ensure_future(
+            analyse_segment(
                 deps.llm,
                 deps.kit,
                 segment=seg,
                 question=state.get("question", ""),
-                turn_id=state["turn_id"],
+                turn_id=turn_id,
                 turn_index=state.get("turn_index", 0),
             )
-        except Exception as exc:
-            if _should_reraise(exc, runtime, max_attempts):
-                raise
-            analysis = fallback_analysis(
-                turn_id=state["turn_id"],
-                segment=seg,
-                note=f"listener fallback ({type(exc).__name__})",
+        )
+        abandoned = late.abandoned(state.get("session_id", ""), turn_id)
+        timeout_s = deps.settings.fast_listener_timeout_s
+        try:
+            finished = await _wait_for_call(call, abandoned, timeout_s)
+        except asyncio.CancelledError:
+            call.cancel()
+            raise
+        if not finished:
+            # Abandoned for the move (ruling 13). The call keeps running, parked for the
+            # session: if it returns, its claims are still fact-checked.
+            why = (
+                "turn abandoned at the end-of-turn deadline"
+                if abandoned.is_set()
+                else f"no reply within fast_listener_timeout_s={timeout_s:g}"
             )
-            fallbacks.append(_fallback("listener", state["turn_id"], exc))
+            late.park((state.get("session_id", ""), turn_id, seg.segment_id), call)
+            analysis = fallback_analysis(
+                turn_id=turn_id, segment=seg, note=f"listener abandoned ({why})"
+            )
+            fallbacks.append(
+                {
+                    "stage": "listener",
+                    "turn_id": turn_id,
+                    "segment_id": seg.segment_id,
+                    "error": f"abandoned: {why}",
+                }
+            )
+        else:
+            try:
+                analysis = call.result()
+            except Exception as exc:
+                if _should_reraise(exc, runtime, max_attempts):
+                    raise
+                analysis = fallback_analysis(
+                    turn_id=turn_id,
+                    segment=seg,
+                    note=f"listener fallback ({type(exc).__name__})",
+                )
+                fallbacks.append(_fallback("listener", turn_id, exc))
         return {
             "analyses": [analysis],
             "fallbacks": fallbacks,
@@ -342,11 +434,16 @@ async def strategist(state: FastState, runtime: Runtime[BrainDeps]) -> dict[str,
     }
 
 
-def build_fast_graph(*, max_attempts: int = 3, initial_interval_s: float = 0.5) -> StateGraph:
+def build_fast_graph(
+    *,
+    max_attempts: int = 3,
+    initial_interval_s: float = 0.5,
+    late: LateListens | None = None,
+) -> StateGraph:
     g = StateGraph(FastState, context_schema=BrainDeps)
     g.add_node(
         "listener",
-        _make_listener(max_attempts),
+        _make_listener(max_attempts, late if late is not None else LateListens()),
         retry_policy=retry_policy(max_attempts, initial_interval_s),
     )
     g.add_node("strategist", strategist)
@@ -361,11 +458,15 @@ def compile_fast_graph(
     max_attempts: int = 3,
     initial_interval_s: float = 0.5,
     checkpointer: Any = None,
+    late: LateListens | None = None,
 ):
     """Compile once per process. In-memory checkpointer (thread per session) with an
-    explicit type allow-list."""
+    explicit type allow-list. `late` receives listener calls the graph stopped waiting for
+    (without it they are simply dropped)."""
     serde = make_serde()
-    builder = build_fast_graph(max_attempts=max_attempts, initial_interval_s=initial_interval_s)
+    builder = build_fast_graph(
+        max_attempts=max_attempts, initial_interval_s=initial_interval_s, late=late
+    )
     return builder.compile(
         checkpointer=checkpointer if checkpointer is not None else InMemorySaver(serde=serde),
         name="fast_analysis",
@@ -491,6 +592,9 @@ class AnalysisResult:
     queued_ms: float = 0.0  # waiting behind this session's earlier segments
     fast_graph_ms: float = 0.0  # the graph run itself (listener + strategist)
     ledger_size: int = 0  # claims in the snapshot the strategist saw
+    # The listener call this run stopped waiting for (ruling 13), still running. When it
+    # returns, the session fact-checks its claims; its move is never used.
+    late_analysis: asyncio.Task[Analysis] | None = None
 
 
 @dataclass
@@ -500,11 +604,16 @@ class TurnAnalyzer:
     `submit` chains each new run behind the session's previous one (not just behind a lock),
     so segment k+1 can never overtake segment k, even if the event loop schedules the tasks
     differently. Different sessions run concurrently.
+
+    A run never waits for a listener call forever (ruling 13): after
+    `fast_listener_timeout_s`, or once `abandon()` is called for its turn, the listener node
+    parks the call in `late` and the run ends, so the next segment can start.
     """
 
     deps: BrainDeps
     graph: Any = None
     callbacks: Sequence[Any] = ()
+    late: LateListens = field(default_factory=LateListens)
     _locks: dict[str, asyncio.Lock] = field(default_factory=dict)
     _tasks: dict[str, set[asyncio.Task]] = field(default_factory=dict)
     _tails: dict[str, asyncio.Task] = field(default_factory=dict)
@@ -513,9 +622,15 @@ class TurnAnalyzer:
         if self.graph is None:
             s = self.deps.settings
             self.graph = compile_fast_graph(
-                max_attempts=s.graph_retry_max_attempts,
-                initial_interval_s=s.graph_retry_initial_interval_s,
+                max_attempts=s.fast_graph_max_attempts,
+                initial_interval_s=s.fast_graph_retry_initial_interval_s,
+                late=self.late,
             )
+
+    def abandon(self, session_id: str, turn_id: str) -> None:
+        """The turn's move has been chosen: stop waiting for its unfinished listener calls,
+        so they cannot hold up the next turn's segments (their claims still get checked)."""
+        self.late.abandon(session_id, turn_id)
 
     def _config(self, session_id: str) -> dict[str, Any]:
         cfg: dict[str, Any] = {"configurable": {"thread_id": session_id}}
@@ -570,6 +685,7 @@ class TurnAnalyzer:
             queued_ms=_ms(submitted_at, started) if submitted_at is not None else 0.0,
             fast_graph_ms=_ms(started, ended),
             ledger_size=len(snapshot),
+            late_analysis=self.late.pop((session_id, turn_id, segment.segment_id)),
         )
 
     async def _counts(self, session_id: str) -> dict[str, int]:
@@ -600,6 +716,7 @@ class TurnAnalyzer:
         for task in list(self._tasks.pop(session_id, set())):
             task.cancel()
         self._tails.pop(session_id, None)
+        self.late.forget_session(session_id)
         checkpointer = getattr(self.graph, "checkpointer", None)
         if checkpointer is not None and hasattr(checkpointer, "adelete_thread"):
             await checkpointer.adelete_thread(session_id)
