@@ -1,20 +1,28 @@
-"""Graph wiring: skip-librarian edge, Send fan-out, per-claim error isolation, retry policy,
-shared vote cache (real votes only), session threads and stale-result stamping."""
+"""Graph wiring for the two-graph split (ruling 9): the fast analysis graph (listener ->
+strategist, session threads, ledger snapshot) and the stateless fact-check graph (skip
+when no claims, Send fan-out, per-claim error isolation, retry policy, shared vote cache
+holding real votes only), plus stale-result stamping."""
 
 from __future__ import annotations
+
+from dataclasses import dataclass, field
 
 import pytest
 
 from conftest import make_claim, make_ctx, seg
 from mockboard.brain.fake_responders import listener_responder, make_librarian_responder
 from mockboard.brain.graphs import (
+    AnalysisResult,
+    FactChecker,
     TurnAnalyzer,
-    compile_turn_graph,
-    route_after_listener,
+    compile_factcheck_graph,
+    compile_fast_graph,
+    needs_fact_check,
+    route_claims,
     upsert_claims,
 )
 from mockboard.brain.llm import FakeLLMClient, LLMTransientError
-from mockboard.brain.schemas import Move, Verdict
+from mockboard.brain.schemas import Claim, Move, Verdict
 
 CLAIMY = "Tourism is 30 percent of Testland GDP in 2023, so jobs depend on it heavily."
 TWO_CLAIMS = (
@@ -24,10 +32,40 @@ TWO_CLAIMS = (
 NO_CLAIMS = "I think tourism creates jobs but it can also damage fragile places, so balance it."
 
 
-def analyzer(deps, llm: FakeLLMClient) -> TurnAnalyzer:
+@dataclass
+class Pipeline:
+    """The session's use of both graphs, without the session: fast analysis, then (awaited
+    here, backgrounded in the session) a fact check whose verdicts go into a ledger."""
+
+    analyzer: TurnAnalyzer
+    checker: FactChecker
+    ledgers: dict[str, list[Claim]] = field(default_factory=dict)
+
+
+@dataclass
+class Run:
+    result: AnalysisResult
+    ledger: list[Claim]  # the session's ledger after this segment's fact check
+    fallbacks: list[dict[str, str]]  # fast-graph and fact-check fallbacks of this segment
+
+    @property
+    def move(self):
+        return self.result.move
+
+    @property
+    def analysis(self):
+        return self.result.analysis
+
+    @property
+    def librarian_skipped(self) -> bool:
+        return not needs_fact_check(self.result.analysis)
+
+
+def analyzer(deps, llm: FakeLLMClient) -> Pipeline:
     from dataclasses import replace
 
-    return TurnAnalyzer(replace(deps, llm=llm))
+    d = replace(deps, llm=llm)
+    return Pipeline(TurnAnalyzer(d), FactChecker(d))
 
 
 def llm_with(cards, **script) -> FakeLLMClient:
@@ -37,15 +75,23 @@ def llm_with(cards, **script) -> FakeLLMClient:
     )
 
 
-async def run(ta: TurnAnalyzer, text: str, turn_index: int = 0, session: str = "S1", **ctx):
-    return await ta.analyse(
+async def run(p: Pipeline, text: str, turn_index: int = 0, session: str = "S1", **ctx) -> Run:
+    ledger = p.ledgers.setdefault(session, [])
+    r = await p.analyzer.analyse(
         session_id=session,
         turn_id=f"t{turn_index}",
         turn_index=turn_index,
         question="q",
         segment=seg(text),
         ctx=make_ctx(turn_index=turn_index, **ctx),
+        ledger=list(ledger),
     )
+    fallbacks = list(r.fallbacks)
+    if needs_fact_check(r.analysis):
+        checked = await p.checker.check(r.analysis.claims, turn_id=r.turn_id, segment_id="s0")
+        p.ledgers[session] = upsert_claims(ledger, checked.claims)
+        fallbacks += checked.fallbacks
+    return Run(r, list(p.ledgers[session]), fallbacks)
 
 
 async def test_skip_librarian_when_no_claims(deps, cards):
@@ -84,16 +130,19 @@ async def test_skip_librarian_when_garbled(deps, cards):
 
 
 def test_route_is_a_pure_function_of_state():
+    from langgraph.graph import END
+
     claim = make_claim()
-    sends = route_after_listener(
-        {
-            "pending_claims": [claim, claim],
-            "card_set_version": "v",
-            "analyses": [],
-        }
-    )
+    sends = route_claims({"claims": [claim, claim], "card_set_version": "v"})
     assert [s.node for s in sends] == ["librarian", "librarian"]
-    assert route_after_listener({"pending_claims": []}) == "strategist"
+    assert route_claims({"claims": []}) == END
+
+
+async def test_fact_check_graph_with_no_claims_calls_nothing(deps, cards):
+    llm = llm_with(cards)
+    checked = await analyzer(deps, llm).checker.check([], turn_id="t0", segment_id="s0")
+    assert checked.claims == [] and checked.fallbacks == []
+    assert llm.calls == []
 
 
 async def test_fan_out_one_librarian_call_per_claim(deps, cards):
@@ -203,8 +252,13 @@ async def test_same_session_retries_after_its_own_fallback(deps, cards):
 
 
 def test_librarian_node_has_no_langgraph_cache_policy():
-    builder = compile_turn_graph().builder
+    builder = compile_factcheck_graph().builder
     assert builder.nodes["librarian"].cache_policy is None
+
+
+def test_fact_check_graph_is_stateless_and_fast_graph_has_threads():
+    assert compile_factcheck_graph().checkpointer is None
+    assert compile_fast_graph().checkpointer is not None
 
 
 async def test_session_state_accumulates_and_enables_delayed_challenge(deps, cards):
@@ -219,20 +273,40 @@ async def test_session_state_accumulates_and_enables_delayed_challenge(deps, car
     assert other.move.move != Move.fact_challenge
 
 
+async def test_strategist_reads_the_ledger_snapshot_not_its_own_thread(deps, cards):
+    """The fast graph never runs the librarian: a contradicted claim reaches the strategist
+    only through the ledger snapshot passed in when the run starts."""
+    p = analyzer(deps, llm_with(cards))
+    r0 = await run(p, CLAIMY, 0)
+    contradicted = r0.ledger[0]
+    assert contradicted.verdict == Verdict.contradicted
+    common = dict(session_id="S2", question="q", segment=seg(NO_CLAIMS))
+    blind = await p.analyzer.analyse(turn_id="t1", turn_index=1, ctx=make_ctx(1), **common)
+    assert blind.move.move != Move.fact_challenge  # empty snapshot: nothing to challenge
+    seen = await p.analyzer.analyse(
+        turn_id="t2", turn_index=2, ctx=make_ctx(2), ledger=lambda: [contradicted], **common
+    )
+    assert seen.move.move == Move.fact_challenge and seen.move.target == contradicted.id
+    assert seen.ledger_size == 1
+
+
 async def test_close_session_drops_thread(deps, cards):
-    ta = analyzer(deps, llm_with(cards))
-    await run(ta, CLAIMY, 0)
-    await ta.close_session("S1")
-    snap = await ta.graph.aget_state({"configurable": {"thread_id": "S1"}})
+    p = analyzer(deps, llm_with(cards))
+    await run(p, CLAIMY, 0)
+    await p.analyzer.close_session("S1")
+    snap = await p.analyzer.graph.aget_state({"configurable": {"thread_id": "S1"}})
     assert not snap.values
 
 
 async def test_results_carry_ids_and_stage_timings(deps, cards):
-    r = await run(analyzer(deps, llm_with(cards)), CLAIMY, 0)
-    assert (r.session_id, r.turn_id, r.segment_id) == ("S1", "t0", "s0")
+    r = (await run(analyzer(deps, llm_with(cards)), CLAIMY, 0)).result
+    assert (r.session_id, r.turn_id, r.segment_id, r.segment_index) == ("S1", "t0", "s0", 0)
     stages = [t["stage"] for t in r.timings]
-    assert stages == ["listener_start", "listener_end", "librarian_end", "strategist_end"]
+    assert {"listener_end", "strategist_end"} <= set(stages)
+    assert "gate_end" not in stages  # the librarian is not on the fast path (ruling 9)
+    assert stages.index("listener_end") < stages.index("strategist_end")
     assert all(t["turn_id"] == "t0" for t in r.timings)
+    assert r.fast_graph_ms >= 0
 
 
 def test_upsert_claims_replaces_by_id():
@@ -242,9 +316,11 @@ def test_upsert_claims_replaces_by_id():
 
 
 def test_actor_is_not_a_graph_node():
-    nodes = set(compile_turn_graph().get_graph().nodes)
-    assert "actor" not in nodes
-    assert {"listener", "librarian", "gate", "strategist"} <= nodes
+    fast = set(compile_fast_graph().get_graph().nodes)
+    check = set(compile_factcheck_graph().get_graph().nodes)
+    assert "actor" not in fast | check
+    assert {"listener", "strategist"} <= fast and not {"librarian", "gate"} & fast
+    assert {"librarian", "gate"} <= check
 
 
 @pytest.mark.parametrize("bad", [ValueError("x"), KeyError("y"), RuntimeError("z")])

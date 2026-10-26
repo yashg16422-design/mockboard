@@ -1,7 +1,10 @@
 """Run the text eval set through the REAL turn-analysis graph (FakeLLMClient by default).
 
 Per item:
-1. Turn 0: the scripted answer goes through listener -> librarian -> gate -> strategist.
+1. Turn 0: the scripted answer goes through the fast graph (listener -> strategist), then
+   its claims go through the fact-check graph (librarian fan-out -> gate) and the gated
+   verdicts are upserted into the item's ledger, exactly as the session does (ruling 9).
+   The eval awaits the fact check before turn 1, so results never depend on timing.
 2. Turn 1: a neutral, balanced, claim-free follow-up answer, so a delayed fact challenge
    (which never fires in the same turn) has its chance. The predicted move class is
    "challenge" if turn 1 challenges a turn-0 claim, else the class of turn 0's move.
@@ -31,10 +34,10 @@ from eval.schema import ClaimLabel, EvalItem, ItemClass, MoveClass, Split
 from mockboard.brain.cards import CardSet, builtin_test_cards, load_cards, load_cards_or_builtin
 from mockboard.brain.deps import BrainDeps, build_deps
 from mockboard.brain.fake_responders import make_fake_llm
-from mockboard.brain.graphs import TurnAnalyzer
+from mockboard.brain.graphs import FactChecker, TurnAnalyzer, needs_fact_check, upsert_claims
 from mockboard.brain.llm import BedrockNovaClient, CallStats
 from mockboard.brain.numbers import Tolerance
-from mockboard.brain.schemas import Move, Segment, StrategyContext, Verdict
+from mockboard.brain.schemas import Claim, Move, Segment, StrategyContext, Verdict
 from mockboard.config import REPO_ROOT, Settings, get_settings
 
 EXAMPLES = Path(__file__).resolve().parent / "examples" / "examples.jsonl"
@@ -75,10 +78,11 @@ def pick_cards(
     return cards, origin
 
 
-async def run_item(analyzer: TurnAnalyzer, item: EvalItem) -> ItemResult:
+async def run_item(analyzer: TurnAnalyzer, checker: FactChecker, item: EvalItem) -> ItemResult:
     sid = f"eval-{item.id}"
     moves = []
-    result = None
+    ledger_all: list[Claim] = []
+    fallbacks = 0
     for i, (text, question) in enumerate(
         [(item.answer, item.question), (NEUTRAL_FOLLOW_UP, "follow-up")]
     ):
@@ -97,18 +101,25 @@ async def run_item(analyzer: TurnAnalyzer, item: EvalItem) -> ItemResult:
             question=question,
             segment=Segment(segment_id="s0", segment_index=0, text=text),
             ctx=ctx,
+            ledger=list(ledger_all),
         )
         moves.append(result.move)
+        fallbacks += len(result.fallbacks)
+        if needs_fact_check(result.analysis):
+            checked = await checker.check(
+                result.analysis.claims, turn_id=f"t{i}", segment_id=result.segment_id
+            )
+            ledger_all = upsert_claims(ledger_all, checked.claims)
+            fallbacks += len(checked.fallbacks)
     await analyzer.close_session(sid)
-    assert result is not None
-    ledger = [c for c in result.ledger if c.turn_id == "t0"]
+    ledger = [c for c in ledger_all if c.turn_id == "t0"]
 
     challenged_t0 = moves[1].move == Move.fact_challenge and (moves[1].target or "").startswith(
         "t0."
     )
     predicted = MoveClass.challenge if challenged_t0 else MOVE_TO_CLASS[moves[0].move]
 
-    c = Counts(items=1, fallbacks=len(result.fallbacks))
+    c = Counts(items=1, fallbacks=fallbacks)
     c.move_correct = int(predicted == item.expected_move_class)
     pairs = match_claims(ledger, item.expected_claims)
     c.claims_pred, c.claims_expected, c.claims_matched = (
@@ -158,10 +169,11 @@ async def run_item(analyzer: TurnAnalyzer, item: EvalItem) -> ItemResult:
 
 async def run_eval(items: list[EvalItem], deps: BrainDeps) -> tuple[Counts, list[ItemResult]]:
     analyzer = TurnAnalyzer(deps)
+    checker = FactChecker(deps)
     total = Counts()
     results = []
     for item in items:
-        r = await run_item(analyzer, item)
+        r = await run_item(analyzer, checker, item)
         total.add(r.counts)
         results.append(r)
     return total, results

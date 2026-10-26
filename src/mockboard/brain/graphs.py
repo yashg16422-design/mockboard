@@ -1,31 +1,44 @@
-"""LangGraph graphs for the slow brain (PLAN_v2_DELTA §2, orchestrator rulings 1, 4, 6).
+r"""LangGraph graphs for the slow brain (PLAN_v2_DELTA §2, orchestrator rulings 1, 9, 10).
 
-Two graphs, both OFF the real-time critical path. The actor is NOT a node here.
+Three graphs, all OFF the actor's critical path. The actor is NOT a node here.
 
-1. Turn-analysis graph, run in the background once per transcript segment::
+1. Fast analysis graph (ruling 9), run once per transcript segment, in segment order::
 
-       START -> listener --(no claims or garbled)--------------------------> strategist -> END
-                         \\--(Send per claim)--> librarian (xN, parallel) -> gate -/
+       START -> listener -> strategist -> END
 
    * `listener`   one forced-tool Nova call -> typed `Analysis` (claims stamped with ids).
+   * `strategist` pure deterministic rules (no LLM). It reads the session's claim ledger
+                  as an input snapshot taken when the run starts, so verdicts that the
+                  fact-check graph produced for EARLIER turns can trigger a fact challenge.
+
+   This is the only work allowed between end-of-turn and the actor call. One checkpointer
+   thread per session (`thread_id = session_id`) accumulates the turn's analyses, so the
+   strategist sees every segment of the turn so far. Runs for one session are queued in
+   submission order by `TurnAnalyzer` (CTO_NOTES_01 §2: overlapping runs on one thread
+   would race on state).
+
+2. Fact-check graph (ruling 9), started in the background by the session for each segment
+   that has claims, never awaited by the move::
+
+       START --(Send per claim)--> librarian (xN, parallel) -> gate -> END
+             \--(no claims)-----------------------------------------> END
+
    * `librarian`  one call per claim, fanned out with `Send`. It returns only the model's
                   *vote*, keyed by claim content. It first looks in `deps.vote_cache`
                   (claim hash + card-set version, process-wide) and writes back only
                   real votes, never fallbacks (ruling 10).
    * `gate`       pure code: `librarian.gate_verdict` turns each vote into the final verdict.
                   "contradicted" stands only when the model AND the numeric check agree.
-   * `strategist` pure deterministic rules (no LLM). Fact challenges only for numeric/date
-                  claims with a card, from an earlier turn.
 
-   One checkpointer thread per session (`thread_id = session_id`), so the claim ledger and
-   analyses accumulate across segment runs through reducers. Runs for one session are
-   serialised by `TurnAnalyzer` (a per-session lock), because overlapping runs on the same
-   thread would race on state (CTO_NOTES_01 §2).
+   The run is stateless (no checkpointer): its gated claims go back to the session, which
+   upserts them into its ledger. The strategist sees them on the next turn. Fact challenges
+   are a turn late by design (R4 with `fact_challenge_min_delay_turns >= 1`, enforced by a
+   config validator), so the move never needs this turn's verdicts.
 
-2. Post-session report graph::
+3. Post-session report graph::
 
        START -> judge -> citation_check --(quotes missing, no revision yet)--> judge
-                                        \\--------------------------------------> report -> END
+                                        \--------------------------------------> report -> END
 
    An evaluator-optimizer loop bounded at one revision.
 
@@ -120,11 +133,13 @@ def upsert_claims(left: list[Claim] | None, right: list[Claim] | None) -> list[C
 # ---------------------------------------------------------------------------
 
 
-class TurnState(TypedDict, total=False):
-    """Typed session state for the turn-analysis graph (one thread per session).
+class FastState(TypedDict, total=False):
+    """State of the fast analysis graph (one checkpointer thread per session).
 
     Inputs for each run: `session_id`, `turn_id`, `turn_index`, `question`, `segment`, `ctx`,
-    `card_set_version`.
+    and `ledger`, the snapshot of the session's claim ledger taken when the run starts.
+    `ledger` has no reducer on purpose: every run overwrites it with the latest snapshot,
+    so the strategist always sees the verdicts the fact-check graph has produced so far.
     Fields with reducers accumulate across runs of the same session thread.
     """
 
@@ -134,19 +149,33 @@ class TurnState(TypedDict, total=False):
     question: str
     segment: Segment
     ctx: StrategyContext
-    card_set_version: str  # part of every librarian vote-cache key
-    # Written by the listener on every run (reset to [] when there are no claims).
-    pending_claims: list[Claim]
+    ledger: list[Claim]  # input snapshot, overwritten by every run
     # Accumulating, session-long.
     analyses: Annotated[list[Analysis], operator.add]
-    votes: Annotated[dict[str, LibrarianVote], merge_dict]
-    lib_failures: Annotated[list[str], operator.add]  # audit only; never read by routing
-    ledger: Annotated[list[Claim], upsert_claims]
     moves: Annotated[list[BoardMove], operator.add]
     fallbacks: Annotated[list[dict[str, str]], operator.add]
     timings: Annotated[list[dict[str, Any]], operator.add]
     # Written by the strategist on every run.
     move: BoardMove
+
+
+class FactCheckState(TypedDict, total=False):
+    """State of one fact-check run (stateless: no checkpointer, one run per segment).
+
+    Inputs: `turn_id`, `segment_id`, `claims`, `card_set_version`, `trace_tag`.
+    Output: `gated`, the claims with their final verdicts.
+    """
+
+    turn_id: str
+    segment_id: str
+    claims: list[Claim]
+    card_set_version: str  # part of every librarian vote-cache key
+    trace_tag: str  # groups the librarian calls in the per-turn trace
+    votes: Annotated[dict[str, LibrarianVote], merge_dict]
+    lib_failures: Annotated[list[str], operator.add]  # audit only; never read by routing
+    fallbacks: Annotated[list[dict[str, str]], operator.add]
+    timings: Annotated[list[dict[str, Any]], operator.add]
+    gated: list[Claim]
 
 
 class LibrarianTask(TypedDict):
@@ -156,6 +185,7 @@ class LibrarianTask(TypedDict):
     claim_key: str
     turn_id: str
     segment_id: str
+    trace_tag: str
 
 
 class ReportState(TypedDict, total=False):
@@ -201,6 +231,10 @@ def _fallback(stage: str, turn_id: str, exc: BaseException) -> dict[str, str]:
     return {"stage": stage, "turn_id": turn_id, "error": f"{type(exc).__name__}: {exc}"[:300]}
 
 
+def _ms(start: float, end: float) -> float:
+    return round((end - start) * 1000, 2)
+
+
 def _serde_types() -> list[type]:
     """Every project model/enum that may sit in graph state: an explicit msgpack allow-list,
     so checkpoints never deserialise arbitrary types (and no warnings in tests)."""
@@ -235,13 +269,19 @@ def retry_policy(max_attempts: int, initial_interval_s: float) -> RetryPolicy:
     )
 
 
+def needs_fact_check(analysis: Analysis) -> bool:
+    """A segment goes to the fact-check graph only when it has claims and is not garbled
+    (a garbled transcript gets `clarify`; its "claims" are not worth a librarian call)."""
+    return bool(analysis.claims) and not analysis.garbled
+
+
 # ---------------------------------------------------------------------------
-# Turn-analysis graph: nodes
+# Fast analysis graph: nodes
 # ---------------------------------------------------------------------------
 
 
 def _make_listener(max_attempts: int) -> Callable:
-    async def listener(state: TurnState, runtime: Runtime[BrainDeps]) -> dict[str, Any]:
+    async def listener(state: FastState, runtime: Runtime[BrainDeps]) -> dict[str, Any]:
         deps = runtime.context
         seg = state["segment"]
         start = _stamp(state, "listener_start")
@@ -266,7 +306,6 @@ def _make_listener(max_attempts: int) -> Callable:
             fallbacks.append(_fallback("listener", state["turn_id"], exc))
         return {
             "analyses": [analysis],
-            "pending_claims": list(analysis.claims),
             "fallbacks": fallbacks,
             "timings": [start, _stamp(state, "listener_end")],
         }
@@ -274,76 +313,8 @@ def _make_listener(max_attempts: int) -> Callable:
     return listener
 
 
-def route_after_listener(state: TurnState) -> list[Send] | str:
-    """Pure function of state. Skip the librarian when there is nothing to check."""
-    claims = state.get("pending_claims") or []
-    latest = (state.get("analyses") or [None])[-1]
-    if not claims or (latest is not None and latest.garbled):
-        return "strategist"
-    card_version = state.get("card_set_version", "")
-    sends = []
-    for claim in claims:
-        key = claim_cache_key(claim, card_version)
-        sends.append(
-            Send(
-                "librarian",
-                LibrarianTask(
-                    claim=claim,
-                    claim_key=key,
-                    turn_id=state.get("turn_id", ""),
-                    segment_id=claim.segment_id,
-                ),
-            )
-        )
-    return sends
-
-
-def _make_librarian(max_attempts: int) -> Callable:
-    async def librarian(task: LibrarianTask, runtime: Runtime[BrainDeps]) -> dict[str, Any]:
-        deps = runtime.context
-        key = task["claim_key"]
-        cached = deps.vote_cache.get(key)
-        if cached is not None:  # only real votes are ever in the cache
-            return {"votes": {key: cached}}
-        try:
-            vote = await ask_librarian(
-                deps.llm, deps.kit, task["claim"], claim_key=key, trace_tag=task["turn_id"]
-            )
-            deps.vote_cache.put(vote)  # refuses fallbacks by construction
-            return {"votes": {key: vote}}
-        except Exception as exc:  # per-claim isolation: never fail the superstep
-            if _should_reraise(exc, runtime, max_attempts):
-                raise
-            return {
-                "votes": {key: fallback_vote(key, f"{type(exc).__name__}")},
-                "lib_failures": [key],
-                "fallbacks": [_fallback("librarian", task["turn_id"], exc)],
-            }
-
-    return librarian
-
-
-async def gate(state: TurnState, runtime: Runtime[BrainDeps]) -> dict[str, Any]:
-    """Deterministic verdicts for this segment's claims (ruling 1)."""
-    deps = runtime.context
-    votes = state.get("votes") or {}
-    gated: list[Claim] = []
-    fallbacks: list[dict[str, str]] = []
-    for claim in state.get("pending_claims") or []:
-        try:
-            vote = votes.get(claim_cache_key(claim, state.get("card_set_version", "")))
-            gated.append(gate_verdict(claim, vote, deps.cards, deps.tolerance))
-        except Exception as exc:
-            gated.append(
-                claim.model_copy(
-                    update={"verdict": Verdict.unverifiable, "verdict_note": "gate error"}
-                )
-            )
-            fallbacks.append(_fallback("gate", state.get("turn_id", ""), exc))
-    return {"ledger": gated, "fallbacks": fallbacks, "timings": [_stamp(state, "librarian_end")]}
-
-
-async def strategist(state: TurnState, runtime: Runtime[BrainDeps]) -> dict[str, Any]:
+async def strategist(state: FastState, runtime: Runtime[BrainDeps]) -> dict[str, Any]:
+    """Pure rules over this turn's segments so far and the ledger snapshot."""
     deps = runtime.context
     ctx = state["ctx"]
     analyses = [a for a in state.get("analyses") or [] if a.turn_id == ctx.turn_id]
@@ -368,47 +339,137 @@ async def strategist(state: TurnState, runtime: Runtime[BrainDeps]) -> dict[str,
     }
 
 
-# ---------------------------------------------------------------------------
-# Turn-analysis graph: builder
-# ---------------------------------------------------------------------------
-
-
-def build_turn_graph(*, max_attempts: int = 3, initial_interval_s: float = 0.5) -> StateGraph:
-    policy = retry_policy(max_attempts, initial_interval_s)
-    g = StateGraph(TurnState, context_schema=BrainDeps)
-    g.add_node("listener", _make_listener(max_attempts), retry_policy=policy)
-    # No cache_policy here on purpose: see the module docstring and ruling 10.
-    g.add_node("librarian", _make_librarian(max_attempts), retry_policy=policy)
-    g.add_node("gate", gate)
+def build_fast_graph(*, max_attempts: int = 3, initial_interval_s: float = 0.5) -> StateGraph:
+    g = StateGraph(FastState, context_schema=BrainDeps)
+    g.add_node(
+        "listener",
+        _make_listener(max_attempts),
+        retry_policy=retry_policy(max_attempts, initial_interval_s),
+    )
     g.add_node("strategist", strategist)
     g.add_edge(START, "listener")
-    g.add_conditional_edges("listener", route_after_listener, ["librarian", "strategist"])
-    g.add_edge("librarian", "gate")
-    g.add_edge("gate", "strategist")
+    g.add_edge("listener", "strategist")
     g.add_edge("strategist", END)
     return g
 
 
-def compile_turn_graph(
+def compile_fast_graph(
     *,
     max_attempts: int = 3,
     initial_interval_s: float = 0.5,
     checkpointer: Any = None,
 ):
     """Compile once per process. In-memory checkpointer (thread per session) with an
-    explicit type allow-list. Librarian votes are cached in `BrainDeps.vote_cache`, not in
-    a LangGraph node cache (ruling 10)."""
+    explicit type allow-list."""
     serde = make_serde()
-    builder = build_turn_graph(max_attempts=max_attempts, initial_interval_s=initial_interval_s)
+    builder = build_fast_graph(max_attempts=max_attempts, initial_interval_s=initial_interval_s)
     return builder.compile(
         checkpointer=checkpointer if checkpointer is not None else InMemorySaver(serde=serde),
-        name="turn_analysis",
+        name="fast_analysis",
     )
 
 
 # ---------------------------------------------------------------------------
-# Running the turn graph: per-session serialisation
+# Fact-check graph: nodes
 # ---------------------------------------------------------------------------
+
+
+def route_claims(state: FactCheckState) -> list[Send] | str:
+    """Pure function of state: one `Send` per claim, or straight to END with no claims."""
+    claims = state.get("claims") or []
+    if not claims:
+        return END
+    card_version = state.get("card_set_version", "")
+    return [
+        Send(
+            "librarian",
+            LibrarianTask(
+                claim=claim,
+                claim_key=claim_cache_key(claim, card_version),
+                turn_id=state.get("turn_id", ""),
+                segment_id=claim.segment_id,
+                trace_tag=state.get("trace_tag") or state.get("turn_id", ""),
+            ),
+        )
+        for claim in claims
+    ]
+
+
+def _make_librarian(max_attempts: int) -> Callable:
+    async def librarian(task: LibrarianTask, runtime: Runtime[BrainDeps]) -> dict[str, Any]:
+        deps = runtime.context
+        key = task["claim_key"]
+        cached = deps.vote_cache.get(key)
+        if cached is not None:  # only real votes are ever in the cache
+            return {"votes": {key: cached}}
+        try:
+            vote = await ask_librarian(
+                deps.llm, deps.kit, task["claim"], claim_key=key, trace_tag=task["trace_tag"]
+            )
+            deps.vote_cache.put(vote)  # refuses fallbacks by construction
+            return {"votes": {key: vote}}
+        except Exception as exc:  # per-claim isolation: never fail the superstep
+            if _should_reraise(exc, runtime, max_attempts):
+                raise
+            return {
+                "votes": {key: fallback_vote(key, f"{type(exc).__name__}")},
+                "lib_failures": [key],
+                "fallbacks": [_fallback("librarian", task["turn_id"], exc)],
+            }
+
+    return librarian
+
+
+async def gate(state: FactCheckState, runtime: Runtime[BrainDeps]) -> dict[str, Any]:
+    """Deterministic verdicts for this segment's claims (ruling 1)."""
+    deps = runtime.context
+    votes = state.get("votes") or {}
+    gated: list[Claim] = []
+    fallbacks: list[dict[str, str]] = []
+    for claim in state.get("claims") or []:
+        try:
+            vote = votes.get(claim_cache_key(claim, state.get("card_set_version", "")))
+            gated.append(gate_verdict(claim, vote, deps.cards, deps.tolerance))
+        except Exception as exc:
+            gated.append(
+                claim.model_copy(
+                    update={"verdict": Verdict.unverifiable, "verdict_note": "gate error"}
+                )
+            )
+            fallbacks.append(_fallback("gate", state.get("turn_id", ""), exc))
+    return {"gated": gated, "fallbacks": fallbacks, "timings": [_stamp(state, "gate_end")]}
+
+
+def build_factcheck_graph(
+    *, max_attempts: int = 3, initial_interval_s: float = 0.5
+) -> StateGraph:
+    g = StateGraph(FactCheckState, context_schema=BrainDeps)
+    # No cache_policy here on purpose: see the module docstring and ruling 10.
+    g.add_node(
+        "librarian",
+        _make_librarian(max_attempts),
+        retry_policy=retry_policy(max_attempts, initial_interval_s),
+    )
+    g.add_node("gate", gate)
+    g.add_conditional_edges(START, route_claims, ["librarian", END])
+    g.add_edge("librarian", "gate")
+    g.add_edge("gate", END)
+    return g
+
+
+def compile_factcheck_graph(*, max_attempts: int = 3, initial_interval_s: float = 0.5):
+    """Stateless: no checkpointer. Each run checks one segment's claims and returns them."""
+    builder = build_factcheck_graph(
+        max_attempts=max_attempts, initial_interval_s=initial_interval_s
+    )
+    return builder.compile(name="fact_check")
+
+
+# ---------------------------------------------------------------------------
+# Running the fast graph: per-session queue in submission order
+# ---------------------------------------------------------------------------
+
+LedgerSource = Sequence[Claim] | Callable[[], Sequence[Claim]]
 
 
 @dataclass
@@ -419,28 +480,36 @@ class AnalysisResult:
     session_id: str
     turn_id: str
     segment_id: str
+    segment_index: int
     analysis: Analysis
     move: BoardMove
-    ledger: list[Claim]
     fallbacks: list[dict[str, str]]
     timings: list[dict[str, Any]]
-    librarian_skipped: bool
+    queued_ms: float = 0.0  # waiting behind this session's earlier segments
+    fast_graph_ms: float = 0.0  # the graph run itself (listener + strategist)
+    ledger_size: int = 0  # claims in the snapshot the strategist saw
 
 
 @dataclass
 class TurnAnalyzer:
-    """Runs the turn graph in the background, one run at a time per session."""
+    """Runs the fast analysis graph, one run at a time per session, in submission order.
+
+    `submit` chains each new run behind the session's previous one (not just behind a lock),
+    so segment k+1 can never overtake segment k, even if the event loop schedules the tasks
+    differently. Different sessions run concurrently.
+    """
 
     deps: BrainDeps
     graph: Any = None
     callbacks: Sequence[Any] = ()
     _locks: dict[str, asyncio.Lock] = field(default_factory=dict)
     _tasks: dict[str, set[asyncio.Task]] = field(default_factory=dict)
+    _tails: dict[str, asyncio.Task] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if self.graph is None:
             s = self.deps.settings
-            self.graph = compile_turn_graph(
+            self.graph = compile_fast_graph(
                 max_attempts=s.graph_retry_max_attempts,
                 initial_interval_s=s.graph_retry_initial_interval_s,
             )
@@ -460,9 +529,15 @@ class TurnAnalyzer:
         question: str,
         segment: Segment,
         ctx: StrategyContext,
+        ledger: LedgerSource = (),
+        submitted_at: float | None = None,
     ) -> AnalysisResult:
+        """Run the fast graph for one segment. `ledger` may be a callable: it is then read
+        when the run actually starts (after any queueing), so the snapshot is fresh."""
         lock = self._locks.setdefault(session_id, asyncio.Lock())
         async with lock:
+            started = time.monotonic()
+            snapshot = list(ledger() if callable(ledger) else ledger)
             # Each run only adds the timing/fallback entries of this run; remember where
             # this run's entries start so the result reports only them.
             before = await self._counts(session_id)
@@ -474,22 +549,24 @@ class TurnAnalyzer:
                     "question": question,
                     "segment": segment,
                     "ctx": ctx,
-                    "card_set_version": self.deps.cards.version,
+                    "ledger": snapshot,
                 },
                 self._config(session_id),
                 context=self.deps,
             )
-        timings = state.get("timings", [])[before["timings"] :]
+            ended = time.monotonic()
         return AnalysisResult(
             session_id=session_id,
             turn_id=turn_id,
             segment_id=segment.segment_id,
+            segment_index=segment.segment_index,
             analysis=state["analyses"][-1],
             move=state["move"],
-            ledger=list(state.get("ledger", [])),
             fallbacks=state.get("fallbacks", [])[before["fallbacks"] :],
-            timings=timings,
-            librarian_skipped=not any(t["stage"] == "librarian_end" for t in timings),
+            timings=state.get("timings", [])[before["timings"] :],
+            queued_ms=_ms(submitted_at, started) if submitted_at is not None else 0.0,
+            fast_graph_ms=_ms(started, ended),
+            ledger_size=len(snapshot),
         )
 
     async def _counts(self, session_id: str) -> dict[str, int]:
@@ -498,20 +575,114 @@ class TurnAnalyzer:
         return {k: len(values.get(k, []) or []) for k in ("timings", "fallbacks")}
 
     def submit(self, **kwargs: Any) -> asyncio.Task[AnalysisResult]:
-        """Start an analysis as a background task (the session keeps going)."""
-        task = asyncio.create_task(self.analyse(**kwargs))
-        self._tasks.setdefault(kwargs["session_id"], set()).add(task)
-        task.add_done_callback(lambda t: self._tasks.get(kwargs["session_id"], set()).discard(t))
+        """Queue an analysis behind the session's previous one and return its task."""
+        sid = kwargs["session_id"]
+        prev = self._tails.get(sid)
+        task = asyncio.create_task(self._after(prev, time.monotonic(), kwargs))
+        self._tails[sid] = task
+        tasks = self._tasks.setdefault(sid, set())
+        tasks.add(task)
+        task.add_done_callback(tasks.discard)
         return task
+
+    async def _after(
+        self, prev: asyncio.Task | None, submitted_at: float, kwargs: dict[str, Any]
+    ) -> AnalysisResult:
+        if prev is not None and not prev.done():
+            await asyncio.wait([prev])  # never raises; the previous run's errors are its own
+        return await self.analyse(submitted_at=submitted_at, **kwargs)
 
     async def close_session(self, session_id: str) -> None:
         """Cancel outstanding work and drop the session's checkpoint thread."""
         for task in list(self._tasks.pop(session_id, set())):
             task.cancel()
+        self._tails.pop(session_id, None)
         checkpointer = getattr(self.graph, "checkpointer", None)
         if checkpointer is not None and hasattr(checkpointer, "adelete_thread"):
             await checkpointer.adelete_thread(session_id)
         self._locks.pop(session_id, None)
+
+
+# ---------------------------------------------------------------------------
+# Running the fact-check graph
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class FactCheckResult:
+    """Gated claims for one segment, for the session to upsert into its ledger."""
+
+    turn_id: str
+    segment_id: str
+    claims: list[Claim]
+    fallbacks: list[dict[str, str]]
+    timings: list[dict[str, Any]]
+    fact_check_ms: float
+    trace_tag: str
+
+
+def fact_check_tag(turn_id: str, segment_id: str) -> str:
+    """Trace tag for one fact-check run's librarian calls. Separate from the turn's own tag,
+    because the run usually ends after the turn's trace line has been written."""
+    return f"fc:{turn_id}.{segment_id}"
+
+
+@dataclass
+class FactChecker:
+    """Runs the stateless fact-check graph. Safe to call concurrently for any sessions."""
+
+    deps: BrainDeps
+    graph: Any = None
+    callbacks: Sequence[Any] = ()
+
+    def __post_init__(self) -> None:
+        if self.graph is None:
+            s = self.deps.settings
+            self.graph = compile_factcheck_graph(
+                max_attempts=s.graph_retry_max_attempts,
+                initial_interval_s=s.graph_retry_initial_interval_s,
+            )
+
+    async def check(
+        self, claims: Sequence[Claim], *, turn_id: str, segment_id: str
+    ) -> FactCheckResult:
+        """Never raises (except cancellation): a failure of the whole run makes every claim
+        unverifiable, which can never be challenged."""
+        tag = fact_check_tag(turn_id, segment_id)
+        start = time.monotonic()
+        cfg: dict[str, Any] = {"callbacks": list(self.callbacks)} if self.callbacks else {}
+        try:
+            out = await self.graph.ainvoke(
+                {
+                    "turn_id": turn_id,
+                    "segment_id": segment_id,
+                    "claims": list(claims),
+                    "card_set_version": self.deps.cards.version,
+                    "trace_tag": tag,
+                },
+                cfg,
+                context=self.deps,
+            )
+            gated = list(out.get("gated") or [])
+            fallbacks = list(out.get("fallbacks") or [])
+            timings = list(out.get("timings") or [])
+        except Exception as exc:
+            gated = [
+                c.model_copy(
+                    update={"verdict": Verdict.unverifiable, "verdict_note": "fact-check error"}
+                )
+                for c in claims
+            ]
+            fallbacks, timings = [_fallback("fact_check", turn_id, exc)], []
+        return FactCheckResult(
+            turn_id=turn_id,
+            segment_id=segment_id,
+            claims=gated,
+            fallbacks=fallbacks,
+            timings=timings,
+            fact_check_ms=_ms(start, time.monotonic()),
+            trace_tag=tag,
+        )
 
 
 # ---------------------------------------------------------------------------

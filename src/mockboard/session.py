@@ -27,7 +27,14 @@ from typing import Any
 
 from mockboard.brain.actor import LineResult, compose_line, generate_opener
 from mockboard.brain.deps import BACKGROUND_TOPIC, BrainDeps
-from mockboard.brain.graphs import AnalysisResult, TurnAnalyzer, generate_report
+from mockboard.brain.graphs import (
+    AnalysisResult,
+    FactChecker,
+    TurnAnalyzer,
+    generate_report,
+    needs_fact_check,
+    upsert_claims,
+)
 from mockboard.brain.schemas import (
     Analysis,
     BoardLine,
@@ -83,10 +90,13 @@ class InterviewSession:
     session_id: str = field(default_factory=lambda: f"sess-{uuid.uuid4().hex[:10]}")
     max_turns: int = 9
     callbacks: Sequence[Any] = ()
+    fact_checker: FactChecker | None = None
     state: SessionState = field(init=False)
     last_question: str = ""
 
     def __post_init__(self) -> None:
+        if self.fact_checker is None:
+            self.fact_checker = FactChecker(self.deps, callbacks=self.callbacks)
         self.state = SessionState(
             session_id=self.session_id,
             form=self.form,
@@ -176,6 +186,7 @@ class InterviewSession:
                     question=self.last_question,
                     segment=segment,
                     ctx=ctx,
+                    ledger=lambda: self.state.claim_ledger,
                 )
             )
             tr.mark(f"segment_{segment.segment_index}_submitted")
@@ -208,9 +219,16 @@ class InterviewSession:
 
         # The strategist's latest move for THIS turn (stale results are ignored).
         fresh = [r for r in results if r.move.for_turn == turn_id]
+        for r in fresh:
+            if needs_fact_check(r.analysis):
+                checked = await self.fact_checker.check(
+                    r.analysis.claims, turn_id=turn_id, segment_id=r.segment_id
+                )
+                fallbacks.extend(checked.fallbacks)
+                st.claim_ledger = upsert_claims(st.claim_ledger, checked.claims)
+                self.recorder.merge_calls(checked.trace_tag, turn_id)
         if fresh:
             move = fresh[-1].move
-            st.claim_ledger = list(fresh[-1].ledger)
         else:
             move = BoardMove(
                 move=Move.probe,
@@ -273,7 +291,7 @@ class InterviewSession:
             board_line=line.text,
             actor_guard=line.guard,
             actor_fallback=line.is_fallback,
-            librarian_skipped=all(r.librarian_skipped for r in fresh) if fresh else True,
+            librarian_skipped=not any(needs_fact_check(r.analysis) for r in fresh),
             segments=len(segments),
             claims=[
                 {

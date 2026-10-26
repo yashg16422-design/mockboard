@@ -63,6 +63,14 @@ class TraceRecorder:
     def calls_for(self, tag: str) -> list[dict[str, Any]]:
         return list(self._calls.get(tag, []))
 
+    def pop_calls(self, tag: str) -> list[dict[str, Any]]:
+        """Take (and forget) the calls recorded under `tag`, e.g. one fact-check run."""
+        return self._calls.pop(tag, [])
+
+    def merge_calls(self, from_tag: str, into_tag: str) -> None:
+        """Move the calls recorded under `from_tag` so they are written with `into_tag`."""
+        self._calls[into_tag].extend(self._calls.pop(from_tag, []))
+
     def write_turn(self, turn: TurnTrace) -> dict[str, Any]:
         calls = self._calls.pop(turn.turn_id, [])
         totals = {
