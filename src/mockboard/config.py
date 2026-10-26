@@ -56,14 +56,20 @@ class Settings(BaseSettings):
     # Background lane: generous timeouts; retries come only from the graph RetryPolicy.
     bedrock_connect_timeout_s: float = 5.0
     bedrock_read_timeout_s: float = 30.0
-    # Actor lane (ruling 13): short timeouts, so a hung call ends in the filler line quickly.
-    # The actor has no graph RetryPolicy, so botocore's own retry is its only retry
-    # (ENGINEERING §9: at most one retry on the hot path). For ConverseStream botocore can
-    # only retry before the stream starts, never after words were spoken.
-    # UNVERIFIED: all three until the Nova probe measures TTFT from EC2 (should-fix 6).
+    # Actor lane (ruling 13): short timeouts, so a hung call ends in the fallback line quickly.
+    # Ruling 14: the actor gets ONE attempt and no retry anywhere (botocore's is off, and it
+    # has no graph RetryPolicy). A failed or late actor call is answered with the speaking
+    # persona's cached fallback line instead, because a short natural pause beats seconds of
+    # silence while a retry runs.
+    # UNVERIFIED: both timeouts until the Nova probe measures TTFT from EC2 (should-fix 6).
     bedrock_actor_connect_timeout_s: float = Field(default=2.0, gt=0)
     bedrock_actor_read_timeout_s: float = Field(default=4.0, gt=0)
-    bedrock_actor_max_attempts: int = Field(default=2, ge=1, le=3)
+    # Ruling 14: the actor's time budget, measured from the request to its first token. If
+    # no token has arrived by then, the call is abandoned and the persona's fallback line is
+    # spoken. A stream that stalls after its first token ends by the read timeout above and
+    # takes the same fallback. Must stay below the read timeout to matter.
+    # UNVERIFIED: placeholder until the Nova probe measures the actor's TTFT from EC2.
+    actor_first_token_budget_s: float = Field(default=2.5, gt=0)
     # Fast lane (ruling 13): the listener. Converse returns nothing until generation ends, so
     # the read timeout must cover one whole listener call. botocore retries stay off here;
     # the fast graph's RetryPolicy retries, capped by `fast_graph_max_attempts`.

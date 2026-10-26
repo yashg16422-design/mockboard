@@ -26,7 +26,11 @@ One candidate turn (CTO_NOTES_02 M4, orchestrator ruling 9):
    No segments at all means silence: the strategist's rules are run directly (pure, no
    LLM), which reassures.
 3. `speak()` has the actor phrase the move (a plain streaming call, not a graph node; guards
-   in code), updates the counters deterministically and writes one trace line.
+   in code), updates the counters deterministically and writes one trace line. The actor
+   gets one attempt within `actor_first_token_budget_s` (ruling 14); if it fails, the board
+   says a cached fallback line (usually the speaking persona's own, from its YAML file),
+   the trace records `actor_fallback`, `actor_fallback_kind`, `actor_error` and a
+   `{"stage": "actor"}` entry in `fallbacks`, and the interview simply continues.
 
 Fact checks are never awaited by a move. Their gated verdicts are upserted into the ledger
 when they end; the strategist sees them through the ledger snapshot of the NEXT turn that
@@ -379,6 +383,7 @@ class InterviewSession:
             max_words=max(s.actor_max_words, 40),
             max_tokens=s.actor_max_tokens,
             turn_id="opener",
+            first_token_budget_s=s.actor_first_token_budget_s,
         )
         self.last_question = line.text
         self.state.board_lines.append(
@@ -395,6 +400,7 @@ class InterviewSession:
             tag="opener",
             opener_guard=line.guard,
             opener_fallback=line.is_fallback,
+            opener_error=line.error or None,
             card_set_version=self.deps.cards.version,
             cards_all_synthetic=self.deps.cards.all_synthetic,
             feature_flags=s.feature_flags(),
@@ -564,6 +570,15 @@ class InterviewSession:
         move, tr, analysis = turn.move, turn.trace, turn.analysis or Analysis()
         answer = " ".join(seg.text for seg in turn.segments).strip()
         line = await self._speak(move, answer, turn.turn_id, tr)
+        if line.error:  # ruling 14: the actor failed or missed its budget
+            turn.fallbacks.append(
+                {
+                    "stage": "actor",
+                    "turn_id": turn.turn_id,
+                    "error": line.error,
+                    "spoke": line.fallback_kind,
+                }
+            )
         finished = self._apply(move, analysis)
         self.last_question = line.text
         st.board_lines.append(
@@ -587,6 +602,8 @@ class InterviewSession:
             board_line=line.text,
             actor_guard=line.guard,
             actor_fallback=line.is_fallback,
+            actor_fallback_kind=line.fallback_kind or None,
+            actor_error=line.error or None,
             librarian_skipped=not checked,
             segments=len(turn.segments),
             # Deadline and timing of the move (ruling 9): the fast graph is the only work
@@ -649,6 +666,7 @@ class InterviewSession:
             claim=claim,
             card=card,
             on_first_token=lambda: tr.mark("actor_first_token"),
+            first_token_budget_s=s.actor_first_token_budget_s,
         )
         tr.mark("actor_done")
         return line

@@ -11,6 +11,15 @@ real-time critical path. Three guards live here in code, not only in the prompt:
 3. Opener guard (ruling 5): the form-driven opener must be open-ended and must not state a
    fact about a place unless it cites an existing fact card; otherwise a template replaces it.
 
+4. Actor fallback (ruling 14): the actor gets ONE attempt with a time budget
+   (`first_token_budget_s`, from the request to the first token). If the call fails, or no
+   token arrives in time, nothing is retried: the board says a fallback line that needs no
+   model at all. A fact challenge falls back to its deterministic template (the claim is
+   marked as challenged, so the challenge must still be heard); a `move_on` falls back to
+   its move template (the topic really changes, so the board must say so); every other move
+   falls back to one of the speaking persona's `fallback_lines` from its YAML file, which
+   hands the turn back to the candidate ("Ek minute... aap apni baat jaari rakhiye").
+
 A move may carry `preface="acknowledge"` (the candidate conceded an error, ruling 11). The
 acknowledgement is a fixed sentence prepended here in code, not left to the model: it is
 always said, it never pushes the line over the word cap, and in voice mode it can be spoken
@@ -19,10 +28,12 @@ from cached audio while the model's part is still streaming.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import re
+import zlib
 from collections.abc import AsyncIterator, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from mockboard.brain.cards import CardSet
 from mockboard.brain.llm import LLMClient, LLMError
@@ -107,7 +118,7 @@ def preface_text(move: BoardMove, mix: str) -> str:
 def with_preface(preface: str, line: LineResult) -> LineResult:
     if not preface:
         return line
-    return LineResult(f"{preface} {line.text}", is_fallback=line.is_fallback, guard=line.guard)
+    return replace(line, text=f"{preface} {line.text}")
 
 
 def count_words(text: str) -> int:
@@ -148,6 +159,77 @@ class LineResult:
     text: str
     is_fallback: bool = False
     guard: str = ""  # which guard replaced the model's line, if any
+    # Ruling 14, for the trace: which fallback text was used ("persona_line",
+    # "move_template", "challenge_template", "opener_template") and why the actor failed.
+    fallback_kind: str = ""
+    error: str = ""
+
+
+class ActorBudgetExceeded(Exception):
+    """No first token within the actor's time budget (ruling 14)."""
+
+
+async def collect_line(
+    chunks: AsyncIterator[str],
+    *,
+    first_token_budget_s: float | None,
+    on_first_token: Callable[[], None] | None = None,
+) -> str:
+    """Collect a streamed line, giving up if the first chunk is later than the budget.
+
+    Giving up cancels the wait, which closes the model stream (its call is recorded with
+    error "cancelled") and raises `ActorBudgetExceeded`. The budget covers only the wait for
+    the first chunk; a stream that stalls later ends by the lane's read timeout instead.
+    """
+    it = aiter(chunks)
+    try:
+        async with asyncio.timeout(first_token_budget_s):
+            first = await anext(it)
+    except StopAsyncIteration:
+        return ""
+    except TimeoutError as exc:
+        raise ActorBudgetExceeded(
+            f"no first token within {first_token_budget_s:g}s"
+        ) from exc
+    if on_first_token is not None:
+        on_first_token()
+    text = first
+    async for chunk in it:
+        text += chunk
+    return text
+
+
+def persona_fallback_line(persona: Persona, turn_id: str) -> str:
+    """The speaking member's cached fallback line for this turn (ruling 14).
+
+    Chosen by a stable hash of the turn id, so a run is reproducible and consecutive turns
+    usually get different lines. A persona without lines gets the generic probe template.
+    """
+    lines = persona.fallback_lines
+    if not lines:
+        return FILLER_TEMPLATES[Move.probe]
+    return lines[zlib.crc32(turn_id.encode("utf-8")) % len(lines)]
+
+
+def actor_fallback(
+    move: BoardMove,
+    persona: Persona,
+    turn_id: str,
+    *,
+    error: str,
+    guard: str,
+    claim: Claim | None = None,
+    card: FactCard | None = None,
+    mix: str = "hi-en",
+) -> LineResult:
+    """What the board says when the actor call failed or missed its budget (ruling 14)."""
+    if move.move == Move.fact_challenge and claim and card:
+        text, kind = fact_challenge_template(claim, card, mix), "challenge_template"
+    elif move.move == Move.move_on:
+        text, kind = FILLER_TEMPLATES[Move.move_on], "move_template"
+    else:
+        text, kind = persona_fallback_line(persona, turn_id), "persona_line"
+    return LineResult(text, is_fallback=True, guard=guard, fallback_kind=kind, error=error)
 
 
 # ---------------------------------------------------------------------------
@@ -392,14 +474,17 @@ async def compose_line(
     claim: Claim | None = None,
     card: FactCard | None = None,
     on_first_token: Callable[[], None] | None = None,
+    first_token_budget_s: float | None = None,
 ) -> LineResult:
-    """Collect the streamed line and apply the guards. Used by the text CLI."""
+    """Collect the streamed line and apply the guards. Used by the text CLI.
+
+    `first_token_budget_s` is the actor's time budget (ruling 14); None means no budget."""
     preface = preface_text(move, language_mix(persona, form))
     line = await _compose_move_line(
         llm, kit, persona, move, topic=topic, form=form, last_question=last_question,
         last_answer=last_answer, max_words=max_words - count_words(preface),
         max_tokens=max_tokens, turn_id=turn_id, claim=claim, card=card,
-        on_first_token=on_first_token,
+        on_first_token=on_first_token, first_token_budget_s=first_token_budget_s,
     )
     return with_preface(preface, line)
 
@@ -420,6 +505,7 @@ async def _compose_move_line(
     claim: Claim | None,
     card: FactCard | None,
     on_first_token: Callable[[], None] | None,
+    first_token_budget_s: float | None,
 ) -> LineResult:
     if move.move == Move.fact_challenge and (claim is None or card is None):
         # Defensive: the strategist never emits this, but a challenge without a card must
@@ -429,24 +515,25 @@ async def _compose_move_line(
         persona, move, topic=topic, form=form, last_question=last_question,
         last_answer=last_answer, claim=claim, card=card,
     )
-    text = ""
-    try:
-        async for chunk in stream_line(
-            llm, kit, user, max_words=max_words, max_tokens=max_tokens, tag_=turn_id
-        ):
-            if not text and on_first_token is not None:
-                on_first_token()
-            text += chunk
-    except LLMError:
-        text = ""
-    text = cap_words(text, max_words)
     mix = language_mix(persona, form)
+    # One attempt only (ruling 14): any failure is answered with a fallback line, not a retry.
+    try:
+        text = await collect_line(
+            stream_line(llm, kit, user, max_words=max_words, max_tokens=max_tokens,
+                        tag_=turn_id),
+            first_token_budget_s=first_token_budget_s,
+            on_first_token=on_first_token,
+        )
+    except ActorBudgetExceeded as exc:
+        return actor_fallback(move, persona, turn_id, error=str(exc), guard="actor_budget",
+                              claim=claim, card=card, mix=mix)
+    except LLMError as exc:
+        return actor_fallback(move, persona, turn_id, error=f"{type(exc).__name__}: {exc}"[:300],
+                              guard="actor_failed", claim=claim, card=card, mix=mix)
+    text = cap_words(text, max_words)
     if not text:
-        if move.move == Move.fact_challenge and claim and card:
-            return LineResult(fact_challenge_template(claim, card, mix), is_fallback=True,
-                              guard="actor_failed")
-        return LineResult(FILLER_TEMPLATES.get(move.move, FILLER_TEMPLATES[Move.probe]),
-                          is_fallback=True, guard="actor_failed")
+        return actor_fallback(move, persona, turn_id, error="empty line", guard="actor_failed",
+                              claim=claim, card=card, mix=mix)
     if move.move == Move.fact_challenge and claim and card:
         return guard_fact_challenge(text, claim, card, mix)
     return LineResult(text)
@@ -473,19 +560,25 @@ def build_opener_user(form: CandidateForm, cards: CardSet) -> str:
 
 async def generate_opener(
     llm: LLMClient, kit: PromptKit, form: CandidateForm, cards: CardSet, *,
-    max_words: int, max_tokens: int, turn_id: str,
+    max_words: int, max_tokens: int, turn_id: str, first_token_budget_s: float | None = None,
 ) -> LineResult:
-    """The form-driven opening question, checked by `opener_violations`."""
-    text = ""
+    """The form-driven opening question, checked by `opener_violations`. The opener runs on
+    the actor lane, so it gets the same single attempt and time budget (ruling 14)."""
     try:
-        async for chunk in stream_line(
-            llm, kit, build_opener_user(form, cards), max_words=max_words,
-            max_tokens=max_tokens, tag_=turn_id, prompt_id="opener", name="opener",
-        ):
-            text += chunk
-    except LLMError:
-        return LineResult(opener_template(form), is_fallback=True, guard="opener_failed")
+        text = await collect_line(
+            stream_line(llm, kit, build_opener_user(form, cards), max_words=max_words,
+                        max_tokens=max_tokens, tag_=turn_id, prompt_id="opener",
+                        name="opener"),
+            first_token_budget_s=first_token_budget_s,
+        )
+    except (ActorBudgetExceeded, LLMError) as exc:
+        return LineResult(opener_template(form), is_fallback=True, guard="opener_failed",
+                          fallback_kind="opener_template",
+                          error=f"{type(exc).__name__}: {exc}"[:300])
     text = cap_words(text, max_words)
-    if not text or opener_violations(text, cards):
-        return LineResult(opener_template(form), is_fallback=not text, guard="opener_guard")
+    if not text:
+        return LineResult(opener_template(form), is_fallback=True, guard="opener_guard",
+                          fallback_kind="opener_template", error="empty line")
+    if opener_violations(text, cards):
+        return LineResult(opener_template(form), guard="opener_guard")
     return LineResult(text)

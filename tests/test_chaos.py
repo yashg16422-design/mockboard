@@ -13,7 +13,10 @@ For every session:
 2. no fallback librarian vote is ever cached;
 3. no fact challenge is ever issued from a fallback verdict (checked against the fake's own
    record of which librarian calls really answered, not against our code's flags);
-4. every fallback is recorded in the trace, and no model call is missing from the trace.
+4. every fallback is recorded in the trace, and no model call is missing from the trace;
+5. the actor is never retried (one call per turn), and a failed actor call is answered with a
+   cached fallback line, the speaking persona's own unless the move has its own template
+   (ruling 14).
 
 The last test checks that the chaos really reached every lane and every fallback path, so
 the invariants above are not passing vacuously.
@@ -212,15 +215,31 @@ def violations(run: Run, answered_librarian_prompts: set[str], cache: VoteCache)
     if run.leftover_calls:
         bad.append(f"calls never written to the trace: {list(run.leftover_calls)}")
 
-    # 4b. Actor and opener: a failed stream is always a flagged fallback line.
+    # 4b / 5. Actor and opener: one attempt per turn (ruling 14: never retried), and a failed
+    # stream is always a flagged, traced fallback line.
     actor_calls = run.stub.named("actor")
     if len(actor_calls) != len(turns):
         bad.append(f"{len(actor_calls)} actor calls for {len(turns)} turns")
-    for call, line, board in zip(actor_calls, turns, st.board_lines[1:], strict=False):
+    personas = run.session.deps.personas
+    for call, line, board, m in zip(actor_calls, turns, st.board_lines[1:], st.moves,
+                                    strict=False):
         if call.fault and not line["actor_fallback"]:
             bad.append(f"{line['turn_id']}: actor failed ({call.fault}) but no actor_fallback")
         if line["actor_fallback"] != board.is_fallback:
             bad.append(f"{line['turn_id']}: actor_fallback disagrees with the board line")
+        if call.fault:
+            actor_fbs = [f for f in line["fallbacks"] if f["stage"] == "actor"]
+            if not line["actor_error"] or len(actor_fbs) != 1:
+                bad.append(f"{line['turn_id']}: actor failure not recorded in the trace")
+            expected = {Move.fact_challenge: "challenge_template",
+                        Move.move_on: "move_template"}.get(m.move, "persona_line")
+            if line["actor_fallback_kind"] != expected:
+                bad.append(f"{line['turn_id']}: {m.move} fell back to "
+                           f"{line['actor_fallback_kind']}, expected {expected}")
+            if expected == "persona_line" and not board.text.endswith(
+                tuple(personas[m.member].fallback_lines)
+            ):
+                bad.append(f"{line['turn_id']}: fallback line is not {m.member}'s own")
     opener = run.stub.named("opener")[0]
     if opener.fault and not events["session_start"]["opener_fallback"]:
         bad.append("opener failed but session_start has no opener_fallback")
@@ -270,6 +289,9 @@ async def test_chaos_sessions_complete_safely_and_record_every_fallback(
         st = run.session.state
         seen["deadline_fallback_move"] += sum(m.rule_id == "FALLBACK" for m in st.moves)
         seen["actor_fallback"] += sum(b.is_fallback for b in st.board_lines[1:])
+        seen["actor_persona_line"] += sum(
+            x.get("actor_fallback_kind") == "persona_line" for x in run.lines
+        )
         seen["fact_challenge"] += sum(m.move == Move.fact_challenge for m in st.moves)
         seen["report_fallback"] += run.report.is_fallback
     assert problems == []
@@ -285,6 +307,7 @@ async def test_chaos_sessions_complete_safely_and_record_every_fallback(
         "abandoned",
         "deadline_fallback_move",
         "actor_fallback",
+        "actor_persona_line",
         "fact_challenge",
         "report_fallback",
     ):

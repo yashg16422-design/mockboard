@@ -15,3 +15,8 @@ filler_lines:
   - "Interesting."
   - "Hmm, achha."
   - "Theek hai."
+# Ruling 14: said instead of the actor's line when the actor call fails or is too slow.
+fallback_lines:
+  - "Hmm, ek second. Aap apna tark aage badhaiye, iska asar kis par padega?"
+  - "Interesting. Isi baat ko thoda aur khol kar samjhaiye."
+  - "Achha, ek pal. Aap jaari rakhiye, mujhe doosra pehlu bhi sunna hai."

@@ -80,9 +80,10 @@ def lane_for(name: str) -> Lane:
 class LaneConfig:
     """One lane's thread pool and botocore client settings.
 
-    `max_attempts` is botocore's `total_max_attempts` for this lane's client. It stays 1
-    wherever a LangGraph `RetryPolicy` already retries (fast and background lanes), so
-    attempts never multiply across layers.
+    `max_attempts` is botocore's `total_max_attempts` for this lane's client. It is 1 on
+    every lane: the fast and background lanes are retried by a LangGraph `RetryPolicy`
+    (so attempts never multiply across layers), and the actor lane is never retried at all
+    (ruling 14: a failed actor call is answered with a cached persona fallback line).
     """
 
     workers: int
@@ -99,7 +100,7 @@ def lane_configs(settings: Any) -> dict[Lane, LaneConfig]:
             workers=settings.bedrock_actor_workers,
             connect_timeout_s=settings.bedrock_actor_connect_timeout_s,
             read_timeout_s=settings.bedrock_actor_read_timeout_s,
-            max_attempts=settings.bedrock_actor_max_attempts,  # the actor's only retry
+            max_attempts=1,  # ruling 14: one attempt; failure -> persona fallback line
         ),
         Lane.fast: LaneConfig(
             workers=settings.bedrock_fast_workers,
@@ -540,8 +541,8 @@ class BedrockNovaClient(_BaseClient):
             config=Config(
                 connect_timeout=cfg.connect_timeout_s,
                 read_timeout=cfg.read_timeout_s,
-                # 1 on the graph lanes: retries happen in exactly one place per call path
-                # (LangGraph RetryPolicy there), so attempts never multiply.
+                # 1 on every lane: the graph lanes retry in exactly one place (LangGraph
+                # RetryPolicy), and the actor lane never retries (ruling 14).
                 retries={"total_max_attempts": cfg.max_attempts, "mode": "standard"},
                 max_pool_connections=max(max_pool_connections, cfg.workers),
             ),
@@ -743,6 +744,10 @@ class BedrockNovaClient(_BaseClient):
                             if key == "validationException":
                                 raise LLMConfigError(msg)
                             raise LLMTransientError(msg)
+        except asyncio.CancelledError:
+            # The caller gave up waiting (the actor's first-token budget, ruling 14).
+            stats.error = stats.error or "cancelled"
+            raise
         finally:
             stop = True
             stream = holder.get("stream")
@@ -883,6 +888,9 @@ class FakeLLMClient(_BaseClient):
             stats.stop_reason = "end_turn"
         except LLMError as exc:
             stats.error = type(exc).__name__
+            raise
+        except asyncio.CancelledError:
+            stats.error = "cancelled"
             raise
         finally:
             self._emit(stats)

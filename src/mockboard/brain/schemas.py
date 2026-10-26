@@ -296,7 +296,13 @@ class Persona(_Model):
     voice_candidates: list[str] = Field(default_factory=list)
     language: str = "hi-en"
     style: str
+    # Short acknowledgements for the voice loop's masking filler (played if the actor's first
+    # sentence is late). Not used in text mode yet.
     filler_lines: list[str] = Field(default_factory=list)
+    # Ruling 14: whole lines this member says INSTEAD of the actor's line when the actor call
+    # fails or misses its budget ("Ek minute... aap apni baat jaari rakhiye"). Data, so they
+    # can be synthesised once and cached as audio.
+    fallback_lines: list[str] = Field(default_factory=list)
 
 
 class CandidateForm(_Model):

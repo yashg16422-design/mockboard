@@ -1,7 +1,8 @@
 """Ruling 13: short timeouts on the hot lanes, and a hung listener never blocks the session.
 
-* The actor and fast lanes get their own short botocore timeouts and capped retries from
-  settings; the background lane keeps the long ones.
+* The actor and fast lanes get their own short botocore timeouts from settings, and no
+  botocore retries (the actor is never retried, ruling 14); the background lane keeps the
+  long timeouts.
 * The fast graph retries with its own, smaller cap.
 * A listener call that hangs on segment 1 is abandoned after `fast_listener_timeout_s`:
   segment 2 is still analysed, the next turn's move is on time, and when the hung call
@@ -60,9 +61,10 @@ def test_hot_lanes_get_short_timeouts_and_capped_retries_from_settings(settings)
     # The property the ruling asks for: hot lanes give up long before the background lane.
     for lane in (Lane.actor, Lane.fast):
         assert cfg[lane].read_timeout < cfg[Lane.background].read_timeout
-    # The actor has no graph RetryPolicy, so botocore's capped retry is its only one; the
-    # graph lanes keep botocore at one attempt so retries never multiply.
-    assert cfg[Lane.actor].retries["total_max_attempts"] == s.bedrock_actor_max_attempts
+    # Ruling 14: the actor gets one attempt and no retry (its failure is answered with a
+    # persona fallback line); the graph lanes keep botocore at one attempt so retries never
+    # multiply with their RetryPolicy.
+    assert cfg[Lane.actor].retries["total_max_attempts"] == 1
     assert cfg[Lane.fast].retries["total_max_attempts"] == 1
     assert cfg[Lane.background].retries["total_max_attempts"] == 1
     llm.close()

@@ -16,3 +16,8 @@ filler_lines:
   - "Hmm."
   - "Achha."
   - "Dekhiye."
+# Ruling 14: said instead of the actor's line when the actor call fails or is too slow.
+fallback_lines:
+  - "Ek minute. Aap apni baat jaari rakhiye, zameeni sthiti par aaiye."
+  - "Dekhiye, ek pal. Jo aap keh rahe the, use poora kijiye."
+  - "Achha. Aap boliye, ek district officer ke taur par aap kya karte?"
