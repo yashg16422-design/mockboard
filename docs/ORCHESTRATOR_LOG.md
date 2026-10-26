@@ -67,3 +67,10 @@ Judge scores 1-5 or "insufficient_evidence" for: mental_alertness, critical_assi
 - Builder's deviations accepted: the acknowledgement is a fixed code-side sentence (always said, cacheable as audio); actor.v2 told not to repeat it.
 - **Ruling 12:** when a topic's question budget is already used up, an honest "don't know" leads to `move_on` (R3b), not `reassure` — reassuring and then immediately leaving the topic reads oddly. Add an invariant test.
 - Noted (fake mode only): the offline responder stacks "Achha." after the acknowledgement; the real actor prompt already forbids repeating it. No action unless it shows up with Nova.
+
+## Round 5 — Oct 26, 2026 (M4: two-graph split)
+
+- Previous M4 builder stopped by a session end after only a docstring sketch; a fresh builder used it as the blueprint.
+- **Accepted.** Orchestrator re-ran: 308/308 tests, lint clean, commits 03587f0..e23a27f. Transcript identical to round 4; trace shows every move from the fast graph (move_wait 3-6 ms in fake mode, fallback_reason null on all turns); the fact challenge lands on the turn after the claim.
+- Builder deviations accepted: ledger snapshot taken once when the turn opens (move independent of fact-check speed; a mid-turn verdict counts one turn later); `--think-s` for scripted CLI runs only; `speak()` added; `answer()` removed.
+- **Ruling 13 (from builder's open point 3):** a hung listener call must not block a session's later segments for Bedrock's 30 s read timeout. Give fast-graph Bedrock calls their own short client timeouts (botocore `read_timeout`/`connect_timeout` from settings, retries capped) separate from background calls, and ensure a timed-out segment analysis is abandoned for the move (its claims may still be fact-checked if the listener result arrives). Goes into the M5 chunk.
