@@ -633,6 +633,22 @@ class BedrockNovaClient(_BaseClient):
             }
         return request
 
+    def build_stream_request(
+        self,
+        system: Sequence[PromptBlock],
+        user: str,
+        max_tokens: int,
+        temperature: float = 0.3,
+    ) -> dict[str, Any]:
+        """The exact ConverseStream request for a streamed text call (the actor and opener).
+        Testable offline, and reused by `probes/nova_probe.py --app-prompts`."""
+        return {
+            "modelId": self.model_id,
+            "system": self.system_blocks(system),
+            "messages": [{"role": "user", "content": [{"text": user}]}],
+            "inferenceConfig": {"temperature": temperature, "maxTokens": max_tokens},
+        }
+
     @staticmethod
     def extract_tool_input(response: Mapping[str, Any], tool_name: str) -> Any:
         """Return the forced tool's input dict from a Converse response, or None."""
@@ -688,12 +704,7 @@ class BedrockNovaClient(_BaseClient):
         30-word cap), the stream is closed so the thread exits.
         """
         stats = CallStats(name=name, model_id=self.model_id, tag=tag, attempts=1)
-        request = {
-            "modelId": self.model_id,
-            "system": self.system_blocks(system),
-            "messages": [{"role": "user", "content": [{"text": user}]}],
-            "inferenceConfig": {"temperature": temperature, "maxTokens": max_tokens},
-        }
+        request = self.build_stream_request(system, user, max_tokens, temperature)
         loop = asyncio.get_running_loop()
         queue: asyncio.Queue[tuple[str, Any]] = asyncio.Queue()
         holder: dict[str, Any] = {}

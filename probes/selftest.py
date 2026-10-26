@@ -9,7 +9,8 @@ Run it from the mockboard folder with `python -m probes.selftest`. It checks:
   stripping, plus a full WebSocket run against a fake server and an SSE run against a
   mocked HTTP transport;
 * Nova stream timing, forced-tool JSON validation, and throttling backoff with fake
-  botocore errors;
+  botocore errors; the `--app-prompts` mode's requests (built by the app's own builders)
+  and a whole app-prompts run against a fake bedrock-runtime client;
 * WAV reading/resampling, percentiles, the RESULTS.md writer (to a temp file), and the
   fact-card files against both schema.json and the FactCard model.
 """
@@ -414,7 +415,7 @@ async def _() -> None:
 def _() -> None:
     from probes.nova_probe import Throttled, consume_stream
 
-    clock = iter([1.25, 1.5, 2.0]).__next__  # first delta, second delta (unused), end
+    clock = iter([1.25, 1.5, 2.0]).__next__  # first delta, first sentence end, stream end
     events = [
         {"messageStart": {"role": "assistant"}},
         {"contentBlockDelta": {"delta": {"text": "Achha, "}}},
@@ -423,7 +424,8 @@ def _() -> None:
         {"metadata": {"usage": {"outputTokens": 7, "cacheReadInputTokens": 1500}}},
     ]
     s = consume_stream(events, t_req=1.0, clock=clock)
-    assert s.ttft_ms == 250 and s.total_ms == 500 and s.text == "Achha, batayiye?"
+    assert s.ttft_ms == 250 and s.first_sentence_ms == 500 and s.total_ms == 1000
+    assert s.text == "Achha, batayiye?" and s.stop_reason == "end_turn"
     assert s.output_tokens == 7 and s.cache_read == 1500
     try:
         consume_stream([{"throttlingException": {"message": "slow"}}], 0.0)
@@ -537,6 +539,155 @@ def _() -> None:
     assert is_fatal(NoCredentialsError()) and is_fatal(ce("AccessDeniedException"))
     assert is_fatal(ce("ValidationException"))
     assert not is_fatal(ce("ThrottlingException")) and not is_fatal(TimeoutError())
+
+
+class _FakeRuntime:
+    """Stands in for boto3's bedrock-runtime client in the --app-prompts checks.
+
+    `converse` replies with a listener tool call (the first call is throttled once, the
+    third has an invalid field type); `converse_stream` replies with a short Hinglish line.
+    Every request is kept so the checks can inspect the exact request shape."""
+
+    def __init__(self) -> None:
+        self.tool_requests: list[dict] = []
+        self.stream_requests: list[dict] = []
+        self._throttled = False
+
+    def converse(self, **req):
+        from botocore.exceptions import ClientError
+
+        if not self._throttled:
+            self._throttled = True
+            raise ClientError(
+                {"Error": {"Code": "ThrottlingException", "Message": "slow"}}, "Converse"
+            )
+        self.tool_requests.append(req)
+        payload = {
+            "stance": "Tourism matters but needs balance",
+            "reasons": ["jobs"],
+            "claims": [],
+            "balance": "balanced",
+            "honest_unknown": False,
+            "concedes_error": False,
+            "garbled": False,
+        }
+        if len(self.tool_requests) == 3:
+            payload["reasons"] = "not a list"  # schema-invalid
+        name = req["toolConfig"]["toolChoice"]["tool"]["name"]
+        return {
+            "output": {
+                "message": {
+                    "role": "assistant",
+                    "content": [{"toolUse": {"toolUseId": "t", "name": name, "input": payload}}],
+                }
+            },
+            "stopReason": "tool_use",
+            "usage": {
+                "inputTokens": 1200,
+                "outputTokens": 60,
+                "cacheReadInputTokens": 0,
+                "cacheWriteInputTokens": 0,
+            },
+        }
+
+    def converse_stream(self, **req):
+        self.stream_requests.append(req)
+        events = [
+            {"messageStart": {"role": "assistant"}},
+            {"contentBlockDelta": {"delta": {"text": "Achha, "}}},
+            {"contentBlockDelta": {"delta": {"text": "theek hai. Ab yeh "}}},
+            {"contentBlockDelta": {"delta": {"text": "bataiye, kyun?"}}},
+            {"messageStop": {"stopReason": "end_turn"}},
+            {"metadata": {"usage": {"inputTokens": 1300, "outputTokens": 12}}},
+        ]
+        return {"stream": iter(events)}
+
+
+def _app_ctx():
+    from mockboard.config import Settings
+    from probes.nova_probe import load_app_context
+
+    return load_app_context(Settings(_env_file=None))
+
+
+@check("nova --app-prompts: requests come from the app's builders (prefix, tool, stream)")
+def _() -> None:
+    from mockboard.brain.llm import BedrockNovaClient
+    from mockboard.brain.tools import LISTENER_TOOL
+    from probes.nova_probe import SAMPLE_TURNS, actor_request, listener_request
+
+    ctx = _app_ctx()
+    app = BedrockNovaClient(
+        region="ap-southeast-2", model_id="amazon.nova-pro-v1:0", client=object()
+    )
+    moves = {t.move for t in SAMPLE_TURNS}
+    assert {"probe", "counter", "fact_challenge", "move_on", "reassure"} <= moves
+    for turn in SAMPLE_TURNS:
+        lreq = listener_request(app, ctx, turn, k=0)
+        # The real cached prefix (persona pack + cards), then a checkpoint, then the role.
+        assert lreq["system"][0] == {"text": ctx.kit.shared_prefix}
+        assert lreq["system"][1] == {"cachePoint": {"type": "default"}}
+        assert lreq["toolConfig"]["toolChoice"] == {"tool": {"name": LISTENER_TOOL.name}}
+        assert lreq["inferenceConfig"]["temperature"] == 0.0
+        assert lreq["inferenceConfig"]["stopSequences"] == ["</tool>"]
+        assert "<candidate_speech>" in lreq["messages"][0]["content"][0]["text"]
+        areq = actor_request(app, ctx, turn)
+        assert "toolConfig" not in areq
+        assert areq["system"][0] == {"text": ctx.kit.shared_prefix}
+        assert areq["system"][1] == {"cachePoint": {"type": "default"}}
+        user = areq["messages"][0]["content"][0]["text"]
+        assert "<board_context>" in user and turn.move in user
+        if turn.move == "fact_challenge":
+            # actor.v2 gets the pre-rendered figures, never the card text.
+            assert "<fact_challenge>" in user and "12 percent" in user
+            assert "TEST CARD" not in user
+
+
+@check("nova --app-prompts: run with a fake client counts validity, tokens, throttles")
+def _() -> None:
+    from mockboard.brain.llm import BedrockNovaClient
+    from probes.nova_probe import run_app_prompts
+
+    ctx = _app_ctx()
+    fake = _FakeRuntime()
+    app = BedrockNovaClient(region="ap-southeast-2", model_id="amazon.nova-pro-v1:0", client=fake)
+    with tempfile.TemporaryDirectory() as d:
+        jl = Path(d) / "nova_app.jsonl"
+        rows, notes = run_app_prompts(
+            fake, app, ctx, n=4, gap_s=0, jsonl_path=jl, backoff_base_s=0.001
+        )
+        lines = [json.loads(x) for x in jl.read_text().splitlines()]
+    lis, act = rows
+    assert lis["ok"] == 4 and lis["valid_json"].startswith("3/4 (invalid 1")
+    assert lis["throttles"].startswith("1 (fail after") and lis["errors"] == 0
+    assert lis["mean in/out tokens"] == "1200 / 60"
+    assert act["ok"] == 4 and act["mean in/out tokens"] == "1300 / 12"
+    assert act["ttft p50/p95 ms"] != "n/a / n/a" and act["throttles"] == "0"
+    assert len(fake.tool_requests) == 4 and len(fake.stream_requests) == 4
+    assert [x["call"] for x in lines] == ["listener"] * 4 + ["actor"] * 4
+    assert lines[4]["text"] == "Achha, theek hai. Ab yeh bataiye, kyun?"
+    assert lines[4]["first_sentence_ms"] is not None
+    assert any("Per-call rows" in n for n in notes)
+
+
+@check("nova --app-prompts: listener validity uses the app model (truncated, no tool)")
+def _() -> None:
+    from probes.nova_probe import classify_listener_response
+
+    assert classify_listener_response({"stopReason": "max_tokens"})[0] == "truncated"
+    empty = {"output": {"message": {"content": [{"text": "hi"}]}}, "stopReason": "end_turn"}
+    assert classify_listener_response(empty)[0] == "no_tool_use"
+
+
+@check("nova: --profile, --region, --origin parse; app-prompts defaults to 20 calls")
+def _() -> None:
+    from probes.nova_probe import build_parser
+
+    a = build_parser().parse_args(
+        ["--app-prompts", "--region", "ap-southeast-2", "--profile", "mb", "--origin", "x"]
+    )
+    assert a.app_prompts and a.profile == "mb" and a.region == "ap-southeast-2"
+    assert a.origin == "x" and a.n is None  # main() turns None into 20 for --app-prompts
 
 
 # ---------------------------------------------------------------------------

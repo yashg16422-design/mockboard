@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import math
+import socket
 import wave
 from collections.abc import Sequence
 from datetime import datetime
@@ -157,6 +158,14 @@ def append_results(
     with path.open("a", encoding="utf-8") as f:
         f.write("".join(parts))
     return path
+
+
+def origin_host() -> str:
+    """The machine a probe runs on, for labelling results (laptop vs EC2 matters a lot)."""
+    try:
+        return socket.gethostname() or "unknown-host"
+    except OSError:
+        return "unknown-host"
 
 
 def log_line(t0: float, t: float, kind: str, payload: Any) -> str:

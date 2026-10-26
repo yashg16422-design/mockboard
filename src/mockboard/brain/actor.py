@@ -36,7 +36,7 @@ from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass, replace
 
 from mockboard.brain.cards import CardSet
-from mockboard.brain.llm import LLMClient, LLMError
+from mockboard.brain.llm import LLMClient, LLMError, PromptBlock
 from mockboard.brain.prompts import PromptKit, tag
 from mockboard.brain.schemas import (
     BoardMove,
@@ -446,12 +446,18 @@ def build_actor_user(
 # ---------------------------------------------------------------------------
 
 
+def line_system(kit: PromptKit, *, max_words: int, prompt_id: str = "actor") -> list[PromptBlock]:
+    """The system blocks of a spoken-line call: the cached persona + cards prefix, then the
+    role's instructions. Shared with `probes/nova_probe.py --app-prompts`."""
+    return kit.system(prompt_id, max_words=str(max_words))
+
+
 def stream_line(
     llm: LLMClient, kit: PromptKit, user: str, *, max_words: int, max_tokens: int, tag_: str,
     prompt_id: str = "actor", name: str = "actor",
 ) -> AsyncIterator[str]:
     """The raw streamed line, capped at `max_words`. Phase 2 feeds this to Timbre."""
-    system = kit.system(prompt_id, max_words=str(max_words))
+    system = line_system(kit, max_words=max_words, prompt_id=prompt_id)
     chunks = llm.stream_text(
         name=name, system=system, user=user, max_tokens=max_tokens, tag=tag_
     )

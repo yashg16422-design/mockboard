@@ -7,7 +7,7 @@ The Gnani probes spend real credits (4,900 in total, at one rupee each), and the
 ## Files
 
 - `gnani_ws.py` holds every Gnani wire-protocol detail in one place: the Prisma URL and upgrade headers (including the VAD headers, `x-max-speech-s` and the undocumented `x-partials`), the 1,024-byte framing at real-time cadence, the `update_settings` frame, the Timbre request body shared by WebSocket and SSE, the parsers for their replies, and Gnani's published voice catalog. Anything Gnani's docs leave unclear is marked `# UNVERIFIED:` in the code.
-- `common.py` reads and writes WAV files, computes percentiles, and writes the results tables.
+- `common.py` reads and writes WAV files, computes percentiles, names the origin host, and writes the results tables.
 - `prisma_probe.py`, `timbre_probe.py` and `nova_probe.py` are the three probes, described below.
 - `selftest.py` checks all of the above offline, against fake servers, without spending anything.
 - `results/RESULTS.md` collects the result tables. `results/audio/` and `results/*.jsonl` hold raw outputs and are git-ignored.
@@ -21,13 +21,24 @@ On your laptop (WSL), in the `mockboard` folder:
 ```bash
 pip install -r requirements.txt
 pip install numpy scipy        # only needed for --resample and the speech-length check
+pip install -e . --no-deps     # makes the app importable, which the probes need
 cp .env.example .env           # then edit .env and put your real Gnani key in GNANI_API_KEY
-aws configure                  # once, if you have not set up an AWS profile yet
+aws configure --profile mockboard   # once, if you have not set up an AWS profile yet
+```
+
+On the EC2 instance in Mumbai (`ap-south-1`), the repository lives in `/opt/mockboard`. The instance needs an IAM role that allows `bedrock:InvokeModel` and `bedrock:InvokeModelWithResponseStream` on Nova Pro in `ap-southeast-2`; no AWS keys go on the machine. On EC2, in `/opt/mockboard`:
+
+```bash
+python3 -m venv .venv && . .venv/bin/activate
+pip install -r requirements.txt
+pip install numpy scipy        # the self-test imports numpy
+pip install -e . --no-deps
+aws sts get-caller-identity    # should print the instance role, proving credentials work
 ```
 
 ## Step 1: run the offline self-test
 
-The self-test builds headers, frames audio, parses doc-shaped messages, runs a full Prisma session and a full Timbre session against small fake servers on your own machine, checks the Nova timing and JSON-validation code against fake responses, and validates the fact-card files. It makes no network calls and spends no credits. If anything fails, fix it before spending credits.
+The self-test builds headers, frames audio, parses doc-shaped messages, runs a full Prisma session and a full Timbre session against small fake servers on your own machine, checks the Nova timing and JSON-validation code against fake responses, runs a whole `--app-prompts` run against a fake Bedrock client (checking that the requests are the app's real ones), and validates the fact-card files. It makes no network calls and spends no credits. If anything fails, fix it before spending credits.
 
 On your laptop (WSL), in the `mockboard` folder:
 
@@ -93,27 +104,62 @@ Useful options are `--text "..."` (write numbers as words, as the docs ask), `--
 
 ## Step 5: Nova Pro probe
 
-This probe makes N calls (50 by default) to Nova Pro through ConverseStream in `ap-southeast-2`, and measures time to first token and total latency for each, reporting the median (p50) and 95th percentile (p95). It then makes N more calls using forced tool use, built by the app's own request builder in `src/mockboard/brain/llm.py` so that the probe measures exactly the request shape the app sends, and checks each answer against a small Pydantic schema. The table shows how many answers were valid JSON, how many broke the schema, and how many came back with no tool call at all.
+The Nova probe has two modes. Both call Nova Pro on Bedrock in `ap-southeast-2` (Sydney), whichever machine they run from, and both append a table to `probes/results/RESULTS.md` whose heading names the mode, the origin machine and the region, for example "Nova Pro probe (app-prompts) from ec2-mumbai to ap-southeast-2".
 
-Both phases put a synthetic system prompt of about 1,500 tokens behind a cache checkpoint and add up the cache read and write tokens. Non-zero cache reads mean prompt caching is working. In the tool phase, they also answer an open question flagged in `llm.py`: whether caching still works when a tool is attached.
+### Mode 1: `--app-prompts` (run this one first; it gives the numbers the decision rules need)
 
-Throttling errors are retried with exponential backoff and random jitter, and every throttle is counted in the table. Errors that retrying cannot fix (missing credentials, access denied, an invalid request) stop the phase straight away instead of repeating N times.
+This mode sends the app's real requests, built by the app's own code, so the probe measures exactly what a live interview would send. The system prompt is the real cached prefix (the persona pack plus the fact cards, followed by a cache checkpoint) and then the role's instructions.
 
-Try a short run first, then the full one. On your laptop (WSL), in the `mockboard` folder:
+- **Listener calls.** Each one is a forced-tool Converse call built by `BedrockNovaClient.build_tool_request` with the listener prompt and `LISTENER_TOOL`, exactly as `listener.analyse_segment` sends it. The answer is checked with the app's own `ListenerOutput` model, and the probe counts valid answers, schema-invalid answers, answers with no tool call, and answers cut off at `maxTokens`.
+- **Actor calls.** Each one is a streamed ConverseStream call built by `BedrockNovaClient.build_stream_request` with the actor prompt and `build_actor_user`, exactly as `actor.compose_line` sends it. The probe cycles through seven realistic board moves: probe, counter, fact challenge, an acknowledgement after a conceded error, move on, steelman and reassure.
+
+The sample turns are Hinglish, and every figure in them is about the fictional Exampleland, so no real statistic is sent or quoted. For every call the probe records the time to the first token and to the end of the first sentence (actor only), the total time, the input, output, cache-read and cache-write tokens, and every throttle together with how quickly it came back. The table also counts how many listener calls ran past `MOVE_DEADLINE_MS` or the fast lane's read timeout, and how many actor calls missed the first-token budget, using the values currently in `config.py`. One line per call is saved to `probes/results/nova_app_<time>.jsonl` (git-ignored), so you can look at individual calls later.
+
+**Cost.** Keep N small: 20 calls of each kind (the default in this mode) is enough for a first p50 and a rough p95. Each call sends about 1,000 to 1,500 input tokens and gets back up to about 150 output tokens, so a run of 20 plus 20 uses roughly 60,000 input tokens and 4,000 output tokens. At Nova Pro's published list price that is a few US cents per run (the exact Sydney price is unverified, so check the Bedrock pricing page). Run `-n 3` first to check that credentials and access work, and only go up to 50 if the p95 needs more samples (for rule N4, "more than 2 of 50 without a valid tool call", you need 50 listener calls).
+
+**On your laptop (WSL), in the `mockboard` folder.** This uses the named AWS profile you created with `aws configure --profile mockboard` (leave `--profile` out to use your default profile):
 
 ```bash
-python -m probes.nova_probe -n 3
-python -m probes.nova_probe
+python -m probes.selftest
+python -m probes.nova_probe --app-prompts -n 3 --profile mockboard --origin laptop-wsl --no-results
+python -m probes.nova_probe --app-prompts -n 20 --profile mockboard --origin laptop-wsl --region ap-southeast-2
 ```
 
-To measure from where the app will actually run, repeat it on the server. On EC2, in `/opt/mockboard` (the instance role supplies the credentials):
+**On the EC2 instance in Mumbai (`ap-south-1`), in `/opt/mockboard`.** The instance role supplies the credentials, so there is no `--profile`. The instance sits in Mumbai, but `--region ap-southeast-2` makes it call Nova in Sydney, which is the path a live interview takes:
 
 ```bash
-python -m probes.nova_probe
+cd /opt/mockboard
+python -m probes.selftest
+python -m probes.nova_probe --app-prompts -n 3 --origin ec2-mumbai --region ap-southeast-2 --no-results
+python -m probes.nova_probe --app-prompts -n 20 --origin ec2-mumbai --region ap-southeast-2
 ```
 
-Useful options are `--no-cache`, `--skip-stream`, `--skip-tool`, `--gap-s 0.5` (wait longer between calls if you see many throttles) and `--no-results` (do not write to RESULTS.md).
+Running the same command from both machines separates network time from model time (CTO_NOTES_03 §4, rule N1 step 3). The decision rules N1 to N5 in CTO_NOTES_03 §4 read the actor's first-sentence p95, the listener's total p95, the throttle count, the listener validity count and the cache-read tokens straight from this table. While the fact cards are still the six synthetic ones, the cached prefix is about 930 tokens, which is below Nova's 1,000-token minimum for a cache checkpoint, so zero cache reads are expected; the probe prints a note saying so.
+
+Useful options in this mode are `--skip-tool` (actor calls only), `--skip-stream` (listener calls only), `--gap-s 0.5` (wait longer between calls if you see throttles), `--model-id` (for example to try another model or an inference profile, which is the owner's decision under rule N6) and `--no-results`.
+
+### Mode 2: synthetic prompts (the original probe)
+
+Without `--app-prompts`, the probe makes N calls (50 by default) through ConverseStream and measures the time to first token and the total latency, and then makes N forced-tool calls built by the app's request builder in `src/mockboard/brain/llm.py` against a small toy schema. Both phases put a synthetic system prompt of about 1,500 tokens behind a cache checkpoint, which is long enough to show whether prompt caching works at all (and whether it still works with a tool attached). It does not use the app's real prompts, so use mode 1 for the numbers that set `mask_after_ms` and `MOVE_DEADLINE_MS`.
+
+On your laptop (WSL), in the `mockboard` folder:
+
+```bash
+python -m probes.nova_probe -n 3 --profile mockboard --origin laptop-wsl
+```
+
+On the EC2 instance in Mumbai, in `/opt/mockboard`:
+
+```bash
+python -m probes.nova_probe -n 20 --origin ec2-mumbai --region ap-southeast-2
+```
+
+Useful options are `--no-cache`, `--skip-stream`, `--skip-tool`, `--gap-s 0.5` and `--no-results`.
+
+### Both modes
+
+Throttling errors are retried with exponential backoff and random jitter, and every throttle is counted in the table together with how long the throttled attempt took to fail (this tells us whether the `ACTOR_FAST_THROTTLE_RETRY` setting is worth turning on). Errors that retrying cannot fix (missing credentials, an unknown profile, access denied, an invalid request) stop the run straight away instead of repeating N times.
 
 ## Reading the results
 
-Each probe adds a section to `probes/results/RESULTS.md` headed with the probe name and the date and time, followed by the parameters used, a results table and short notes (for Prisma, the raw transcript text). Remember that latency depends heavily on where you run from: numbers taken on a home connection in India will differ from numbers taken on the EC2 machine in Mumbai, so write down which machine you used in the notes.
+Each probe adds a section to `probes/results/RESULTS.md` headed with the probe name and the date and time, followed by the parameters used, a results table and short notes (for Prisma, the raw transcript text). Remember that latency depends heavily on where you run from: numbers taken on a home connection in India will differ from numbers taken on the EC2 machine in Mumbai. The Nova probe writes the origin machine (`--origin`, or the host name if you leave it out) and the region into its heading; for the Gnani probes, write down which machine you used in the notes.

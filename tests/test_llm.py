@@ -86,6 +86,27 @@ def test_top_k_can_be_switched_off():
     assert "additionalModelRequestFields" not in req
 
 
+async def test_stream_text_sends_exactly_the_built_stream_request():
+    """The probe's --app-prompts mode times `build_stream_request`; this proves it is the
+    very request `stream_text` sends (ruling 15)."""
+
+    class StreamStub(StubBedrock):
+        def converse_stream(self, **request: Any) -> dict[str, Any]:
+            self.requests.append(request)
+            return {"stream": iter([{"contentBlockDelta": {"delta": {"text": "Achha?"}}}])}
+
+    stub = StreamStub()
+    client = nova(stub)
+    out = [c async for c in client.stream_text(name="actor", system=SYSTEM, user="u",
+                                               max_tokens=120)]
+    client.close()
+    assert out == ["Achha?"]
+    assert stub.requests == [client.build_stream_request(SYSTEM, "u", 120)]
+    req = stub.requests[0]
+    assert req["system"][1] == {"cachePoint": {"type": "default"}} and "toolConfig" not in req
+    assert req["inferenceConfig"] == {"temperature": 0.3, "maxTokens": 120}
+
+
 def test_top_k_comes_from_settings(settings):
     client = BedrockNovaClient.from_settings(settings.model_copy(update={"nova_tool_top_k": 1}))
     req = client.build_tool_request(SYSTEM, "u", LISTENER_TOOL, 4)
