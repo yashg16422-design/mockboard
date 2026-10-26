@@ -81,3 +81,25 @@ def test_region_and_model_defaults(settings):
     assert settings.aws_region == "ap-southeast-2"
     assert settings.nova_model_id == "amazon.nova-pro-v1:0"
     assert settings.tts_language == "hi-en"
+
+
+@pytest.mark.parametrize("bad", [0, -1])
+def test_same_turn_fact_challenge_is_refused_by_config(bad):
+    """Ruling 9: verdicts come from the background fact-check graph, which the move never
+    waits for, so the delay before a fact challenge must be at least one turn."""
+    with pytest.raises(ValueError, match="fact_challenge_min_delay_turns"):
+        Settings(_env_file=None, fact_challenge_min_delay_turns=bad)
+
+
+def test_same_turn_fact_challenge_is_refused_from_environment(monkeypatch):
+    monkeypatch.setenv("FACT_CHALLENGE_MIN_DELAY_TURNS", "0")
+    with pytest.raises(ValueError, match="fact_challenge_min_delay_turns"):
+        Settings(_env_file=None)
+
+
+def test_strategy_config_refuses_zero_delay_too():
+    from mockboard.brain.strategist import StrategyConfig
+
+    with pytest.raises(ValueError):
+        StrategyConfig(chairman="c", fact_challenge_min_delay_turns=0)
+    assert StrategyConfig(chairman="c", fact_challenge_min_delay_turns=2)

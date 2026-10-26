@@ -89,6 +89,12 @@ class StrategyConfig:
     max_consecutive_pressure: int = 1
     max_pressure_per_topic: int = 2
 
+    def __post_init__(self) -> None:
+        # Defence in depth behind the Settings validator (ruling 9): a same-turn challenge
+        # would need this turn's verdicts, which the fast graph never has.
+        if self.fact_challenge_min_delay_turns < 1:
+            raise ValueError("fact_challenge_min_delay_turns must be >= 1")
+
     def member_for(self, topic: str) -> str:
         return self.topic_members.get(topic, self.chairman)
 

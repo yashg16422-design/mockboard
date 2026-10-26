@@ -10,7 +10,7 @@ from __future__ import annotations
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import Field, SecretStr
+from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -61,6 +61,8 @@ class Settings(BaseSettings):
     # --- Brain tuning (all deterministic thresholds) ---
     numeric_rel_tolerance: float = 0.05
     numeric_abs_tolerance_pp: float = 1.0
+    # Must be >= 1 (validated below): fact checks run in the background and the move never
+    # waits for this turn's verdicts (ruling 9), so a same-turn challenge cannot exist.
     fact_challenge_min_delay_turns: int = 1
     max_turns_per_topic: int = 4
     strong_streak_to_move_on: int = 3
@@ -70,6 +72,8 @@ class Settings(BaseSettings):
     graph_retry_max_attempts: int = 3
     graph_retry_initial_interval_s: float = 0.5
     analysis_wait_timeout_s: float = 60.0
+    # How long `finish()` waits for background fact checks before writing the report.
+    fact_check_drain_timeout_s: float = Field(default=30.0, ge=0)
     # Bounded LRU of real librarian votes shared by all sessions (ruling 10).
     librarian_vote_cache_size: int = Field(default=2048, ge=1)
     # Approximate budget for the cached system prefix (persona pack + fact cards).
@@ -101,6 +105,16 @@ class Settings(BaseSettings):
     trace_dir: Path = Path("traces")  # per-turn JSONL traces (git-ignored)
     report_dir: Path = Path("runs/reports")
     langfuse_enabled: bool = False
+
+    @field_validator("fact_challenge_min_delay_turns")
+    @classmethod
+    def _fact_challenge_is_a_turn_late(cls, v: int) -> int:
+        if v < 1:
+            raise ValueError(
+                "fact_challenge_min_delay_turns must be >= 1: verdicts come from the background "
+                "fact-check graph, which the move never waits for (ruling 9)"
+            )
+        return v
 
     def prompt_versions(self) -> dict[str, int]:
         """The prompt id -> version map recorded in every trace line."""

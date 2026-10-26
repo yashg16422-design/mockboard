@@ -30,6 +30,7 @@ from mockboard.brain.deps import BACKGROUND_TOPIC, BrainDeps
 from mockboard.brain.graphs import (
     AnalysisResult,
     FactChecker,
+    FactCheckResult,
     TurnAnalyzer,
     generate_report,
     needs_fact_check,
@@ -93,6 +94,10 @@ class InterviewSession:
     fact_checker: FactChecker | None = None
     state: SessionState = field(init=False)
     last_question: str = ""
+    # Background fact checks (never awaited by a move) and the ones finished since the last
+    # trace line was written.
+    _fact_checks: set[asyncio.Task] = field(init=False, default_factory=set)
+    _fact_checks_done: list[FactCheckResult] = field(init=False, default_factory=list)
 
     def __post_init__(self) -> None:
         if self.fact_checker is None:
@@ -128,6 +133,62 @@ class InterviewSession:
             pressure_in_topic=s.pressure_in_topic,
             voice_signals=signals,
         )
+
+    def _start_fact_check(self, analysis_task: asyncio.Task[AnalysisResult]) -> None:
+        """Done-callback of a fast analysis: start the background fact check for its claims.
+
+        The task is kept in `_fact_checks` but no move ever awaits it; its gated verdicts are
+        upserted into the ledger when it ends, and the strategist sees them on a later turn.
+        """
+        if analysis_task.cancelled() or analysis_task.exception() is not None:
+            return
+        result = analysis_task.result()
+        if not needs_fact_check(result.analysis):
+            return
+        task = asyncio.create_task(
+            self.fact_checker.check(
+                result.analysis.claims, turn_id=result.turn_id, segment_id=result.segment_id
+            )
+        )
+        self._fact_checks.add(task)
+        task.add_done_callback(self._fact_check_done)
+
+    def _fact_check_done(self, task: asyncio.Task[FactCheckResult]) -> None:
+        self._fact_checks.discard(task)
+        if task.cancelled() or task.exception() is not None:  # check() itself never raises
+            return
+        res = task.result()
+        self.state.claim_ledger = upsert_claims(self.state.claim_ledger, res.claims)
+        self._fact_checks_done.append(res)
+
+    def _fact_check_trace(self) -> list[dict[str, Any]]:
+        """Fact checks finished since the last trace line, with their own llm calls."""
+        done, self._fact_checks_done = self._fact_checks_done, []
+        return [
+            {
+                "for_turn": r.turn_id,
+                "segment_id": r.segment_id,
+                "fact_check_ms": r.fact_check_ms,
+                "claims": [
+                    {"id": c.id, "verdict": c.verdict.value, "card_id": c.card_id}
+                    for c in r.claims
+                ],
+                "fallbacks": r.fallbacks,
+                "llm_calls": self.recorder.pop_calls(r.trace_tag),
+            }
+            for r in done
+        ]
+
+    async def drain_fact_checks(self, timeout_s: float) -> int:
+        """Wait (bounded) for background fact checks; cancel the rest. Returns how many were
+        cancelled. Used before the report, never on the move's path."""
+        pending = set(self._fact_checks)
+        if not pending:
+            return 0
+        _, still = await asyncio.wait(pending, timeout=timeout_s)
+        for task in still:
+            task.cancel()
+        return len(still)
 
     def _claim(self, claim_id: str | None) -> Claim | None:
         return next((c for c in self.state.claim_ledger if c.id == claim_id), None)
@@ -178,17 +239,17 @@ class InterviewSession:
         segments = split_segments(text, turn_id)
         tasks = []
         for segment in segments:
-            tasks.append(
-                self.analyzer.submit(
-                    session_id=self.session_id,
-                    turn_id=turn_id,
-                    turn_index=st.turn_index,
-                    question=self.last_question,
-                    segment=segment,
-                    ctx=ctx,
-                    ledger=lambda: self.state.claim_ledger,
-                )
+            task = self.analyzer.submit(
+                session_id=self.session_id,
+                turn_id=turn_id,
+                turn_index=st.turn_index,
+                question=self.last_question,
+                segment=segment,
+                ctx=ctx,
+                ledger=lambda: self.state.claim_ledger,
             )
+            task.add_done_callback(self._start_fact_check)
+            tasks.append(task)
             tr.mark(f"segment_{segment.segment_index}_submitted")
 
         results: list[AnalysisResult] = []
@@ -219,14 +280,6 @@ class InterviewSession:
 
         # The strategist's latest move for THIS turn (stale results are ignored).
         fresh = [r for r in results if r.move.for_turn == turn_id]
-        for r in fresh:
-            if needs_fact_check(r.analysis):
-                checked = await self.fact_checker.check(
-                    r.analysis.claims, turn_id=turn_id, segment_id=r.segment_id
-                )
-                fallbacks.extend(checked.fallbacks)
-                st.claim_ledger = upsert_claims(st.claim_ledger, checked.claims)
-                self.recorder.merge_calls(checked.trace_tag, turn_id)
         if fresh:
             move = fresh[-1].move
         else:
@@ -293,6 +346,7 @@ class InterviewSession:
             actor_fallback=line.is_fallback,
             librarian_skipped=not any(needs_fact_check(r.analysis) for r in fresh),
             segments=len(segments),
+            # This turn's claims; "pending" while their background fact check runs.
             claims=[
                 {
                     "id": c.id,
@@ -300,9 +354,9 @@ class InterviewSession:
                     "card_id": c.card_id,
                     "numeric_check": c.numeric_check,
                 }
-                for c in st.claim_ledger
-                if c.turn_id == turn_id
+                for c in (self._claim(x.id) or x for x in analysis.claims)
             ],
+            fact_checks=self._fact_check_trace(),
             fallbacks=fallbacks,
             prompt_versions=s.prompt_versions(),
         )
@@ -368,6 +422,7 @@ class InterviewSession:
 
     async def finish(self, language: ReportLanguage | str | None = None) -> SessionReport:
         t = time.monotonic()
+        cancelled = await self.drain_fact_checks(self.deps.settings.fact_check_drain_timeout_s)
         report = await generate_report(
             self.deps,
             session_id=self.session_id,
@@ -385,6 +440,8 @@ class InterviewSession:
             citation_check_passed=report.citation_check_passed,
             judge_revisions=report.judge_revisions,
             report_language=report.report_language.value,
+            fact_checks=self._fact_check_trace(),
+            fact_checks_cancelled=cancelled,
         )
         await self.analyzer.close_session(self.session_id)
         return report
