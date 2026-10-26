@@ -1,6 +1,8 @@
 r"""LangGraph graphs for the slow brain (PLAN_v2_DELTA §2, orchestrator rulings 1, 9, 10).
 
-Three graphs, all OFF the actor's critical path. The actor is NOT a node here.
+Three graphs. The actor is NOT a node here. Only the fast analysis graph can sit on the
+critical path, and only for a turn's last segment, whose final transcript arrives after the
+candidate stops (bounded by `move_deadline_ms`, ADR-002); the other two are off it.
 
 1. Fast analysis graph (ruling 9), run once per transcript segment, in segment order::
 

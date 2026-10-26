@@ -2,13 +2,14 @@
 
 - **Status:** Accepted and implemented. All timeout values are UNVERIFIED placeholders until the Nova probe runs from EC2.
 - **Date:** October 26, 2026
-- **Source:** [ORCHESTRATOR_LOG.md](../ORCHESTRATOR_LOG.md), rulings 13 and 14; [CTO_NOTES_02.md](../CTO_NOTES_02.md), M5.
+- **Source:** [ORCHESTRATOR_LOG.md](../ORCHESTRATOR_LOG.md), rulings 13, 14 and 16; [CTO_NOTES_02.md](../CTO_NOTES_02.md), M5; [CTO_NOTES_03.md](../CTO_NOTES_03.md) §1.
+- **Revised:** October 26, 2026: the timeout wording (ruling 16).
 
 ## Context
 
-boto3 is synchronous, so every Bedrock call holds a worker thread for its whole duration, and a streamed actor line holds one until its last word. Originally every call used Python's default thread pool (about six threads on a two-core server) and one boto3 client. With two or three sessions fanning out fact checks, the actor's call, the only one on the critical path, could wait behind background work. That is priority inversion on the exact latency number we publish.
+boto3 is synchronous, so every Bedrock call holds a worker thread for its whole duration, and a streamed actor line holds one until its last word. Originally every call used Python's default thread pool (about six threads on a two-core server) and one boto3 client. With two or three sessions fanning out fact checks, the actor's call, which sits on the critical path together with the last segment's listener call, could wait behind background work. That is priority inversion on the exact latency number we publish.
 
-A second problem: Bedrock's default read timeout is long (30 seconds in our settings for background work). If a listener call hung, it would block that session's later segments for the whole timeout. And if the actor failed, a botocore retry could add many more seconds of silence.
+A second problem: botocore's default read timeout is 60 seconds, and our background lane uses 30 seconds. With either value, a hung listener call would block that session's later segments for the whole timeout. And if the actor failed, a botocore retry could add many more seconds of silence.
 
 ## Decision
 

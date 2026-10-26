@@ -15,6 +15,8 @@ jsonschema==4.26.0
 pytest==9.1.1
 pytest-asyncio==1.4.0
 ruff==0.17.2
-# Phase 2 (NOT installed yet): pipecat-ai==1.5.0 and pipecat-gnani pinned to the version
-# tested with it. # UNVERIFIED: exact pipecat-gnani version; check PyPI before phase 2.
+# Phase 2 (NOT installed yet): the `voice` extra in pyproject.toml pins pipecat-ai==1.5.0,
+# pipecat-gnani==0.5.12 and gnani-vachana==0.8.2 (resolved with pip --dry-run, Oct 26, 2026).
+# KNOWN CONFLICT: pipecat-gnani 0.5.12 needs websockets<16, but websockets==17.3 is pinned
+# above, so the voice extra cannot be installed into this environment yet (see ADR-001).
 # Probes extra (numpy, scipy): see requirements-probes.txt.

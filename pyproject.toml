@@ -26,6 +26,14 @@ dependencies = [
 dev = ["pytest>=9,<10", "pytest-asyncio>=1.4,<2", "ruff>=0.17,<0.18"]
 # Day-1 probes only (resampling and speech-length checks); exact pins in requirements-probes.txt.
 probes = ["numpy>=2.5,<3", "scipy>=1.18,<2"]
+# Phase 2 voice loop (ruling 16, ADR-001), exact pins. NOT installed yet. pipecat-ai 1.5.0 is
+# the version Gnani says it tested pipecat-gnani with; gnani-vachana 0.8.2 is what
+# `pip install --dry-run` resolves for these two pins (Oct 26, 2026). Pipecat's online docs
+# describe newer releases: read the 1.5.0 source when they disagree.
+# KNOWN CONFLICT: pipecat-gnani 0.5.12 requires websockets<16 (resolves to 15.0.1), but the
+# base dependencies above require websockets>=17,<18, so `pip install -e .[voice]` fails
+# until the owner decides (ADR-001).
+voice = ["pipecat-ai==1.5.0", "pipecat-gnani==0.5.12", "gnani-vachana==0.8.2"]
 
 [project.scripts]
 mockboard-cli = "mockboard.cli:main"

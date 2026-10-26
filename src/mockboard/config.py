@@ -76,15 +76,16 @@ class Settings(BaseSettings):
     # UNVERIFIED: both until the --app-prompts Nova probe times real listener calls.
     bedrock_fast_connect_timeout_s: float = Field(default=2.0, gt=0)
     bedrock_fast_read_timeout_s: float = Field(default=5.0, gt=0)
-    # Nova's tool-use guide recommends a stop sequence when forcing a tool, so the model
-    # does not keep generating after the tool call.
+    # Nova's "Choosing a tool" page recommends this stop sequence whenever any tool choice
+    # is set (not only the forced `tool` mode), so the model stops after the tool call.
     nova_tool_stop_sequences: list[str] = Field(default_factory=lambda: ["</tool>"])
     # Greedy decoding for forced tool calls (Nova "Troubleshooting tool calls" page). Sent as
     # additionalModelRequestFields.inferenceConfig.topK. Set to None to omit it.
     nova_tool_top_k: int | None = 1
     structured_max_tokens: int = 1200
     # A truncated structured call (stopReason "max_tokens") is retried once with double the
-    # limit, never above this ceiling. UNVERIFIED: Nova Pro's per-request output maximum.
+    # limit, never above this ceiling. The Nova Pro model card gives a 10K-token output
+    # maximum (checked in CTO_NOTES_03 §1), so 5000 is safely inside it.
     structured_max_tokens_ceiling: int = 5000
     # The judge writes nine rationales plus evidence; a Hindi (Devanagari) report may need
     # more tokens than an English one (UNVERIFIED for Nova's tokenizer).

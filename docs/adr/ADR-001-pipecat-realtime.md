@@ -2,7 +2,8 @@
 
 - **Status:** Accepted. Not implemented yet: the voice loop is the next phase.
 - **Date:** October 25, 2026
-- **Source:** [PLAN_v2_DELTA.md](../PLAN_v2_DELTA.md), architecture decision 1; [ORCHESTRATOR_LOG.md](../ORCHESTRATOR_LOG.md), rulings 3 and 9.
+- **Source:** [PLAN_v2_DELTA.md](../PLAN_v2_DELTA.md), architecture decision 1; [ORCHESTRATOR_LOG.md](../ORCHESTRATOR_LOG.md), rulings 3, 9 and 16; [CTO_NOTES_03.md](../CTO_NOTES_03.md) §1.
+- **Revised:** October 26, 2026 (ruling 16): exact pins, barge-in wording, Smart Turn and Hinglish.
 
 ## Context
 
@@ -12,15 +13,27 @@ Pipecat is an open-source framework built for exactly this kind of voice pipelin
 
 ## Decision
 
-The real-time path will use Pipecat, pinned to the version that `pipecat-gnani` was tested with (v1.5.0), with the SmallWebRTC transport, Silero voice-activity detection plus Smart Turn v3 for end-of-turn detection, and `pipecat-gnani` for Prisma and Timbre. We pin both packages and wrap the Gnani integration behind our own small adapter, so a change upstream touches one file.
+The real-time path will use Pipecat with the SmallWebRTC transport, Silero voice-activity detection plus Smart Turn v3 for end-of-turn detection, and `pipecat-gnani` for Prisma and Timbre. We wrap the Gnani integration behind our own small adapter, so a change upstream touches one file.
+
+**Exact pins.** Saying "the version `pipecat-gnani` was tested with" pins nothing by itself, because `pipecat-gnani` 0.5.12 (the latest release) only requires `pipecat-ai>=0.0.50`, and Pipecat itself is already at 1.14.0. So the optional `voice` extra in `pyproject.toml` pins all three packages exactly:
+
+- `pipecat-ai==1.5.0`, the version Gnani's integration page says it was tested with;
+- `pipecat-gnani==0.5.12`;
+- `gnani-vachana==0.8.2`, which is what pip resolves for those two pins today (`pipecat-gnani` allows `>=0.7.9,<1.0`). Gnani tested the integration on the 0.7 line, so this pin stays only if it passes our Prisma and Timbre contract tests (voice-loop chunk V2); otherwise we drop to 0.7.9.
+
+Pipecat's online documentation describes its newest release, not 1.5.0, so class names and APIs such as the turn and mute "strategies" may differ in the version we pin. When the documentation and the code disagree, we read the 1.5.0 source.
+
+**Known conflict, not yet resolved.** `pipecat-gnani` 0.5.12 requires `websockets>=12.0,<16.0`, and `pip install --dry-run` resolves the voice stack to `websockets==15.0.1`. Our base dependencies pin `websockets==17.3` (range `>=17,<18`) for the probes. As things stand, `pip install -e .[voice]` therefore fails with a resolution error. Before the voice loop starts (chunk V0), the owner must choose between loosening our base `websockets` range to allow 15.x and keeping the voice stack in its own environment. One data point for that choice: on October 26, 2026, in a throwaway environment with `websockets==15.0.1` and every other base pin unchanged, the full test suite and the offline probe self-test both passed (no live Gnani connection was made).
 
 Pipecat does the audio and turn-taking; it does not do the thinking. It talks to the brain only through the three session calls that already exist: `submit_segment` for each final Prisma transcript, `end_of_turn` when the candidate stops, and `speak` for the board's line. LangGraph is never placed inside the audio pipeline (see ADR-002).
 
 ## Consequences
 
 - The brain built in phase 1 needs no change for voice: text mode and voice mode share one session API, which is already covered by tests.
-- We depend on a community-tested integration, so we pin versions, wrap it, and plan recorded-fixture contract tests for the Prisma and Timbre WebSocket messages.
-- Some platform behaviour shapes the design. Gnani's documentation says Prisma currently sends final transcripts only, so the design assumes no interim transcripts until the `x-partials` probe says otherwise. Timbre has no documented cancel message, so barge-in will close and replace the TTS connection.
+- We depend on a community-tested integration, so we pin all three versions exactly, wrap it, and plan recorded-fixture contract tests for the Prisma and Timbre WebSocket messages.
+- Some platform behaviour shapes the design. Gnani's documentation says Prisma currently sends final transcripts only, so the design assumes no interim transcripts until the `x-partials` probe says otherwise. Because of that, the last segment's final transcript arrives only after the candidate stops, and its listener call sits on the critical path (see ADR-002).
+- Barge-in uses the plugin's own interruptible speech output: Gnani's documentation says `GnaniTTSService` extends Pipecat's `InterruptibleTTSService`, so synthesis stops cleanly when the candidate cuts in. Timbre's WebSocket page confirms that there is no cancel message, so stopping means closing the connection. We measure the plugin's reconnect cost with the Timbre probe, and add a pre-opened spare connection only if that probe shows reconnecting is slow (rule T1 in CTO_NOTES_03 §4).
+- Turn detection for Hinglish is unmeasured. The Smart Turn repository lists Hindi among its 23 languages, but not code-mixed Hinglish, and Pipecat recommends a Silero `stop_secs` of 0.2 seconds when Smart Turn is used. Whether Smart Turn v3 is good enough for our candidates will be decided by the false cut-in rate we measure in spoken sessions, labelled with a rule written down before labelling.
 - WebRTC across different networks needs STUN, and TURN is recommended for production by Pipecat's SmallWebRTC documentation. This is a known risk for the deployment on EC2, and a WebSocket audio fallback should be kept in mind.
 - Two follow-up decisions should get their own ADRs before Pipecat code is written (CTO_NOTES_02): running our actor as our own Pipecat frame processor rather than Pipecat's Bedrock service, so the guards stay ours; and speaking fact challenges and the opener from a fully buffered, guarded line while other moves stream sentence by sentence.
 

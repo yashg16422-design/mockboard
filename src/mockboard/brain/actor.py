@@ -1,7 +1,8 @@
 """Actor: turns the precomputed `BoardMove` into one spoken line (at most 30 words).
 
-This is a plain async streaming call, NOT a LangGraph node: it is the only model call on the
-real-time critical path. Three guards live here in code, not only in the prompt:
+This is a plain async streaming call, NOT a LangGraph node. It is the last model call on the
+real-time critical path; the other one is the last segment's listener call, which can start
+only after the candidate stops (ADR-002). Guards live here in code, not only in the prompt:
 
 1. Word cap: streaming stops at `max_words` words, whatever the model does.
 2. Ask, never assert (ADR-003): a fact challenge must end as a question, must not contain

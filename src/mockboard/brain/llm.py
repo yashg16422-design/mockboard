@@ -343,8 +343,8 @@ class _BaseClient:
     default_max_tokens: int = 1200
     # When a structured call is truncated (stopReason "max_tokens"), it is retried once
     # with double the limit, but never above this ceiling.
-    # UNVERIFIED: Nova Pro's maximum output tokens per request; 5000 is a conservative
-    # ceiling, to be confirmed against the Nova model card before raising it.
+    # The Nova Pro model card gives a 10K-token output maximum (CTO_NOTES_03 §1), so this
+    # conservative 5000 ceiling is safe; raise it only with a reason.
     max_tokens_ceiling: int = 5000
 
     def __init__(self, on_call: CallSink | None = None) -> None:
@@ -603,7 +603,7 @@ class BedrockNovaClient(_BaseClient):
         """The exact Converse request for a forced-tool structured call (testable offline)."""
         inference: dict[str, Any] = {"temperature": 0.0, "maxTokens": max_tokens}
         if self._tool_stop:
-            # Nova's tool-use guide recommends a stop sequence when forcing a tool.
+            # Nova's "Choosing a tool" page recommends `</tool>` whenever a tool choice is set.
             inference["stopSequences"] = self._tool_stop
         request: dict[str, Any] = {
             "modelId": self.model_id,

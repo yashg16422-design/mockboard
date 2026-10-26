@@ -8,7 +8,21 @@ Everything here describes the code as it is on October 26, 2026 (text mode only)
 
 A voice interview has one hard rule: when the candidate stops talking, the board must start talking within about two seconds, or the silence feels broken. But a good board also has to think: what did the candidate claim, is any figure wrong, was the answer one-sided, is the candidate nervous? Thinking takes several model calls, and each call to Amazon Nova Pro in Sydney takes real time.
 
-Mock Board solves this by splitting the work in two. The **slow brain** does all the thinking while the candidate is still speaking, one transcript segment at a time, and keeps the board's next move ready. The **fast mouth** is a single streamed model call, made only after the candidate stops, whose only job is to phrase that ready-made move as one short spoken line. Only one model call sits on the critical path between "candidate stopped" and "board speaks".
+Mock Board solves this by splitting the work in two. The **slow brain** does almost all the thinking while the candidate is still speaking, one transcript segment at a time, and keeps the board's next move ready. The **fast mouth** is a single streamed model call, made only after the candidate stops, whose only job is to phrase that ready-made move as one short spoken line.
+
+There is one honest exception to "the thinking happens while the candidate talks". Prisma, Gnani's speech-to-text service, sends the final transcript of a segment only after the candidate stops and its voice detector closes that segment. So the listener call for the **last** segment cannot start until the candidate has finished. Between "candidate stopped" and "board speaks" there can therefore be two model calls: the last segment's listener, which is bounded by `move_deadline_ms` (if it is late, the move computed after the previous segment is used instead), and the actor. The fact checks never sit on this path.
+
+That is why the latency budget is "last listener plus actor", not "actor alone". Our own p95 target is 3.0 seconds from the candidate stopping to the board's first audio, split like this (these are budgets we chose, not measurements; CTO_NOTES_03 §4):
+
+| Stage | Budget |
+|---|---|
+| Turn detection (Silero 0.2 s plus Smart Turn) | 0.3 s |
+| Last final transcript plus the last segment's listener call | 1.0 s |
+| Actor's first sentence | 1.2 s |
+| Timbre's first audio byte | 0.3 s |
+| Transport | 0.2 s |
+
+The probe `python -m probes.nova_probe --app-prompts` measures the two model rows with the app's real prompts, and the deadline values in `config.py` stay UNVERIFIED until it has run from the EC2 server.
 
 **Analogy.** Think of a school quiz-show host with a helper behind the curtain. While a child is answering, the helper listens, checks the answer against the answer cards, and writes the host's next line on a card. When the child stops, the host just reads the card aloud in their own voice. The host never has to stop and think, so there is no awkward silence. In Mock Board, the helper is the slow brain (the listener, the librarian and the strategist), and the host is the actor.
 
@@ -21,8 +35,10 @@ candidate speaks ──► segment 0 ──► fast analysis graph (listener →
                  ──► segment 1 ──► fast analysis graph (listener → strategist) ──► move ready (newer)
                                    └─► fact-check graph in the background (librarian ×N → gate)
                                        └─► verdicts go into the claim ledger, used from the NEXT turn
-candidate stops ──► end_of_turn: take the latest ready move (wait at most the deadline)
-                ──► speak: the actor phrases the move (the one call on the critical path)
+candidate stops ──► last segment arrives ──► fast analysis graph (listener → strategist)
+                ──► end_of_turn: take the latest ready move (wait at most the deadline)
+                ──► speak: the actor phrases the move
+                    (critical path = last segment's listener + actor)
 ```
 
 ## 2. The session API: submit_segment, end_of_turn, speak
@@ -107,7 +123,7 @@ When a node returns `{"analyses": [analysis]}`, should that replace the old list
 
 ### 3.5 Checkpointer
 
-A checkpointer saves the state after each run, keyed by a `thread_id`, so the next run on the same thread starts from the saved state. We compile the fast graph with an in-memory checkpointer and use the session id as the thread id:
+A checkpointer saves the state after every step of the graph (LangGraph calls each step a "super-step" and creates a checkpoint at each super-step boundary), keyed by a `thread_id`, so the next run on the same thread starts from the saved state. We compile the fast graph with an in-memory checkpointer and use the session id as the thread id:
 
 ```python
 cfg: dict[str, Any] = {"configurable": {"thread_id": session_id}}
@@ -154,7 +170,7 @@ g.add_conditional_edges(START, route_claims, ["librarian", END])
 
 Each parallel librarian branch returns `{"votes": {key: vote}}`, and the `votes` field has a custom reducer, `merge_dict`, that merges the small dictionaries from all branches into one. Then the `gate` node turns every vote into a final verdict. **Analogy:** a teacher hands one worksheet to each of several children at the same time, and they all drop their finished sheets into one tray (the reducer). Then one checker marks the whole tray (the gate).
 
-One important detail: LangGraph runs parallel branches as one "superstep", and if any branch raises an error, the whole superstep fails and none of the branches' results are kept. The builder tested this against LangGraph 1.2.17 before relying on it. So every librarian branch catches its own errors and returns an "unverifiable" fallback vote instead of raising, and one bad claim can never wipe out the verdicts of the others.
+One important detail: LangGraph runs parallel branches as one "superstep", and if any branch raises an error, the whole superstep fails and, in a graph without a checkpointer like this one, none of the branches' results are kept. (With a checkpointer, LangGraph saves the writes of the branches that succeeded and does not re-run them when the graph resumes.) The builder tested this against LangGraph 1.2.17 before relying on it. So every librarian branch catches its own errors and returns an "unverifiable" fallback vote instead of raising, and one bad claim can never wipe out the verdicts of the others.
 
 The fact-check graph has no checkpointer. Each run is independent and hands its checked claims back to the session, which adds them to its ledger.
 
@@ -215,7 +231,7 @@ Several rules exist because watching real sessions exposed bad behaviour. An hon
 
 ### 4.4 Actor (`brain/actor.py`)
 
-The actor turns the chosen move into one spoken line of at most 30 words, in the voice of the board member who owns the move. It is a plain streamed Nova call, not a graph node, because it is the one call on the critical path and must start speaking as early as possible. Its prompt (`prompts/actor.v2.md`) gets the move, the persona's style, the last question and the candidate's answer.
+The actor turns the chosen move into one spoken line of at most 30 words, in the voice of the board member who owns the move. It is a plain streamed Nova call, not a graph node, because it is the last call on the critical path (after the last segment's listener, see §1) and must start speaking as early as possible. Its prompt (`prompts/actor.v2.md`) gets the move, the persona's style, the last question and the candidate's answer.
 
 Three guards live in code, not only in the prompt:
 
@@ -261,7 +277,7 @@ boto3 is synchronous, so every Bedrock call holds a worker thread for its whole 
 - The **fast lane** carries the listener, the only work between end of turn and the actor. Defaults: 4 threads, 2-second connect timeout, 5-second read timeout (a whole listener call must fit inside it), at most 2 attempts in total through the fast graph's retry policy, 0.1 seconds before the retry, and no jitter. The listener node also stops waiting after `fast_listener_timeout_s` (3 seconds), or as soon as `end_of_turn` has passed its deadline. It then records a fallback analysis and "parks" the still-running call; if the call returns later, its claims are still fact-checked, but its move is never used.
 - The **background lane** carries the librarian and the judge. Defaults: 8 threads, 5-second connect timeout, 30-second read timeout, and 3 attempts with backoff and jitter.
 
-The end-of-turn deadline is 1.5 seconds for the future voice path and 30 seconds in text mode (the candidate is typing). Every one of these numbers is UNVERIFIED and lives in `config.py`, to be set from the Nova probe's measurements from the EC2 server. A call name that is not listed goes to the background lane, so a new kind of call can never take a critical-path thread by accident.
+The end-of-turn deadline is 1.5 seconds for the future voice path and 30 seconds in text mode (the candidate is typing). The 1.5 seconds is provisional: added to the actor and Timbre, it does not fit the 3.0-second p95 budget in §1, so the Prisma and Nova probes will set it. Every one of these numbers is UNVERIFIED and lives in `config.py`, to be set from the Nova probe's measurements from the EC2 server. A call name that is not listed goes to the background lane, so a new kind of call can never take a critical-path thread by accident.
 
 **Analogy.** A shop with three checkout counters. A long queue of trolleys at the "background" counter never holds up the express counter. And each counter has an egg timer: when it rings, the cashier stops waiting for a card machine that has frozen.
 
