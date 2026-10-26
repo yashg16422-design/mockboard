@@ -8,8 +8,11 @@ Three graphs, all OFF the actor's critical path. The actor is NOT a node here.
 
    * `listener`   one forced-tool Nova call -> typed `Analysis` (claims stamped with ids).
    * `strategist` pure deterministic rules (no LLM). It reads the session's claim ledger
-                  as an input snapshot taken when the run starts, so verdicts that the
-                  fact-check graph produced for EARLIER turns can trigger a fact challenge.
+                  as an input snapshot (`ledger`, overwritten by every run), so verdicts
+                  that the fact-check graph produced for EARLIER turns can trigger a fact
+                  challenge. The session freezes one snapshot per turn, when the turn
+                  opens, so every segment of a turn sees the same ledger and a verdict
+                  that lands mid-turn first counts on the next turn.
 
    This is the only work allowed between end-of-turn and the actor call. One checkpointer
    thread per session (`thread_id = session_id`) accumulates the turn's analyses, so the
