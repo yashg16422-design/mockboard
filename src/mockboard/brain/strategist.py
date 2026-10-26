@@ -12,9 +12,9 @@ tests/test_strategist.py check every row.
 | R2   | FEATURE_BOARD_INTERRUPT on and the answer exceeds `interrupt_after_words`   | interrupt      | chairman |
 | R3   | no words at all (silence), or a long pause before answering                 | reassure       | chairman |
 |      | (response_latency_s >= reassure_latency_s), or the FIRST honest "I don't    |                |          |
-|      | know" in this topic                                                         |                |          |
-| R3b  | the SECOND (or later) honest "I don't know" in this topic                   | move_on        | next     |
-|      |                                                                             |                | topic's  |
+|      | know" in this topic while the topic still has questions left                |                |          |
+| R3b  | the SECOND (or later) honest "I don't know" in this topic, or ANY honest    | move_on        | next     |
+|      | "I don't know" once the topic's question budget is used up (ruling 12)      |                | topic's  |
 | R4   | an unchallenged claim from an earlier turn (>= min delay) is `contradicted` | fact_challenge | owner of |
 |      | (model AND numeric check agreed), is numeric or date, and cites a card      |                | the card |
 | R5   | topic budget used up, or `strong_streak_to_move_on` strong answers in a row | move_on        | next     |
@@ -181,6 +181,11 @@ def pressure_blocker(ctx: StrategyContext, turn: Analysis, cfg: StrategyConfig) 
     return None
 
 
+def _budget_used(ctx: StrategyContext) -> bool:
+    """True when this answer is the last one the topic's question budget allows."""
+    return ctx.turns_in_topic + 1 >= max(1, ctx.max_turns_in_topic)
+
+
 def _move_on(ctx: StrategyContext, cfg: StrategyConfig, rule: str, why: str) -> BoardMove:
     nxt = ctx.next_topic
     member = cfg.member_for(nxt) if nxt else cfg.chairman
@@ -233,7 +238,15 @@ def _decide(
             f"long pause before answering ({signals.response_latency_s:.1f}s)",
         )
     # R3/R3b: honest "I don't know". Never punished: first time reassure, then move on.
+    # Ruling 12: with the topic's budget used up, reassuring with a simpler question and
+    # then leaving the topic at once reads oddly, so the board moves on straight away.
     if turn.honest_unknown:
+        if _budget_used(ctx):
+            return _move_on(
+                ctx, cfg, "R3b",
+                f"honest 'I don't know' and the topic budget is used "
+                f"({ctx.turns_in_topic + 1}/{ctx.max_turns_in_topic}); move on",
+            )
         if ctx.honest_unknowns_in_topic == 0:
             return _move(
                 Move.reassure, cfg.chairman, "R3",
@@ -258,8 +271,7 @@ def _decide(
     # R5: move on when the topic budget is used or the candidate is consistently strong.
     turns_after = ctx.turns_in_topic + 1
     streak_after = ctx.strong_streak + 1 if turn.is_strong else 0
-    budget_used = turns_after >= max(1, ctx.max_turns_in_topic)
-    if budget_used or streak_after >= cfg.strong_streak_to_move_on:
+    if _budget_used(ctx) or streak_after >= cfg.strong_streak_to_move_on:
         why = (
             f"topic budget used ({turns_after}/{ctx.max_turns_in_topic})"
             if turns_after >= ctx.max_turns_in_topic

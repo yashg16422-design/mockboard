@@ -72,6 +72,20 @@ def test_second_honest_unknown_in_topic_moves_on():
     assert (m.move, m.rule_id, m.target) == (Move.move_on, "R3b", "internal_security")
 
 
+@pytest.mark.parametrize("unknowns_before", [0, 1])
+def test_honest_unknown_with_the_topic_budget_used_moves_on(unknowns_before):
+    """Ruling 12: on the topic's last question an honest unknown moves on (R3b), even the
+    first one: reassuring and then leaving the topic at once reads oddly."""
+    ctx = make_ctx(turns_in_topic=3, max_turns_in_topic=4, honest_unknowns_in_topic=unknowns_before)
+    m = decide_move(ctx, [make_analysis(honest_unknown=True)], [], CFG)
+    assert (m.move, m.rule_id, m.target) == (Move.move_on, "R3b", "internal_security")
+    assert "budget" in m.reason
+    one_left = make_ctx(turns_in_topic=2, max_turns_in_topic=4)
+    assert decide_move(one_left, [make_analysis(honest_unknown=True)], [], CFG).move == (
+        Move.reassure
+    )
+
+
 def test_honest_unknown_is_never_fact_challenged_in_that_turn():
     m = decide_move(make_ctx(turn_index=1), [make_analysis(honest_unknown=True)],
                     [contradicted(0)], CFG)

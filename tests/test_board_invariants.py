@@ -5,7 +5,9 @@ properties of the conversation as a whole, not single strategist rows. Each defe
 watching a session becomes one invariant here:
 
 * honesty is never punished (Defect A): an honest "I don't know" only ever gets reassure or
-  move_on, and the first one in a topic gets reassure;
+  move_on, and the first one in a topic gets reassure while the topic has questions left;
+* on a topic's last question (budget used up) an honest "I don't know" moves on, never
+  reassures (ruling 12);
 * no pressure immediately after reassure (no kind-then-harsh whiplash);
 * pressure is capped: never twice in a row, at most two per topic;
 * a conceded error is acknowledged before the next move;
@@ -94,6 +96,15 @@ SCRIPTS: dict[str, list[str]] = {
         ANSWERS["thin"][2],
     ],
     "balanced_only": [ANSWERS["balanced"][i % 2] for i in range(9)],
+    # Ruling 12: honest unknowns on a topic's last question (the one-question background
+    # topic, then tourism's fourth question) move on instead of reassuring.
+    "honest_at_budget": [
+        ANSWERS["honest_unknown"][1],
+        ANSWERS["one_sided"][0],
+        ANSWERS["thin"][0],
+        ANSWERS["one_sided"][1],
+        ANSWERS["honest_unknown"][2],
+    ],
 }
 
 
@@ -103,6 +114,7 @@ class Played:
     moves: list[BoardMove]
     lines: list[BoardLine]  # board lines for candidate turns (opener excluded)
     topics: list[str]
+    last_in_topic: list[bool]  # the topic's question budget is used up by this answer
 
 
 async def play(deps, form, tmp_path, answers: list[str], sid: str) -> Played:
@@ -116,10 +128,13 @@ async def play(deps, form, tmp_path, answers: list[str], sid: str) -> Played:
     )
     await session.open()
     topics: list[str] = []
+    last_in_topic: list[bool] = []
     for text in answers:
-        if session.state.finished:
+        st = session.state
+        if st.finished:
             break
-        topics.append(session.state.topic)
+        topics.append(st.topic)
+        last_in_topic.append(st.turns_in_topic + 1 >= session._max_turns_in(st.topic))
         await answer(session, text)
     await analyzer.close_session(sid)
     st = session.state
@@ -128,6 +143,7 @@ async def play(deps, form, tmp_path, answers: list[str], sid: str) -> Played:
         moves=list(st.moves),
         lines=list(st.board_lines[1:]),
         topics=topics,
+        last_in_topic=last_in_topic,
     )
 
 
@@ -153,9 +169,23 @@ def honesty_never_punished(p: Played) -> list[str]:
         seen_in_topic[p.topics[i]] = nth + 1
         if m.move not in (Move.reassure, Move.move_on):
             bad.append(f"turn {i}: honest unknown got {m.move.value}")
-        if nth == 0 and m.move != Move.reassure and m.rule_id != "CAP":
+        if (
+            nth == 0
+            and not p.last_in_topic[i]
+            and m.move != Move.reassure
+            and m.rule_id != "CAP"
+        ):
             bad.append(f"turn {i}: first honest unknown in topic got {m.move.value}")
     return bad
+
+
+def honest_unknown_on_last_question_moves_on(p: Played) -> list[str]:
+    """Ruling 12: no reassure once the topic's budget is used up."""
+    return [
+        f"turn {i}: honest unknown on the topic's last question got {m.move.value}"
+        for i, (a, m) in enumerate(zip(p.analyses, p.moves, strict=True))
+        if a.honest_unknown and p.last_in_topic[i] and m.move != Move.move_on
+    ]
 
 
 def no_pressure_after_reassure(p: Played) -> list[str]:
@@ -211,6 +241,7 @@ def balanced_not_pushed_back(p: Played) -> tuple[list[str], int, int]:
 def all_violations(p: Played) -> list[str]:
     return (
         honesty_never_punished(p)
+        + honest_unknown_on_last_question_moves_on(p)
         + no_pressure_after_reassure(p)
         + pressure_capped(p)
         + concession_acknowledged(p)
@@ -250,6 +281,19 @@ async def test_honest_streak_reassures_once_then_moves_on(deps, form, tmp_path):
     for moves in by_topic.values():
         assert moves[0] == Move.reassure
         assert all(m == Move.move_on for m in moves[1:])
+
+
+async def test_honest_unknown_on_a_topics_last_question_moves_on(deps, form, tmp_path):
+    p = await play(deps, form, tmp_path, SCRIPTS["honest_at_budget"], "inv-budget")
+    at_budget = [
+        (topic, m)
+        for a, m, topic, last in zip(p.analyses, p.moves, p.topics, p.last_in_topic, strict=True)
+        if a.honest_unknown and last
+    ]
+    # Both honest unknowns fell on a last question: background (1 question) and tourism (4th).
+    assert [t for t, _ in at_budget] == ["background", "tourism"]
+    assert all((m.move, m.rule_id) == (Move.move_on, "R3b") for _, m in at_budget)
+    assert Move.reassure not in [m.move for m in p.moves]
 
 
 async def test_thin_streak_never_whiplashes(deps, form, tmp_path):
