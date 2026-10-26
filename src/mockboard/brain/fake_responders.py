@@ -340,17 +340,21 @@ def judge_responder(system: str, user: str) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
+def fake_responders(
+    cards: CardSet, tolerance: Tolerance | None = None
+) -> dict[str, Callable[[str, str], Any]]:
+    """Call name -> rule-based responder, for every call name the brain uses."""
+    return {
+        "listener": listener_responder,
+        "librarian": make_librarian_responder(cards, tolerance),
+        "actor": actor_responder,
+        "opener": opener_responder,
+        "judge": judge_responder,
+    }
+
+
 def make_fake_llm(
     cards: CardSet, tolerance: Tolerance | None = None, **kwargs: Any
 ) -> FakeLLMClient:
     """A FakeLLMClient with rule-based responders for every call name the brain uses."""
-    return FakeLLMClient(
-        responders={
-            "listener": listener_responder,
-            "librarian": make_librarian_responder(cards, tolerance),
-            "actor": actor_responder,
-            "opener": opener_responder,
-            "judge": judge_responder,
-        },
-        **kwargs,
-    )
+    return FakeLLMClient(responders=fake_responders(cards, tolerance), **kwargs)

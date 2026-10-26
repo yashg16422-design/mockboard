@@ -10,18 +10,36 @@ Two implementations share one protocol:
   `--fake` CLI run offline.
 
 Every call produces a `CallStats` record (latency, time to first token, token counts
-including prompt-cache reads/writes, attempts), which the trace recorder stores.
+including prompt-cache reads/writes, attempts, lane), which the trace recorder stores.
+
+Execution lanes (CTO_NOTES_02 M5). boto3 is synchronous, so every Bedrock call holds a
+worker thread for its whole duration (a streamed actor line holds one until its last token).
+With one shared pool, a burst of fact checks could make the actor's call wait for a free
+thread: priority inversion on the one number we publish. So every call runs on one of three
+lanes, chosen from the call's name (`lane_for`), and each lane has its own small thread pool
+and its own boto3 client (own connection pool, own timeouts, own retry setting):
+
+* `actor`      - the spoken line and the opener: the critical path.
+* `fast`       - the fast analysis graph's listener: the only work between end of turn and
+                 the actor.
+* `background` - fact checks (librarian) and the judge: never awaited by a move.
+
+Think of three checkout counters in a shop: a queue of trolleys at the "background" counter
+never holds up the express counter.
 """
 
 from __future__ import annotations
 
 import asyncio
 import contextlib
+import functools
 import json
 import time
 from collections import deque
 from collections.abc import AsyncIterator, Callable, Mapping, Sequence
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
+from enum import StrEnum
 from typing import Any, Protocol, TypeVar, runtime_checkable
 
 from pydantic import BaseModel, ValidationError
@@ -30,6 +48,68 @@ T = TypeVar("T", bound=BaseModel)
 
 MAX_CACHE_POINTS = 4  # Bedrock prompt-caching guide: at most 4 checkpoints per request.
 FORBIDDEN_SCHEMA_KEYS = {"$ref", "$defs", "definitions", "anyOf", "oneOf", "allOf", "not"}
+
+
+# ---------------------------------------------------------------------------
+# Lanes
+# ---------------------------------------------------------------------------
+
+
+class Lane(StrEnum):
+    actor = "actor"
+    fast = "fast"
+    background = "background"
+
+
+# Call name -> lane. A name not listed here goes to the background lane, so a new kind of
+# call can never take a critical-path thread by accident.
+LANE_BY_CALL: dict[str, Lane] = {
+    "actor": Lane.actor,
+    "opener": Lane.actor,
+    "listener": Lane.fast,
+    "librarian": Lane.background,
+    "judge": Lane.background,
+}
+
+
+def lane_for(name: str) -> Lane:
+    return LANE_BY_CALL.get(name, Lane.background)
+
+
+@dataclass(frozen=True)
+class LaneConfig:
+    """One lane's thread pool and botocore client settings.
+
+    `max_attempts` is botocore's `total_max_attempts` for this lane's client. It stays 1
+    wherever a LangGraph `RetryPolicy` already retries (fast and background lanes), so
+    attempts never multiply across layers.
+    """
+
+    workers: int
+    connect_timeout_s: float
+    read_timeout_s: float
+    max_attempts: int = 1
+
+
+def lane_configs(settings: Any) -> dict[Lane, LaneConfig]:
+    """Per-lane pool sizes, timeouts and retries from Settings."""
+    return {
+        Lane.actor: LaneConfig(
+            workers=settings.bedrock_actor_workers,
+            connect_timeout_s=settings.bedrock_connect_timeout_s,
+            read_timeout_s=settings.bedrock_read_timeout_s,
+        ),
+        Lane.fast: LaneConfig(
+            workers=settings.bedrock_fast_workers,
+            connect_timeout_s=settings.bedrock_connect_timeout_s,
+            read_timeout_s=settings.bedrock_read_timeout_s,
+        ),
+        Lane.background: LaneConfig(
+            workers=settings.bedrock_background_workers,
+            connect_timeout_s=settings.bedrock_connect_timeout_s,
+            read_timeout_s=settings.bedrock_read_timeout_s,
+        ),
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -75,6 +155,10 @@ class CallStats:
     stop_reason: str | None = None
     error: str | None = None
     fallback: bool = False
+    lane: str = ""  # filled from the call name when not given
+
+    def __post_init__(self) -> None:
+        self.lane = self.lane or lane_for(self.name).value
 
     @property
     def latency_ms(self) -> float | None:
@@ -96,6 +180,7 @@ class CallStats:
         return {
             "name": self.name,
             "tag": self.tag,
+            "lane": self.lane,
             "model_id": self.model_id,
             "latency_ms": None if self.latency_ms is None else round(self.latency_ms, 1),
             "ttft_ms": None if self.ttft_ms is None else round(self.ttft_ms, 1),
@@ -386,8 +471,15 @@ def _map_boto_error(exc: Exception) -> LLMError:
     return LLMError(f"{type(exc).__name__}: {exc}")
 
 
+DEFAULT_LANE_WORKERS = {Lane.actor: 4, Lane.fast: 4, Lane.background: 8}
+
+
 class BedrockNovaClient(_BaseClient):
-    """Amazon Nova Pro over the Bedrock Converse API (credentials: default AWS chain)."""
+    """Amazon Nova Pro over the Bedrock Converse API (credentials: default AWS chain).
+
+    One boto3 client and one thread pool per lane (see the module docstring). `client=`
+    (tests and probes) uses one stub for every lane; `clients=` gives one per lane.
+    """
 
     def __init__(
         self,
@@ -402,6 +494,9 @@ class BedrockNovaClient(_BaseClient):
         max_tokens_ceiling: int = 5000,
         on_call: CallSink | None = None,
         client: Any = None,
+        lanes: Mapping[Lane, LaneConfig] | None = None,
+        max_pool_connections: int = 16,
+        clients: Mapping[Lane, Any] | None = None,
     ) -> None:
         super().__init__(on_call)
         self.model_id = model_id
@@ -409,23 +504,46 @@ class BedrockNovaClient(_BaseClient):
         self.max_tokens_ceiling = max_tokens_ceiling
         self._tool_stop = list(tool_stop_sequences)
         self._tool_top_k = tool_top_k
-        if client is None:
-            import boto3
-            from botocore.config import Config
-
-            # botocore's own retries are switched off: retries happen in exactly one place
-            # (LangGraph RetryPolicy for graph nodes, one manual retry for the actor), so
-            # attempts never multiply.
-            client = boto3.client(
-                "bedrock-runtime",
-                region_name=region,
-                config=Config(
-                    connect_timeout=connect_timeout_s,
-                    read_timeout=read_timeout_s,
-                    retries={"total_max_attempts": 1, "mode": "standard"},
-                ),
+        # Without explicit lanes, every lane uses the given timeouts and no botocore retry.
+        self.lanes: dict[Lane, LaneConfig] = {
+            lane: (lanes or {}).get(
+                lane, LaneConfig(DEFAULT_LANE_WORKERS[lane], connect_timeout_s, read_timeout_s)
             )
-        self._client = client
+            for lane in Lane
+        }
+        self._pools = {
+            lane: ThreadPoolExecutor(
+                max_workers=cfg.workers, thread_name_prefix=f"bedrock-{lane.value}"
+            )
+            for lane, cfg in self.lanes.items()
+        }
+        if clients is not None:
+            self._clients = {lane: clients[lane] for lane in Lane}
+        elif client is not None:
+            self._clients = dict.fromkeys(Lane, client)
+        else:
+            self._clients = {
+                lane: self._boto_client(region, cfg, max_pool_connections)
+                for lane, cfg in self.lanes.items()
+            }
+
+    @staticmethod
+    def _boto_client(region: str, cfg: LaneConfig, max_pool_connections: int) -> Any:
+        import boto3
+        from botocore.config import Config
+
+        return boto3.client(
+            "bedrock-runtime",
+            region_name=region,
+            config=Config(
+                connect_timeout=cfg.connect_timeout_s,
+                read_timeout=cfg.read_timeout_s,
+                # 1 on the graph lanes: retries happen in exactly one place per call path
+                # (LangGraph RetryPolicy there), so attempts never multiply.
+                retries={"total_max_attempts": cfg.max_attempts, "mode": "standard"},
+                max_pool_connections=max(max_pool_connections, cfg.workers),
+            ),
+        )
 
     @classmethod
     def from_settings(cls, settings: Any, on_call: CallSink | None = None) -> BedrockNovaClient:
@@ -439,7 +557,20 @@ class BedrockNovaClient(_BaseClient):
             default_max_tokens=settings.structured_max_tokens,
             max_tokens_ceiling=settings.structured_max_tokens_ceiling,
             on_call=on_call,
+            lanes=lane_configs(settings),
+            max_pool_connections=settings.bedrock_max_pool_connections,
         )
+
+    def client_for(self, lane: Lane) -> Any:
+        return self._clients[lane]
+
+    def pool_for(self, lane: Lane) -> ThreadPoolExecutor:
+        return self._pools[lane]
+
+    def close(self) -> None:
+        """Stop the lane pools (running calls finish; nothing new starts)."""
+        for pool in self._pools.values():
+            pool.shutdown(wait=False, cancel_futures=True)
 
     @staticmethod
     def system_blocks(blocks: Sequence[PromptBlock]) -> list[dict[str, Any]]:
@@ -524,8 +655,12 @@ class BedrockNovaClient(_BaseClient):
         stats: CallStats,
     ) -> Any:
         request = self.build_tool_request(system, user, tool, max_tokens)
+        lane = Lane(stats.lane)
+        loop = asyncio.get_running_loop()
         try:
-            response = await asyncio.to_thread(self._client.converse, **request)
+            response = await loop.run_in_executor(
+                self._pools[lane], functools.partial(self._clients[lane].converse, **request)
+            )
         except Exception as exc:
             raise _map_boto_error(exc) from exc
         stats.first_token = stats.first_token or time.monotonic()
@@ -560,10 +695,12 @@ class BedrockNovaClient(_BaseClient):
         queue: asyncio.Queue[tuple[str, Any]] = asyncio.Queue()
         holder: dict[str, Any] = {}
         stop = False
+        lane = Lane(stats.lane)
+        client = self._clients[lane]
 
         def worker() -> None:
             try:
-                response = self._client.converse_stream(**request)
+                response = client.converse_stream(**request)
                 holder["stream"] = response["stream"]
                 for event in response["stream"]:
                     if stop:
@@ -574,7 +711,7 @@ class BedrockNovaClient(_BaseClient):
             finally:
                 loop.call_soon_threadsafe(queue.put_nowait, ("done", None))
 
-        thread_future = loop.run_in_executor(None, worker)
+        thread_future = loop.run_in_executor(self._pools[lane], worker)
         try:
             while True:
                 kind, item = await queue.get()

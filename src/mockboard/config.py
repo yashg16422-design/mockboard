@@ -10,7 +10,7 @@ from __future__ import annotations
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import Field, SecretStr, field_validator
+from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -41,6 +41,19 @@ class Settings(BaseSettings):
     # --- AWS Bedrock / Nova Pro ---
     aws_region: str = "ap-southeast-2"
     nova_model_id: str = "amazon.nova-pro-v1:0"
+    # Execution lanes (CTO_NOTES_02 M5). Every Bedrock call runs on one of three lanes, each
+    # with its own small thread pool and its own boto3 client, so slow background work can
+    # never take the threads or connections the critical path needs:
+    #   actor      - the board's spoken line and the opener (the critical path)
+    #   fast       - the fast analysis graph's listener (between end of turn and the actor)
+    #   background - fact checks (librarian) and the judge
+    bedrock_actor_workers: int = Field(default=4, ge=1)
+    bedrock_fast_workers: int = Field(default=4, ge=1)
+    bedrock_background_workers: int = Field(default=8, ge=1)
+    # botocore's connection pool per lane client (botocore's default is 10). Must be at least
+    # the lane's worker count, or threads would queue for a connection (validated below).
+    bedrock_max_pool_connections: int = Field(default=16, ge=1)
+    # Background lane: generous timeouts; retries come only from the graph RetryPolicy.
     bedrock_connect_timeout_s: float = 5.0
     bedrock_read_timeout_s: float = 30.0
     # Nova's tool-use guide recommends a stop sequence when forcing a tool, so the model
@@ -112,6 +125,18 @@ class Settings(BaseSettings):
     trace_dir: Path = Path("traces")  # per-turn JSONL traces (git-ignored)
     report_dir: Path = Path("runs/reports")
     langfuse_enabled: bool = False
+
+    @model_validator(mode="after")
+    def _pools_cover_workers(self) -> Settings:
+        most = max(
+            self.bedrock_actor_workers, self.bedrock_fast_workers, self.bedrock_background_workers
+        )
+        if self.bedrock_max_pool_connections < most:
+            raise ValueError(
+                f"bedrock_max_pool_connections ({self.bedrock_max_pool_connections}) must be >= "
+                f"the largest lane's worker count ({most}), or lane threads queue for sockets"
+            )
+        return self
 
     @field_validator("fact_challenge_min_delay_turns")
     @classmethod
