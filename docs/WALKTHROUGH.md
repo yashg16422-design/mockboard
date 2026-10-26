@@ -317,6 +317,8 @@ The metrics, all reported as counts first:
 
 **Analogy.** The dev split is the practice paper you may look at as often as you like. The held-out split is the final exam paper, kept in a sealed envelope until exam day.
 
+**The merge gate.** `make eval-gate` (`eval/gate.py`) turns the eval into a pass-or-fail check for any change to a prompt, a schema, a model setting or the strategist's rules. It runs the dev split and exits with a non-zero code when planted-error recall falls below `EVAL_GATE_MIN_PLANTED_RECALL` (0.8 by default, a placeholder until the golden set exists), when there are more false corrections than `EVAL_GATE_MAX_FALSE_CORRECTIONS` (0 by default, so any false correction fails), or when the items contain no planted error at all, because a gate that measures nothing must not pass. Given a committed baseline summary (`make eval-gate EVAL_BASELINE=...`), it also fails if the count of planted errors caught goes down or the count of false corrections goes up. It compares counts rather than percentages, because in a small set one item is worth several percentage points. `tests/test_eval_gate.py` proves each failure case, including a real process exiting with code 1.
+
 **Honest status.** Today the set has six illustrative example items that cite synthetic test cards. The owner's real golden set (60 answers and about 150 hand-checked true claims) is not written yet, and with the fake model the numbers test the pipeline, not Nova. Run it with `make eval`.
 
 ## 9. Agentic patterns: what is used and what is not
@@ -363,6 +365,7 @@ To see everything working together, on your laptop (WSL), in the `mockboard` fol
 ```bash
 make cli-fake
 make eval
+make eval-gate
 ```
 
 The decision records behind these choices are in `docs/adr/`, and the rulings they come from are in `docs/ORCHESTRATOR_LOG.md`.

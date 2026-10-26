@@ -88,6 +88,15 @@ make eval
 
 It runs the development split and writes a summary file to `eval/results/`. The held-out split refuses to run unless you pass `--allow-heldout`, because it is meant only for milestone checks. Today the eval set contains six illustrative example items that cite synthetic test cards; the real frozen golden set (60 answers and about 150 hand-checked true claims) has not been written yet. With the fake model, the numbers test the pipeline, not Nova's quality. `docs/WALKTHROUGH.md` explains each metric.
 
+The eval gate runs the same dev split and fails (with a non-zero exit code) if planted-error recall falls below a threshold or if any true claim is "corrected". The thresholds are the settings `EVAL_GATE_MIN_PLANTED_RECALL` (default 0.8) and `EVAL_GATE_MAX_FALSE_CORRECTIONS` (default 0). On your laptop (WSL), in the `mockboard` folder:
+
+```bash
+make eval-gate
+make eval-gate EVAL_BASELINE=eval/baselines/dev.json   # optional: also compare with a committed baseline summary
+```
+
+No baseline file is committed yet; the first one should be a run on the frozen golden dev set.
+
 ## The probes
 
 The probes measure the three outside services (Prisma, Timbre and Nova) before we build on them, and record the results in `probes/results/RESULTS.md`. They spend real Gnani credits and AWS money, so always start with the offline self-test. On your laptop (WSL), in the `mockboard` folder:
@@ -117,7 +126,7 @@ Eval summaries go to `eval/results/`. A report is printed at the end of each int
 
 ## Honest status (October 26, 2026)
 
-**What works.** The whole text-mode interview runs end to end, offline or against Nova: the form-driven opening question, per-segment analysis, the rule-based strategist with its nine moves, delayed fact challenges that only fire when the model and a deterministic numeric check agree, the actor's guards (word cap, ask-never-assert, opener check), the persona fallback line when the actor fails, separate thread pools and timeouts for the three kinds of Bedrock call, the shared cache of real librarian votes, the judge's report with verified quotes, the per-turn trace, and the evaluation harness. There are 333 offline tests, including whole-session behaviour checks and a chaos test that injects Bedrock failures into 24 complete interviews.
+**What works.** The whole text-mode interview runs end to end, offline or against Nova: the form-driven opening question, per-segment analysis, the rule-based strategist with its nine moves, delayed fact challenges that only fire when the model and a deterministic numeric check agree, the actor's guards (word cap, ask-never-assert, opener check), the persona fallback line when the actor fails, separate thread pools and timeouts for the three kinds of Bedrock call, the shared cache of real librarian votes, the judge's report with verified quotes, the per-turn trace, and the evaluation harness. There are 342 offline tests, including whole-session behaviour checks and a chaos test that injects Bedrock failures into 24 complete interviews.
 
 **What is synthetic.** Every fact card is an obviously fake "Exampleland" or "Testland" test card with no source, so nothing the board cites is a real fact; the owner will write real cards from official sources. The six eval items are illustrative examples, not the frozen golden set. The board members are fictional, and their Timbre voices are placeholders until the Timbre probe is run. Results produced with the fake model say nothing about Nova's quality.
 

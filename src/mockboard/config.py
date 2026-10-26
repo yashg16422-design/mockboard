@@ -144,6 +144,13 @@ class Settings(BaseSettings):
     prompt_opener_version: int = 1
     report_language: str = Field(default="en", pattern=r"^(en|hi)$")
 
+    # --- Eval gate (ENGINEERING.md §5): `make eval-gate` exits non-zero when a dev-split run
+    # catches fewer planted errors than this share, or makes more false corrections than this
+    # count. These are our own choices, not industry figures; the recall floor is a
+    # placeholder for the owner to set once the frozen golden dev set exists.
+    eval_gate_min_planted_recall: float = Field(default=0.8, ge=0, le=1)
+    eval_gate_max_false_corrections: int = Field(default=0, ge=0)
+
     # --- Data locations ---
     cards_dir: Path = REPO_ROOT / "data" / "cards"
     topics: list[str] = Field(default_factory=lambda: ["tourism", "internal_security"])

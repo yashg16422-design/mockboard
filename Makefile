@@ -3,7 +3,7 @@
 PYTHON ?= python3
 export PYTHONPATH := src:.
 
-.PHONY: help install test lint format cli cli-fake cli-fake-hi eval clean-traces
+.PHONY: help install test lint format cli cli-fake cli-fake-hi cli-real eval eval-gate clean-traces
 
 help:
 	@echo "install      install runtime + dev dependencies (pinned)"
@@ -13,6 +13,7 @@ help:
 	@echo "cli-fake     scripted fake interview (examples/fake_session.txt)"
 	@echo "cli-real     interactive text interview on Nova Pro (costs money; needs AWS creds)"
 	@echo "eval         run the example eval set with the fake LLM (dev split)"
+	@echo "eval-gate    run the dev eval and fail on low recall or any false correction"
 
 install:
 	$(PYTHON) -m pip install -r requirements.txt
@@ -41,6 +42,12 @@ cli-real:
 
 eval:
 	$(PYTHON) -m eval.runner --split dev
+
+# Thresholds: EVAL_GATE_MIN_PLANTED_RECALL, EVAL_GATE_MAX_FALSE_CORRECTIONS (settings).
+# Optional: make eval-gate EVAL_BASELINE=eval/baselines/dev.json
+EVAL_BASELINE ?=
+eval-gate:
+	$(PYTHON) -m eval.gate --split dev $(if $(EVAL_BASELINE),--baseline $(EVAL_BASELINE),)
 
 clean-traces:
 	rm -rf traces
