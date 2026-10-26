@@ -81,12 +81,14 @@ For visual traces we recommend **Langfuse Cloud on the free Hobby plan**. It has
 
 Every external dependency has a written fallback, and every fallback is counted in the turn trace.
 
-- Listener or librarian returns invalid JSON: retry once with the validation errors fed back, then use the safe default (no claims, no challenge). Transient Bedrock errors are retried only by the graph's `RetryPolicy`; botocore's own retries are off, so attempts never multiply.
+- Listener or librarian returns invalid JSON: retry once with the validation errors fed back, then use the safe default (no claims, no challenge). Transient Bedrock errors are retried in exactly one place per call: the graph's `RetryPolicy` for the listener, librarian and judge (botocore retries off there), and botocore's own capped retry for the actor, which has no graph.
 - The move for this turn is not ready by the end-of-turn deadline: use the latest move already computed for this turn, or a deterministic fast rule (CTO_NOTES_02, M4).
 - Actor has no first sentence within the masking deadline: play a cached persona filler line.
 - Bedrock throttling: back off with jitter; in the hot path, at most one retry, then the filler line and a neutral move.
 - Timbre fails: reconnect once, otherwise show the board's line as on-screen text.
 - Prisma disconnects: reconnect and tell the candidate to repeat the last sentence.
+
+Bedrock calls run on three lanes (`brain/llm.py`, CTO_NOTES_02 M5, ruling 13), chosen from the call's name: **actor** (the spoken line and the opener), **fast** (the listener, the only work between end of turn and the actor) and **background** (librarian and judge). Each lane has its own small thread pool and its own boto3 client, so a burst of fact checks can never take the threads or sockets the critical path needs. The actor and fast lanes use short connect and read timeouts and few retries (the fast graph retries without LangGraph's jitter, which adds up to a whole second); the background lane keeps the long ones. The listener node also stops waiting after `fast_listener_timeout_s`, or as soon as `end_of_turn` passes its deadline: it records a fallback analysis and parks the still-running call, so a hung call never blocks the session's later segments, and if the call returns its claims are still fact-checked. Every lane and timeout value is a setting in `config.py`, and the defaults are marked `UNVERIFIED` until the Nova probe measures real latencies from EC2.
 
 The budget is our own choice, not an industry figure. If more than one turn in twenty in a test session uses a fallback, or if any test session fails to finish, feature work stops until the cause is fixed.
 
