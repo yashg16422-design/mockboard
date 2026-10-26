@@ -87,3 +87,12 @@ Judge scores 1-5 or "insufficient_evidence" for: mental_alertness, critical_assi
 - **Accepted.** Orchestrator re-ran: 342/342 tests, lint clean, `make eval-gate` exit 0; commits 403c41e..7056524. README (1,697 words), WALKTHROUGH (7,042 words; LangGraph concepts introduced in order; one analogy per component; commands state machine and folder), ADR-001..006.
 - Builder deviations accepted: a failed actor call on a fact challenge or topic change still speaks the template (the challenge must be heard; the topic really changes); unspoken moves still count toward pressure limits (conservative); fallback lines are Hinglish only for now (add per-language lines when the language toggle lands); eval-gate recall 0.8 is a placeholder until the frozen golden dev set exists.
 - Phase 1 is done. Next: owner runs the day-1 probes with real keys; CTO round 3 reviews docs accuracy and proposes the voice-loop phase.
+
+## Round 8 — Oct 26, 2026 (CTO round 3: CTO_NOTES_03.md)
+
+- CTO confirmed M1-M6 closed by checking code and tests. Eight doc inaccuracies found (ADR-001, ADR-002, ADR-004, ADR-005, WALKTHROUGH §1, §3.5, §3.7); ADR-003, ADR-006 and README accurate.
+- **Ruling 15:** before the owner runs the paid Nova probe, `nova_probe.py` gets an `--app-prompts` mode that times the app's real listener (forced tool) and actor (streamed) requests built by the app's own builders, plus a `--region`/profile switch so the same probe runs from the laptop and from EC2 Mumbai. Prisma and Timbre probes may run now.
+- **Ruling 16:** fix all eight doc inaccuracies. Most important: the last segment's listener call sits on the critical path (Prisma's final transcript arrives only after the candidate stops), so the latency budget is listener-last + actor, not actor alone. Pin the voice stack exactly in an optional `voice` extra: `pipecat-ai==1.5.0`, `pipecat-gnani==0.5.12`, and the `gnani-vachana` version it resolves; note that Pipecat's online docs describe newer releases.
+- **Ruling 17 (refines Ruling 14 for voice mode):** never play a masking filler and then a persona fallback line back to back; if a filler already played, the fallback is the move's template question. Add a setting `actor_fast_throttle_retry` (default off) allowing one retry when a throttle fails within a few hundred ms; decided from probe data.
+- Ruling 9's 1.5 s move deadline stays provisional; the CTO's probe decision rules in CTO_NOTES_03 §4 decide it.
+- Next: voice-loop chunks V0-V9 from CTO_NOTES_03 §3 after the owner's probe results.
