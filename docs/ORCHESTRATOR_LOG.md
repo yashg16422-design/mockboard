@@ -96,3 +96,10 @@ Judge scores 1-5 or "insufficient_evidence" for: mental_alertness, critical_assi
 - **Ruling 17 (refines Ruling 14 for voice mode):** never play a masking filler and then a persona fallback line back to back; if a filler already played, the fallback is the move's template question. Add a setting `actor_fast_throttle_retry` (default off) allowing one retry when a throttle fails within a few hundred ms; decided from probe data.
 - Ruling 9's 1.5 s move deadline stays provisional; the CTO's probe decision rules in CTO_NOTES_03 §4 decide it.
 - Next: voice-loop chunks V0-V9 from CTO_NOTES_03 §3 after the owner's probe results.
+
+## Round 9 — Oct 26, 2026 (Rulings 15-17 delivered)
+
+- **Accepted.** Orchestrator re-ran: 364/364 tests, lint clean, probe self-test 22/22; commits 5566e16..3ca94ad. `nova_probe --app-prompts` times the app's real listener and actor requests, built by the app's own builders, from laptop or EC2. Eight doc fixes applied, including the listener-last + actor latency budget.
+- **Ruling 18:** one environment, not two. Base `websockets` range lowered to `>=15,<16` (pinned 15.0.1) so the pinned voice extra (pipecat-ai 1.5.0, pipecat-gnani 0.5.12, gnani-vachana 0.8.2) installs alongside. Verified by the orchestrator in a clean venv: tests and self-test pass, `pip install --dry-run -e .[voice]` resolves. ADR-001 updated.
+- Open for V2 contract tests: gnani-vachana 0.8.2 is newer than the 0.7 line Gnani tested; first-sentence timer can trip on decimals like "12.5".
+- Owner can now run all three day-1 probes.

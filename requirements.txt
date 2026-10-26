@@ -7,7 +7,7 @@ pydantic==2.13.5
 pydantic-settings==2.16.1
 boto3==1.43.118
 botocore==1.43.118
-websockets==17.3
+websockets==15.0.1
 httpx==0.28.1
 PyYAML==6.0.3
 jsonschema==4.26.0
@@ -17,6 +17,5 @@ pytest-asyncio==1.4.0
 ruff==0.17.2
 # Phase 2 (NOT installed yet): the `voice` extra in pyproject.toml pins pipecat-ai==1.5.0,
 # pipecat-gnani==0.5.12 and gnani-vachana==0.8.2 (resolved with pip --dry-run, Oct 26, 2026).
-# KNOWN CONFLICT: pipecat-gnani 0.5.12 needs websockets<16, but websockets==17.3 is pinned
-# above, so the voice extra cannot be installed into this environment yet (see ADR-001).
+# websockets is pinned to 15.0.1 so the voice extra installs here too (ruling 18).
 # Probes extra (numpy, scipy): see requirements-probes.txt.
