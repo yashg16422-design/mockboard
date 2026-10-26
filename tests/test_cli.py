@@ -48,6 +48,16 @@ def test_cli_fake_end_to_end(tmp_path, capsys):
             assert stage in stages
         assert stages["move_ready"] <= stages["actor_request"] <= stages["actor_done"]
         assert all(c["model_id"] == "fake-llm" for c in r["llm_calls"])
+        # M4 trace fields: the move's wait and fast-graph time; no deadline fallback offline.
+        assert r["fallback_reason"] is None and r["deadline_s"] > 0
+        assert r["move_wait_ms"] >= 0 and set(r["fast_graph_ms"]) == {"s0"}
+        assert all(call["name"] != "librarian" for call in r["llm_calls"])  # not on the move path
+
+    # Fact checks are traced separately (with their own time and librarian calls), on the
+    # turn line or report line written after they finished.
+    fact_checks = [f for r in rows for f in r.get("fact_checks") or []]
+    assert fact_checks and all(f["fact_check_ms"] >= 0 for f in fact_checks)
+    assert all(c["name"] == "librarian" for f in fact_checks for c in f["llm_calls"])
 
     challenge = next(r for r in turns if r["move"] == "fact_challenge")
     line = challenge["board_line"].strip()
@@ -62,6 +72,12 @@ def test_cli_fake_end_to_end(tmp_path, capsys):
     assert report["report_language"] == "en" and len(report["scores"]) == 9
     contradicted = [c for c in report["claims"] if c["verdict"] == "contradicted"]
     assert contradicted and all(c["numeric_check"] == "mismatch" for c in contradicted)
+
+
+def test_typed_answer_is_one_segment_unless_split():
+    assert cli.typed_segments("One. Two. Three.") == ["One. Two. Three."]
+    assert cli.typed_segments("a b | c d") == ["a b", "c d"]
+    assert cli.typed_segments("   ") == []  # silence: no segment at all
 
 
 def test_form_never_asks_for_identifiers():

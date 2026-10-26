@@ -23,6 +23,7 @@ from dataclasses import dataclass
 
 import pytest
 
+from conftest import answer
 from mockboard.brain.actor import ACKNOWLEDGE_LINES
 from mockboard.brain.graphs import TurnAnalyzer
 from mockboard.brain.schemas import Analysis, Balance, BoardLine, BoardMove, Move
@@ -119,7 +120,7 @@ async def play(deps, form, tmp_path, answers: list[str], sid: str) -> Played:
         if session.state.finished:
             break
         topics.append(session.state.topic)
-        await session.answer(text)
+        await answer(session, text)
     await analyzer.close_session(sid)
     st = session.state
     return Played(

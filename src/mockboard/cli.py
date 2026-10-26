@@ -4,12 +4,15 @@
     python -m mockboard.cli                             # real Nova Pro on Bedrock (Sydney)
     python -m mockboard.cli --fake --script answers.txt # scripted answers, one per line
 
-Flow: application form (no names) -> opener -> typed answers -> background analysis graph
--> delayed fact challenge phrased as a question citing the card -> move on -> judge report.
-Every turn appends one JSON line to `traces/<session_id>.jsonl`.
+Flow: application form (no names) -> opener -> typed answers -> fast analysis graph per
+segment (background fact checks) -> delayed fact challenge phrased as a question citing the
+card -> move on -> judge report. Every turn appends one JSON line to
+`traces/<session_id>.jsonl`.
 
-In an answer, type " | " to force a segment boundary (as if Prisma's VAD had split it).
-Type /quit to end early and go straight to the report.
+Each typed answer goes through the same session API as the voice path: it is submitted as
+ONE transcript segment (`submit_segment`), then `end_of_turn(deadline)` returns the move and
+`speak()` phrases it. Type " | " inside an answer to split it into several segments, as if
+Prisma's VAD had split it. Type /quit to end early and go straight to the report.
 """
 
 from __future__ import annotations
@@ -37,7 +40,7 @@ from mockboard.brain.schemas import (
 from mockboard.config import Settings, get_settings
 from mockboard.obs.trace import TraceRecorder
 from mockboard.obs.tracing import langfuse_callbacks
-from mockboard.session import InterviewSession
+from mockboard.session import SEGMENT_MARK, InterviewSession
 
 FORM_FIELDS: list[tuple[str, str, bool]] = [
     # (field, prompt, required). Ruling 5: no names or identifiers are ever asked.
@@ -164,6 +167,12 @@ def format_report(report: SessionReport, cards) -> str:
     return "\n".join(lines)
 
 
+def typed_segments(text: str) -> list[str]:
+    """One typed answer is one transcript segment, unless " | " splits it. An empty answer
+    is silence: no segment at all."""
+    return [p.strip() for p in text.split(SEGMENT_MARK) if p.strip()]
+
+
 def _score(score: int | str) -> str:
     return "  -" if score == INSUFFICIENT_EVIDENCE else f"{score}/5"
 
@@ -219,15 +228,24 @@ async def run(args: argparse.Namespace) -> int:
     opener = await session.open()
     print(f"\n[{deps.personas[deps.strategy.chairman].name}] {opener.text}")
     while not session.state.finished:
+        if lines is not None and args.think_s > 0:
+            # A scripted candidate answers instantly; a real one takes seconds to think and
+            # speak, during which the background fact checks finish. Stand in for that time.
+            await session.settle_fact_checks(args.think_s)
         text = ask("\nYou: ")
         if text is None or text.strip() == "/quit":
             break
-        out = await session.answer(text)
+        for index, part in enumerate(typed_segments(text)):
+            session.submit_segment(part, segment_index=index)
+        await session.end_of_turn(args.deadline_s or settings.text_move_deadline_s)
+        out = await session.speak()
         persona = deps.personas.get(out.move.member)
         tag = f"{out.move.move.value}, {out.move.rule_id}"
         print(f"[{persona.name if persona else out.move.member}] ({tag}) {out.line.text}")
         if out.move.move == Move.fact_challenge:
             print(f"   show-your-work: {out.move.reason}")
+        if out.fallback_reason:
+            print(f"   fallback: {out.fallback_reason}")
     report = await session.finish(args.language)
     print(format_report(report, cards))
     if args.report_json:
@@ -237,7 +255,14 @@ async def run(args: argparse.Namespace) -> int:
     if args.print_trace and recorder.enabled:
         for line in recorder.path.read_text(encoding="utf-8").splitlines():
             row = json.loads(line)
-            print(json.dumps({k: row.get(k) for k in ("turn_id", "event", "move", "stages_ms")}))
+            keys = ("turn_id", "event", "move", "fallback_reason", "move_wait_ms", "fast_graph_ms")
+            summary = {k: row.get(k) for k in keys}
+            summary["fact_check_ms"] = {
+                f"{f['for_turn']}.{f['segment_id']}": f["fact_check_ms"]
+                for f in row.get("fact_checks") or []
+            }
+            summary["stages_ms"] = row.get("stages_ms")
+            print(json.dumps(summary))
     return 0
 
 
@@ -251,6 +276,18 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument("--script", help="file with scripted inputs, one per line (form, then answers)")
     p.add_argument("--language", choices=["en", "hi"], help="report language (default: settings)")
     p.add_argument("--max-turns", type=int, default=9, help="hard cap on candidate turns")
+    p.add_argument(
+        "--think-s",
+        type=float,
+        default=5.0,
+        help="scripted runs only: wait up to this long for background fact checks before the "
+        "next scripted answer, standing in for the candidate's thinking time (0 = no wait)",
+    )
+    p.add_argument(
+        "--deadline-s",
+        type=float,
+        help="end-of-turn deadline for the move in seconds (default: TEXT_MOVE_DEADLINE_S)",
+    )
     p.add_argument("--session-id", help="fixed session id (default: random)")
     p.add_argument("--trace-dir", help="override TRACE_DIR")
     p.add_argument("--no-trace", action="store_true", help="do not write a trace file")

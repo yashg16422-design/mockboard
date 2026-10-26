@@ -1,18 +1,32 @@
-"""Text-mode session controller: one interview from the opener to the report.
+"""Session controller: one interview from the opener to the report (text mode now; the
+Pipecat voice path calls the same three methods).
 
-Order of one turn (text mode):
-1. The board's question is shown (trace stage `question_shown`).
-2. The candidate's answer arrives (`end_of_turn`). It is split into segments the way Prisma's
-   server VAD would split speech, and each segment is submitted to the turn-analysis graph as
-   a background task (serialised per session inside `TurnAnalyzer`).
-3. The controller waits for this turn's analyses (bounded by `analysis_wait_timeout_s`) and
-   takes the strategist's precomputed move. A result for another turn is ignored (stale guard).
-4. The actor phrases the move (a plain streaming call, not a graph node; guards in code).
-5. Counters (topic, streak, challenged claims) are updated deterministically and one trace
-   line is written.
+One candidate turn (CTO_NOTES_02 M4, orchestrator ruling 9):
 
-The voice path (phase 2) will reuse this class: Prisma segments go to `submit_segment` as they
-arrive, so analysis overlaps with speech instead of starting at end of turn.
+1. `submit_segment(text, segment_index=k)` for each final transcript segment, as it arrives
+   (Prisma sends one per server-VAD segment; the CLI sends one per typed answer). The first
+   segment opens the turn: the session freezes a `StrategyContext` and a snapshot of its
+   claim ledger for this turn, then queues the segment's fast analysis (listener ->
+   strategist) on the session's thread. Runs are queued in segment order. When a run ends
+   with claims, a fact check (librarian fan-out -> gate) starts in the background.
+2. `end_of_turn(deadline_s)` waits for this turn's queued fast analyses, at most
+   `deadline_s`, and returns the board's move:
+   * all analyses done: the strategist's move after the last segment;
+   * deadline hit, some segments done: the move computed after the latest finished one;
+   * deadline hit, none done: a deterministic fallback (silence -> reassure, else probe).
+   Every deadline fallback is recorded as `fallback_reason` in the turn's trace line.
+   Analyses still running after the deadline are not cancelled: their claims still get
+   fact-checked, but their moves are ignored (stale guard).
+   No segments at all means silence: the strategist's rules are run directly (pure, no
+   LLM), which reassures.
+3. `speak()` has the actor phrase the move (a plain streaming call, not a graph node; guards
+   in code), updates the counters deterministically and writes one trace line.
+
+Fact checks are never awaited by a move. Their gated verdicts are upserted into the ledger
+when they end; the strategist sees them through the ledger snapshot of the NEXT turn that
+opens after they land (R4 also requires `fact_challenge_min_delay_turns >= 1`). The snapshot
+is frozen per turn, so every segment of a turn sees the same ledger and a verdict that lands
+mid-turn waits for the next turn: the move never depends on how fast a fact check was.
 """
 
 from __future__ import annotations
@@ -51,8 +65,8 @@ from mockboard.brain.schemas import (
     StrategyContext,
     VoiceSignals,
 )
-from mockboard.brain.strategist import CLOSE_TARGET, PRESSURE, merge_analyses
-from mockboard.obs.trace import TraceRecorder
+from mockboard.brain.strategist import CLOSE_TARGET, PRESSURE, decide_move, merge_analyses
+from mockboard.obs.trace import TraceRecorder, TurnTrace
 
 SEGMENT_MARK = " | "  # typing " | " in an answer forces a segment boundary
 SENTENCES_PER_SEGMENT = 2
@@ -72,6 +86,10 @@ def split_segments(text: str, turn_id: str) -> list[Segment]:
     return [Segment(segment_id=f"s{i}", segment_index=i, text=p) for i, p in enumerate(parts)]
 
 
+def segment_id_for(segment_index: int) -> str:
+    return f"s{segment_index}"
+
+
 @dataclass
 class TurnOutcome:
     turn_id: str
@@ -80,6 +98,32 @@ class TurnOutcome:
     results: list[AnalysisResult]
     trace: dict[str, Any]
     finished: bool
+    fallback_reason: str | None = None
+
+
+@dataclass
+class OpenTurn:
+    """The candidate turn in progress: from its first segment until `speak()` ends it."""
+
+    turn_id: str
+    trace: TurnTrace
+    signals: VoiceSignals
+    ctx: StrategyContext
+    ledger: list[Claim]  # snapshot frozen when the turn opened
+    segments: list[Segment] = field(default_factory=list)
+    tasks: list[asyncio.Task[AnalysisResult]] = field(default_factory=list)
+    # Set by end_of_turn.
+    move: BoardMove | None = None
+    results: list[AnalysisResult] = field(default_factory=list)
+    fallbacks: list[dict[str, str]] = field(default_factory=list)
+    fallback_reason: str | None = None
+    deadline_s: float | None = None
+    move_wait_ms: float = 0.0
+    analysis: Analysis | None = None
+
+    @property
+    def ended(self) -> bool:
+        return self.move is not None
 
 
 @dataclass
@@ -94,6 +138,7 @@ class InterviewSession:
     fact_checker: FactChecker | None = None
     state: SessionState = field(init=False)
     last_question: str = ""
+    turn: OpenTurn | None = field(init=False, default=None)
     # Background fact checks (never awaited by a move) and the ones finished since the last
     # trace line was written.
     _fact_checks: set[asyncio.Task] = field(init=False, default_factory=set)
@@ -133,6 +178,23 @@ class InterviewSession:
             pressure_in_topic=s.pressure_in_topic,
             voice_signals=signals,
         )
+
+    def _open_turn(self, signals: VoiceSignals | None) -> OpenTurn:
+        st = self.state
+        if st.finished:
+            raise RuntimeError("the interview has finished")
+        turn_id = f"t{st.turn_index}"
+        tr = self.recorder.start_turn(turn_id, st.turn_index, st.topic)
+        tr.mark("question_shown", tr.t0)
+        sig = signals or VoiceSignals()
+        self.turn = OpenTurn(
+            turn_id=turn_id,
+            trace=tr,
+            signals=sig,
+            ctx=self._ctx(turn_id, sig),
+            ledger=list(st.claim_ledger),
+        )
+        return self.turn
 
     def _start_fact_check(self, analysis_task: asyncio.Task[AnalysisResult]) -> None:
         """Done-callback of a fast analysis: start the background fact check for its claims.
@@ -179,6 +241,19 @@ class InterviewSession:
             for r in done
         ]
 
+    @property
+    def pending_fact_checks(self) -> int:
+        return len(self._fact_checks)
+
+    async def settle_fact_checks(self, timeout_s: float) -> bool:
+        """Wait (bounded) for background fact checks without cancelling any. Returns True
+        when none is left. Only for scripted text runs, where the "candidate" answers with zero
+        thinking time; never called between end of turn and the actor."""
+        pending = set(self._fact_checks)
+        if pending:
+            await asyncio.wait(pending, timeout=timeout_s)
+        return not self._fact_checks
+
     async def drain_fact_checks(self, timeout_s: float) -> int:
         """Wait (bounded) for background fact checks; cancel the rest. Returns how many were
         cancelled. Used before the report, never on the move's path."""
@@ -192,6 +267,23 @@ class InterviewSession:
 
     def _claim(self, claim_id: str | None) -> Claim | None:
         return next((c for c in self.state.claim_ledger if c.id == claim_id), None)
+
+    def _fallback_move(self, turn: OpenTurn, reason: str) -> BoardMove:
+        """Deterministic fast rule when no analysis of this turn finished in time
+        (CTO_NOTES_02 M4.4): nothing said -> reassure (chairman), otherwise a neutral probe."""
+        cfg = self.deps.strategy
+        if not any(s.text.strip() for s in turn.segments):
+            move, member = Move.reassure, cfg.chairman
+        else:
+            move, member = Move.probe, cfg.member_for(turn.ctx.topic)
+        return BoardMove(
+            move=move,
+            member=member,
+            pressure=PRESSURE[move],
+            reason=f"FALLBACK: {reason}",
+            rule_id="FALLBACK",
+            for_turn=turn.turn_id,
+        )
 
     # -- public API ----------------------------------------------------------
 
@@ -228,69 +320,121 @@ class InterviewSession:
         )
         return line
 
-    async def answer(self, text: str, signals: VoiceSignals | None = None) -> TurnOutcome:
-        st, s = self.state, self.deps.settings
-        signals = signals or VoiceSignals()
-        turn_id = f"t{st.turn_index}"
-        tr = self.recorder.start_turn(turn_id, st.turn_index, st.topic)
-        tr.mark("question_shown", tr.t0)
-        tr.mark("end_of_turn")
-        ctx = self._ctx(turn_id, signals)
-        segments = split_segments(text, turn_id)
-        tasks = []
-        for segment in segments:
-            task = self.analyzer.submit(
-                session_id=self.session_id,
-                turn_id=turn_id,
-                turn_index=st.turn_index,
-                question=self.last_question,
-                segment=segment,
-                ctx=ctx,
-                ledger=lambda: self.state.claim_ledger,
+    def submit_segment(
+        self,
+        text: str,
+        *,
+        segment_index: int,
+        signals: VoiceSignals | None = None,
+        audio_duration_ms: int | None = None,
+    ) -> asyncio.Task[AnalysisResult]:
+        """Queue one final transcript segment of the current turn. Never blocks.
+
+        The first segment opens the turn. `segment_index` must increase strictly within a
+        turn (Prisma's order); a duplicate or out-of-order index raises `ValueError`.
+        `signals`, when given, replace the turn's voice signals for this and later segments.
+        Returns the queued fast-analysis task (callers normally ignore it).
+        """
+        turn = self.turn or self._open_turn(signals)
+        if turn.ended:
+            raise RuntimeError(f"turn {turn.turn_id} already ended; call speak() first")
+        if turn.segments and segment_index <= turn.segments[-1].segment_index:
+            raise ValueError(
+                f"segment_index {segment_index} after {turn.segments[-1].segment_index}: "
+                "segments must arrive in increasing order"
             )
-            task.add_done_callback(self._start_fact_check)
-            tasks.append(task)
-            tr.mark(f"segment_{segment.segment_index}_submitted")
+        if signals is not None and signals != turn.signals:
+            turn.signals = signals
+            turn.ctx = turn.ctx.model_copy(update={"voice_signals": signals})
+        segment = Segment(
+            segment_id=segment_id_for(segment_index),
+            segment_index=segment_index,
+            text=text,
+            audio_duration_ms=audio_duration_ms,
+        )
+        task = self.analyzer.submit(
+            session_id=self.session_id,
+            turn_id=turn.turn_id,
+            turn_index=turn.ctx.turn_index,
+            question=self.last_question,
+            segment=segment,
+            ctx=turn.ctx,
+            ledger=turn.ledger,
+        )
+        task.add_done_callback(self._start_fact_check)
+        turn.segments.append(segment)
+        turn.tasks.append(task)
+        turn.trace.mark(f"segment_{segment_index}_submitted")
+        return task
+
+    async def end_of_turn(self, deadline_s: float | None = None) -> BoardMove:
+        """The candidate stopped speaking: return the board's move within `deadline_s`.
+
+        `deadline_s` defaults to `MOVE_DEADLINE_MS`. Only this turn's fast analyses are
+        waited for, never fact checks. Calling it again before `speak()` returns the same
+        move.
+        """
+        turn = self.turn or self._open_turn(None)
+        if turn.move is not None:
+            return turn.move
+        st = self.state
+        if deadline_s is None:
+            deadline_s = self.deps.settings.move_deadline_ms / 1000
+        tr = turn.trace
+        tr.mark("end_of_turn")
+        turn.deadline_s = deadline_s
+        waited_from = time.monotonic()
+        pending: set[asyncio.Task] = set()
+        if turn.tasks:
+            _, pending = await asyncio.wait(turn.tasks, timeout=deadline_s)
+        turn.move_wait_ms = round((time.monotonic() - waited_from) * 1000, 2)
+        tr.mark("analysis_done")
 
         results: list[AnalysisResult] = []
-        fallbacks: list[dict[str, str]] = []
-        try:
-            done = await asyncio.wait_for(
-                asyncio.gather(*tasks, return_exceptions=True), timeout=s.analysis_wait_timeout_s
-            )
-        except TimeoutError:
-            done = []
-            fallbacks.append({"stage": "analysis", "turn_id": turn_id, "error": "timeout"})
-        for item in done:
-            if isinstance(item, AnalysisResult):
-                results.append(item)
-            else:
-                fallbacks.append(
+        for task in turn.tasks:
+            if task in pending or task.cancelled():
+                continue
+            if task.exception() is not None:
+                exc = task.exception()
+                turn.fallbacks.append(
                     {
                         "stage": "analysis",
-                        "turn_id": turn_id,
-                        "error": f"{type(item).__name__}: {item}"[:300],
+                        "turn_id": turn.turn_id,
+                        "error": f"{type(exc).__name__}: {exc}"[:300],
                     }
                 )
-        tr.mark("analysis_done")
+                continue
+            results.append(task.result())
+        results.sort(key=lambda r: r.segment_index)
         for r in results:
-            fallbacks.extend(r.fallbacks)
+            turn.fallbacks.extend(r.fallbacks)
             for t in r.timings:
                 tr.mark(f"{r.segment_id}.{t['stage']}", t["t"])
-
         # The strategist's latest move for THIS turn (stale results are ignored).
-        fresh = [r for r in results if r.move.for_turn == turn_id]
-        if fresh:
+        fresh = [r for r in results if r.move.for_turn == turn.turn_id]
+        turn.results = fresh
+
+        if not turn.tasks:
+            # Silence: no segment arrived. The rules are pure and instant, so run them.
+            move = decide_move(turn.ctx, [], turn.ledger, self.deps.strategy)
+        elif pending and fresh:
+            move = fresh[-1].move
+            turn.fallback_reason = (
+                f"deadline {deadline_s:g}s: {len(pending)} of {len(turn.tasks)} segment "
+                f"analyses unfinished; used the move after {fresh[-1].segment_id}"
+            )
+        elif pending:
+            turn.fallback_reason = (
+                f"deadline {deadline_s:g}s: no segment analysis finished "
+                f"({len(turn.tasks)} queued)"
+            )
+            move = self._fallback_move(turn, turn.fallback_reason)
+        elif fresh:
             move = fresh[-1].move
         else:
-            move = BoardMove(
-                move=Move.probe,
-                member=self.deps.strategy.member_for(st.topic),
-                pressure=PRESSURE[Move.probe],
-                reason="FALLBACK: no analysis",
-                rule_id="FALLBACK",
-                for_turn=turn_id,
-            )
+            turn.fallback_reason = "no segment analysis succeeded"
+            move = self._fallback_move(turn, turn.fallback_reason)
+
         if st.turn_index + 1 >= self.max_turns and not (
             move.move == Move.move_on and move.target == CLOSE_TARGET
         ):
@@ -301,40 +445,52 @@ class InterviewSession:
                 pressure=PRESSURE[Move.move_on],
                 reason=f"CAP: session turn cap ({self.max_turns}) reached",
                 rule_id="CAP",
-                for_turn=turn_id,
+                for_turn=turn.turn_id,
                 preface=move.preface,  # a conceded error is still acknowledged at the close
             )
         tr.mark("move_ready")
 
-        analysis = (
-            merge_analyses([r.analysis for r in fresh])
-            if fresh
-            else Analysis(turn_id=turn_id, is_fallback=True)
-        )
+        if fresh:
+            turn.analysis = merge_analyses([r.analysis for r in fresh])
+        else:  # silence is a real (empty) answer; a missing analysis is a fallback
+            turn.analysis = Analysis(turn_id=turn.turn_id, is_fallback=bool(turn.tasks))
         st.turns.append(
             CandidateTurn(
-                turn_id=turn_id,
-                turn_index=st.turn_index,
-                topic=st.topic,
+                turn_id=turn.turn_id,
+                turn_index=turn.ctx.turn_index,
+                topic=turn.ctx.topic,
                 question=self.last_question,
-                segments=segments,
-                voice_signals=signals,
-                analysis=analysis,
+                segments=list(turn.segments),
+                voice_signals=turn.signals,
+                analysis=turn.analysis,
             )
         )
+        turn.move = move
+        return move
 
-        line = await self._speak(move, text, turn_id, tr)
+    async def speak(self) -> TurnOutcome:
+        """Phrase the move chosen by `end_of_turn`, update counters, write the trace line."""
+        turn = self.turn
+        if turn is None or turn.move is None:
+            raise RuntimeError("call end_of_turn() before speak()")
+        st, s = self.state, self.deps.settings
+        move, tr, analysis = turn.move, turn.trace, turn.analysis or Analysis()
+        answer = " ".join(seg.text for seg in turn.segments).strip()
+        line = await self._speak(move, answer, turn.turn_id, tr)
         finished = self._apply(move, analysis)
         self.last_question = line.text
         st.board_lines.append(
             BoardLine(
-                turn_id=turn_id,
+                turn_id=turn.turn_id,
                 member=move.member,
                 move=move.move,
                 text=line.text,
                 is_fallback=line.is_fallback,
             )
         )
+        checked = [
+            c for r in turn.results if needs_fact_check(r.analysis) for c in r.analysis.claims
+        ]
         tr.set(
             move=move.move.value,
             rule_id=move.rule_id,
@@ -344,8 +500,15 @@ class InterviewSession:
             board_line=line.text,
             actor_guard=line.guard,
             actor_fallback=line.is_fallback,
-            librarian_skipped=not any(needs_fact_check(r.analysis) for r in fresh),
-            segments=len(segments),
+            librarian_skipped=not checked,
+            segments=len(turn.segments),
+            # Deadline and timing of the move (ruling 9): the fast graph is the only work
+            # between end of turn and the actor; fact checks are reported separately.
+            deadline_s=turn.deadline_s,
+            move_wait_ms=turn.move_wait_ms,
+            fallback_reason=turn.fallback_reason,
+            fast_graph_ms={r.segment_id: r.fast_graph_ms for r in turn.results},
+            fast_graph_queued_ms={r.segment_id: r.queued_ms for r in turn.results},
             # This turn's claims; "pending" while their background fact check runs.
             claims=[
                 {
@@ -354,14 +517,18 @@ class InterviewSession:
                     "card_id": c.card_id,
                     "numeric_check": c.numeric_check,
                 }
-                for c in (self._claim(x.id) or x for x in analysis.claims)
+                for c in (self._claim(x.id) or x for x in checked)
             ],
             fact_checks=self._fact_check_trace(),
-            fallbacks=fallbacks,
+            fact_checks_pending=self.pending_fact_checks,
+            fallbacks=turn.fallbacks,
             prompt_versions=s.prompt_versions(),
         )
         trace = self.recorder.write_turn(tr)
-        return TurnOutcome(turn_id, move, line, results, trace, finished)
+        self.turn = None
+        return TurnOutcome(
+            turn.turn_id, move, line, turn.results, trace, finished, turn.fallback_reason
+        )
 
     async def _speak(self, move: BoardMove, answer: str, turn_id: str, tr) -> LineResult:
         s = self.deps.settings

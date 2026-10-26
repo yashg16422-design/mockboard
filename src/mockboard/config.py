@@ -71,7 +71,14 @@ class Settings(BaseSettings):
     actor_max_words: int = 30
     graph_retry_max_attempts: int = 3
     graph_retry_initial_interval_s: float = 0.5
-    analysis_wait_timeout_s: float = 60.0
+    # End-of-turn deadline for the move in the voice path (ruling 9): `end_of_turn` waits at
+    # most this long for the turn's fast analyses, then uses a deterministic fallback move.
+    # UNVERIFIED: placeholder until the Nova and Prisma probes run from EC2 (CTO_NOTES_02
+    # should-fix 6); it must be set from probe data, not by guessing.
+    move_deadline_ms: int = Field(default=1500, gt=0)
+    # Text mode has no voice latency budget (the candidate is typing), so the CLI uses a
+    # generous deadline; it still bounds a hung listener call.
+    text_move_deadline_s: float = Field(default=30.0, gt=0)
     # How long `finish()` waits for background fact checks before writing the report.
     fact_check_drain_timeout_s: float = Field(default=30.0, ge=0)
     # Bounded LRU of real librarian votes shared by all sessions (ruling 10).

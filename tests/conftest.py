@@ -130,3 +130,22 @@ def make_ctx(turn_index: int = 1, topic: str = "tourism", **kw) -> StrategyConte
 
 def seg(text: str, sid: str = "s0", index: int = 0) -> Segment:
     return Segment(segment_id=sid, segment_index=index, text=text)
+
+
+async def answer(session, text: str, *, deadline_s: float = 30.0, think_s: float = 5.0):
+    """Play one typed answer through the session API the voice path uses: the answer is split
+    into transcript segments (as Prisma's VAD would), each goes to `submit_segment`, then
+    `end_of_turn` picks the move and `speak` phrases it.
+
+    `think_s` stands in for the candidate's thinking time before answering (the CLI does the
+    same for scripted runs): background fact checks may finish during it, never during the
+    move's own path."""
+    from mockboard.session import split_segments
+
+    if think_s:
+        await session.settle_fact_checks(think_s)
+    for segment in split_segments(text, "-"):
+        if segment.text:
+            session.submit_segment(segment.text, segment_index=segment.segment_index)
+    await session.end_of_turn(deadline_s)
+    return await session.speak()
