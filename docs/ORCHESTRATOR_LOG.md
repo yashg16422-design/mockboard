@@ -103,3 +103,10 @@ Judge scores 1-5 or "insufficient_evidence" for: mental_alertness, critical_assi
 - **Ruling 18:** one environment, not two. Base `websockets` range lowered to `>=15,<16` (pinned 15.0.1) so the pinned voice extra (pipecat-ai 1.5.0, pipecat-gnani 0.5.12, gnani-vachana 0.8.2) installs alongside. Verified by the orchestrator in a clean venv: tests and self-test pass, `pip install --dry-run -e .[voice]` resolves. ADR-001 updated.
 - Open for V2 contract tests: gnani-vachana 0.8.2 is newer than the 0.7 line Gnani tested; first-sentence timer can trip on decimals like "12.5".
 - Owner can now run all three day-1 probes.
+
+## Round 10 — Oct 29, 2026 (phase 2 starts; owner adds a Debate mode)
+
+- Owner ran the offline tests on his Mac (Homebrew Python; `make venv` added in 98900f8). Day-1 probe numbers are not in yet; chunks marked [probe] in CTO_NOTES_03 §3 keep UNVERIFIED defaults until they arrive.
+- **Ruling 19 (owner request): two modes.** `upsc_interview` (current behaviour, default) and `debate`, a fun mode for non-aspirants. The CTO writes the debate design (CTO_NOTES_04.md) before any debate code. Constraints set now: the board argues the opposite side of a motion the user picks; fact-checking stays ask-never-assert; motions avoid partisan politics (no parties, leaders or elections) and stay on policy, ethics, technology, culture and light fun topics; debate gets its own rubric, not the UPSC qualities; mode is a session-level setting, so the voice loop needs no mode-specific code.
+- **Ruling 20: fastest path to real-model testing.** (1) Text mode on real Nova already exists (`make cli-real`); owner can use it now. (2) Voice runs on the laptop first: browsers allow the microphone on `localhost` without HTTPS, so V0, V1 spike, V2 and V3 target a local run before any EC2 work. V1b/V8 deploy follow once the local loop works.
+- Work split to avoid file conflicts: Voice builder owns `spikes/`, `src/mockboard/speech/`, `src/mockboard/voice/`, voice ADRs; the debate builder (after CTO_NOTES_04) owns mode config, strategist rules, prompts, personas, judge rubric. `session.py` changes are sequenced, not parallel.
