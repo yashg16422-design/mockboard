@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mock Board echo spike</title>
+<style>
+  :root { --bg: #fafaf7; --fg: #1d1d1b; --muted: #6b6b66; --line: #d9d9d2; --accent: #2b5d8a; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #161615; --fg: #ececE6; --muted: #9a9a93; --line: #34342f; --accent: #7fb0dd; }
+  }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.5 system-ui, sans-serif; }
+  main { max-width: 640px; margin: 0 auto; padding: 24px 16px; }
+  h1 { font-size: 1.25rem; margin: 0 0 4px; }
+  p.hint { color: var(--muted); margin: 0 0 20px; }
+  button { font: inherit; padding: 8px 18px; border-radius: 6px; border: 1px solid var(--line);
+           background: transparent; color: var(--fg); cursor: pointer; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button:disabled { opacity: .45; cursor: default; }
+  .row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-bottom: 16px; }
+  #state { font-variant-numeric: tabular-nums; color: var(--muted); }
+  #meter { flex: 1; min-width: 120px; height: 8px; border-radius: 4px; background: var(--line); overflow: hidden; }
+  #level { height: 100%; width: 0; background: var(--accent); transition: width 60ms linear; }
+  #log { border-top: 1px solid var(--line); padding-top: 12px; font: 13px/1.5 ui-monospace, monospace;
+         color: var(--muted); white-space: pre-wrap; max-height: 50vh; overflow-y: auto; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Mock Board echo spike (V1)</h1>
+  <p class="hint">Wear headphones. Press Start, allow the microphone, say a sentence, then pause.
+    The bot should say your words back.</p>
+  <div class="row">
+    <button id="start" class="primary">Start</button>
+    <button id="stop" disabled>Stop</button>
+    <span id="state">idle</span>
+  </div>
+  <div class="row"><span>Mic</span><div id="meter"><div id="level"></div></div></div>
+  <audio id="bot" autoplay></audio>
+  <div id="log"></div>
+</main>
+<script>
+// The smallest client SmallWebRTC (pipecat-ai 1.5.0) accepts: one audio transceiver at index 0,
+// a data channel whose "ping" messages tell the server we are still here, and a single
+// non-trickle offer POSTed to /api/offer (the answer carries the server's candidates).
+const $ = (id) => document.getElementById(id);
+let pc = null, mic = null, pinger = null, meterCtx = null;
+
+function log(msg) {
+  const t = new Date().toLocaleTimeString();
+  $("log").textContent = `${t}  ${msg}\n` + $("log").textContent;
+}
+function setState(s) { $("state").textContent = s; }
+
+function startMeter(stream) {
+  meterCtx = new AudioContext();
+  const analyser = meterCtx.createAnalyser();
+  analyser.fftSize = 512;
+  meterCtx.createMediaStreamSource(stream).connect(analyser);
+  const data = new Uint8Array(analyser.fftSize);
+  (function tick() {
+    if (!meterCtx) return;
+    analyser.getByteTimeDomainData(data);
+    let peak = 0;
+    for (const v of data) peak = Math.max(peak, Math.abs(v - 128));
+    $("level").style.width = `${Math.min(100, (peak / 128) * 160)}%`;
+    requestAnimationFrame(tick);
+  })();
+}
+
+function waitForIceGathering(conn, timeoutMs = 2000) {
+  if (conn.iceGatheringState === "complete") return Promise.resolve();
+  return new Promise((resolve) => {
+    const done = () => { conn.removeEventListener("icegatheringstatechange", check); resolve(); };
+    const check = () => { if (conn.iceGatheringState === "complete") done(); };
+    conn.addEventListener("icegatheringstatechange", check);
+    setTimeout(done, timeoutMs);  // localhost host candidates arrive almost at once
+  });
+}
+
+async function start() {
+  $("start").disabled = true;
+  try {
+    setState("asking for the microphone…");
+    mic = await navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+    });
+    startMeter(mic);
+
+    pc = new RTCPeerConnection();  // no STUN/TURN: this page is for localhost only
+    pc.addTransceiver(mic.getAudioTracks()[0], { direction: "sendrecv" });
+    pc.ontrack = (e) => {
+      $("bot").srcObject = e.streams[0] || new MediaStream([e.track]);
+      log(`receiving bot ${e.track.kind}`);
+    };
+    pc.onconnectionstatechange = () => {
+      setState(pc.connectionState);
+      log(`connection: ${pc.connectionState}`);
+      if (["failed", "closed"].includes(pc.connectionState)) stop();
+    };
+    const dc = pc.createDataChannel("messages");
+    dc.onopen = () => { pinger = setInterval(() => dc.send(`ping: ${Date.now()}`), 1000); };
+    dc.onmessage = (e) => log(`server message: ${e.data}`);
+
+    setState("connecting…");
+    await pc.setLocalDescription(await pc.createOffer());
+    await waitForIceGathering(pc);
+    const res = await fetch("/api/offer", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sdp: pc.localDescription.sdp, type: pc.localDescription.type }),
+    });
+    if (!res.ok) throw new Error(`/api/offer returned ${res.status}: ${await res.text()}`);
+    const answer = await res.json();
+    await pc.setRemoteDescription({ sdp: answer.sdp, type: answer.type });
+    log(`peer connection ${answer.pc_id}`);
+    $("stop").disabled = false;
+  } catch (err) {
+    log(`error: ${err.message || err}`);
+    stop();
+  }
+}
+
+function stop() {
+  if (pinger) clearInterval(pinger);
+  pinger = null;
+  if (pc) pc.close();
+  pc = null;
+  if (mic) mic.getTracks().forEach((t) => t.stop());
+  mic = null;
+  if (meterCtx) meterCtx.close();
+  meterCtx = null;
+  $("level").style.width = "0";
+  $("start").disabled = false;
+  $("stop").disabled = true;
+  setState("idle");
+}
+
+$("start").onclick = start;
+$("stop").onclick = () => { log("stopped"); stop(); };
+</script>
+</body>
+</html>
