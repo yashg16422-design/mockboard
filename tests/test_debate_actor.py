@@ -134,7 +134,7 @@ def test_closing_without_a_concession_gets_one_inside_the_cap():
     line = apply_guards(text, mv(Move.closing_statement, "A1"), b, last_answer="x",
                         max_words=60)
     assert line.concession_added and has_concession(line.text)
-    assert line.text.startswith("Main maanta hoon ki 'Parents need to reach children")
+    assert line.text.startswith("Maanna padega ki 'Parents need to reach children")
     assert len(line.text.split()) <= 60
     ok = apply_guards("Fair point on safety. But phones are tools.",
                       mv(Move.closing_statement), b, last_answer="x", max_words=60)

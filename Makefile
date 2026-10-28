@@ -6,7 +6,7 @@ VENV_PY := .venv/bin/python
 PYTHON ?= $(if $(wildcard $(VENV_PY)),$(VENV_PY),python3)
 export PYTHONPATH := src:.
 
-.PHONY: help venv install test lint format cli cli-fake cli-fake-hi cli-real eval eval-gate eval-motions clean-traces
+.PHONY: help venv install test lint format cli cli-fake cli-fake-hi cli-real cli-fake-debate cli-debate cli-real-debate eval eval-gate eval-motions clean-traces
 
 help:
 	@echo "venv         create .venv and install everything (run this first on macOS)"
@@ -16,6 +16,9 @@ help:
 	@echo "cli          interactive text interview, fake offline LLM"
 	@echo "cli-fake     scripted fake interview (examples/fake_session.txt)"
 	@echo "cli-real     interactive text interview on Nova Pro (costs money; needs AWS creds)"
+	@echo "cli-fake-debate  scripted fake debate (examples/fake_debate.txt)"
+	@echo "cli-debate       interactive text debate, fake offline LLM"
+	@echo "cli-real-debate  interactive text debate on Nova Pro (costs money; needs AWS creds)"
 	@echo "eval         run the example eval set with the fake LLM (dev split)"
 	@echo "eval-gate    run the dev eval and fail on low recall or any false correction"
 	@echo "eval-motions debate: labelled custom-motion set through the safety screen (fake)"
@@ -50,6 +53,16 @@ cli-fake-hi:
 
 cli-real:
 	$(PYTHON) -m mockboard.cli
+
+# Debate mode (ruling 19, CTO_NOTES_04): the board argues the other side of a curated motion.
+cli-fake-debate:
+	$(PYTHON) -m mockboard.cli --mode debate --fake --script examples/fake_debate.txt --print-trace
+
+cli-debate:
+	$(PYTHON) -m mockboard.cli --mode debate --fake
+
+cli-real-debate:
+	$(PYTHON) -m mockboard.cli --mode debate
 
 eval:
 	$(PYTHON) -m eval.runner --split dev

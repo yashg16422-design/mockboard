@@ -3,6 +3,7 @@
     python -m mockboard.cli --fake                      # fully offline (rule-based fake LLM)
     python -m mockboard.cli                             # real Nova Pro on Bedrock (Sydney)
     python -m mockboard.cli --fake --script answers.txt # scripted answers, one per line
+    python -m mockboard.cli --mode debate --fake        # debate mode (curated motions)
 
 Flow: application form (no names) -> opener -> typed answers -> fast analysis graph per
 segment (background fact checks) -> delayed fact challenge phrased as a question citing the
@@ -39,6 +40,7 @@ from mockboard.brain.schemas import (
 )
 from mockboard.config import Settings, get_settings
 from mockboard.modes import DEFAULT_MODE, mode_ids
+from mockboard.modes.debate.setup_cli import read_debate_setup
 from mockboard.obs.trace import TraceRecorder
 from mockboard.obs.tracing import langfuse_callbacks
 from mockboard.session import SEGMENT_MARK, InterviewSession
@@ -53,6 +55,8 @@ FORM_FIELDS: list[tuple[str, str, bool]] = [
     ("work_experience", "Work experience in one line (optional)", False),
     ("interview_language", "Interview language [hinglish/hindi/english] (default hinglish)", False),
 ]
+
+DEBATE_MODE = "debate"
 
 DEFAULT_FAKE_FORM = {
     "home_state": "Uttar Pradesh",
@@ -202,17 +206,24 @@ async def run(args: argparse.Namespace) -> int:
     deps = build_deps(settings, llm, cards=cards)
     callbacks = langfuse_callbacks(settings.langfuse_enabled)
     analyzer = TurnAnalyzer(deps, callbacks=callbacks)
+    rt = deps.mode(args.mode)
 
     print(
         f"Mock Board (text mode) | LLM: {'FAKE offline' if args.fake else settings.nova_model_id}"
         f" ({'-' if args.fake else settings.aws_region}) | cards: {origin}"
         f" ({len(cards.cards)}, version {cards.version})"
-        f" | prefix ~{deps.kit.prefix_tokens_approx} tokens (approx)"
+        f" | prefix ~{rt.kit.prefix_tokens_approx} tokens (approx)"
     )
     if cards.all_synthetic:
         print("All fact cards are SYNTHETIC TEST CARDS. Nothing the board cites is a real fact.")
 
-    form = read_form(ask, use_defaults=args.fake and lines is not None)
+    use_defaults = args.fake and lines is not None
+    form, options = None, None
+    if args.mode == DEBATE_MODE:
+        options = await read_debate_setup(ask, llm=llm, settings=settings,
+                                          use_defaults=use_defaults)
+    else:
+        form = read_form(ask, use_defaults=use_defaults)
     kwargs = {"session_id": session_id} if session_id else {}
     session = InterviewSession(
         deps=deps,
@@ -222,13 +233,14 @@ async def run(args: argparse.Namespace) -> int:
         max_turns=args.max_turns,
         callbacks=callbacks,
         mode=args.mode,
+        mode_options=options,
         **kwargs,
     )
     recorder.session_id = session.session_id
     recorder.path = recorder.path.with_name(f"{session.session_id}.jsonl")
 
     opener = await session.open()
-    print(f"\n[{deps.personas[deps.strategy.chairman].name}] {opener.text}")
+    print(f"\n[{session.speaker_name(rt.strategy.chairman)}] {opener.text}")
     while not session.state.finished:
         if lines is not None and args.think_s > 0:
             # A scripted candidate answers instantly; a real one takes seconds to think and
@@ -241,13 +253,15 @@ async def run(args: argparse.Namespace) -> int:
             session.submit_segment(part, segment_index=index)
         await session.end_of_turn(args.deadline_s or settings.text_move_deadline_s)
         out = await session.speak()
-        persona = deps.personas.get(out.move.member)
         tag = f"{out.move.move.value}, {out.move.rule_id}"
-        print(f"[{persona.name if persona else out.move.member}] ({tag}) {out.line.text}")
+        print(f"[{session.speaker_name(out.move.member)}] ({tag}) {out.line.text}")
         if out.move.move == Move.fact_challenge:
             print(f"   show-your-work: {out.move.reason}")
         if out.fallback_reason:
             print(f"   fallback: {out.fallback_reason}")
+    confer = session.closing_line()
+    if confer:
+        print(f"\n[{session.speaker_name(rt.strategy.chairman)}] {confer}")
     report = await session.finish(args.language)
     print(format_report(report, cards))
     if args.report_json:

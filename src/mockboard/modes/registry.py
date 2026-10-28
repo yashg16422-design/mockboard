@@ -50,6 +50,10 @@ class ModeProfile:
     listener_tool: tuple[Any, Any] | None = None
     # Extra, already-tagged context for the listener's user message; None means none.
     listener_context: Callable[[StrategyContext], str] | None = None
+    # session_hooks(session, mode_options) -> an object the session asks for the rounds, the
+    # turn context, the spoken line, the state update, extra trace fields and the report.
+    # None (UPSC) means the session's own code paths, unchanged.
+    session_hooks: Callable[[Any, Any], Any] | None = None
 
     def prompt_id(self, role: str) -> str:
         return self.prompt_ids[role]

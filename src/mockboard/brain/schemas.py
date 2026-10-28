@@ -422,7 +422,7 @@ class SessionState(_Model):
     """Everything the session controller knows. Lives in memory during a session."""
 
     session_id: str
-    form: CandidateForm
+    form: CandidateForm | None  # None in debate mode, which has its own setup form
     topics: list[str]
     mode: str = "upsc_interview"  # ADR-009: a session-level setting
     topic_index: int = 0

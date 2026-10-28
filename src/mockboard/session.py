@@ -150,7 +150,7 @@ class OpenTurn:
 @dataclass
 class InterviewSession:
     deps: BrainDeps
-    form: CandidateForm
+    form: CandidateForm | None  # the UPSC application form; None in debate mode
     recorder: TraceRecorder
     analyzer: TurnAnalyzer
     session_id: str = field(default_factory=lambda: f"sess-{uuid.uuid4().hex[:10]}")
@@ -160,6 +160,8 @@ class InterviewSession:
     # ADR-009: the session's mode. The brain takes its rule table, prompts, personas and
     # rubric from the mode's profile; the voice loop never asks which mode it is in.
     mode: str = DEFAULT_MODE
+    # Mode-specific setup (debate: a `DebateSetup`), handed to the profile's session hooks.
+    mode_options: Any = None
     state: SessionState = field(init=False)
     last_question: str = ""
     turn: OpenTurn | None = field(init=False, default=None)
@@ -175,15 +177,22 @@ class InterviewSession:
     # their moves are ignored, but their fallbacks are still written to the trace.
     _stale: set[asyncio.Task] = field(init=False, default_factory=set)
     _stale_done: list[dict[str, Any]] = field(init=False, default_factory=list)
+    # The mode's session hooks (ADR-009), or None for UPSC, whose code paths are below.
+    hooks: Any = field(init=False, default=None)
 
     def __post_init__(self) -> None:
         if self.fact_checker is None:
             self.fact_checker = FactChecker(self.deps, callbacks=self.callbacks)
+        factory = self.profile.session_hooks
+        if factory is not None:
+            self.hooks = factory(self, self.mode_options)
+        topics = (
+            self.hooks.topics()
+            if self.hooks is not None
+            else [BACKGROUND_TOPIC, *self.deps.settings.topics]
+        )
         self.state = SessionState(
-            session_id=self.session_id,
-            form=self.form,
-            topics=[BACKGROUND_TOPIC, *self.deps.settings.topics],
-            mode=self.mode,
+            session_id=self.session_id, form=self.form, topics=topics, mode=self.mode
         )
 
     @property
@@ -193,13 +202,52 @@ class InterviewSession:
     # -- helpers -------------------------------------------------------------
 
     def _max_turns_in(self, topic: str) -> int:
+        if self.hooks is not None:
+            return self.hooks.max_turns_in(topic)
         return 1 if topic == BACKGROUND_TOPIC else self.deps.settings.max_turns_per_topic
+
+    def speaker_name(self, member: str) -> str:
+        """The display name of the board member who speaks a move (mode-agnostic)."""
+        if self.hooks is not None:
+            return self.hooks.speaker_name(member)
+        persona = self.deps.personas.get(member)
+        return persona.name if persona else member
+
+    def guard_sentence(self, move: BoardMove, sentence: str) -> bool:
+        """Mode-agnostic per-sentence guard for the voice loop's `speak_stream` (ruling 22):
+        True means the sentence may be spoken. Always True in UPSC mode (a no-op). In debate
+        mode, a sentence with a figure that is not on the motion's cards is dropped
+        (CTO_NOTES_04 §3); fact challenges keep their own ask-never-assert guard."""
+        if self.hooks is None or not hasattr(self.hooks, "guard_sentence"):
+            return True
+        return self.hooks.guard_sentence(move, sentence)
+
+    @property
+    def expects_long_turn(self) -> bool:
+        """Mode-agnostic hint for the voice loop's per-session turn detection (ruling 22):
+        True when the next candidate turn is a long one (a debate opening or closing
+        statement, up to about 90 seconds), so a longer pause should not end it. Always
+        False in UPSC mode."""
+        if self.hooks is None or not hasattr(self.hooks, "expects_long_turn"):
+            return False
+        return bool(self.hooks.expects_long_turn())
+
+    def closing_line(self) -> str | None:
+        """What the board says while the report is prepared, if anything (debate: "The
+        board will confer"). The voice loop speaks it before awaiting `finish()`."""
+        if self.hooks is not None and hasattr(self.hooks, "confer_line"):
+            return self.hooks.confer_line()
+        return None
 
     def _next_topic(self) -> str | None:
         i = self.state.topic_index + 1
         return self.state.topics[i] if i < len(self.state.topics) else None
 
     def _ctx(self, turn_id: str, signals: VoiceSignals) -> StrategyContext:
+        ctx = self._base_ctx(turn_id, signals)
+        return self.hooks.ctx(ctx) if self.hooks is not None else ctx
+
+    def _base_ctx(self, turn_id: str, signals: VoiceSignals) -> StrategyContext:
         s = self.state
         return StrategyContext(
             mode=self.mode,
@@ -276,6 +324,8 @@ class InterviewSession:
     def _fact_check(self, analysis: Analysis, turn_id: str, segment_id: str) -> None:
         if not needs_fact_check(analysis):
             return
+        if self.hooks is not None and not self.hooks.fact_check_enabled:
+            return  # e.g. a debate motion with no fact cards: figures stay unverifiable
         task = asyncio.create_task(
             self.fact_checker.check(analysis.claims, turn_id=turn_id, segment_id=segment_id)
         )
@@ -384,6 +434,8 @@ class InterviewSession:
     # -- public API ----------------------------------------------------------
 
     async def open(self) -> LineResult:
+        if self.hooks is not None:
+            return await self._open_with_hooks()
         s = self.deps.settings
         line = await generate_opener(
             self.deps.llm,
@@ -415,6 +467,30 @@ class InterviewSession:
             cards_all_synthetic=self.deps.cards.all_synthetic,
             feature_flags=s.feature_flags(),
             prompt_versions=s.prompt_versions(),
+        )
+        return line
+
+    async def _open_with_hooks(self) -> LineResult:
+        s = self.deps.settings
+        line, move, extra = await self.hooks.open()
+        self.last_question = line.text
+        self.state.board_lines.append(
+            BoardLine(
+                turn_id="t0", member=move.member, move=move.move, text=line.text,
+                is_fallback=line.is_fallback,
+            )
+        )
+        self.recorder.write_event(
+            "session_start",
+            tag="opener",
+            opener_guard=line.guard,
+            opener_fallback=line.is_fallback,
+            opener_error=line.error or None,
+            card_set_version=self.deps.cards.version,
+            cards_all_synthetic=self.deps.cards.all_synthetic,
+            feature_flags=s.feature_flags(),
+            prompt_versions=s.prompt_versions(self.mode),
+            **extra,
         )
         return line
 
@@ -587,7 +663,10 @@ class InterviewSession:
         st, s = self.state, self.deps.settings
         move, tr, analysis = turn.move, turn.trace, turn.analysis or Analysis()
         answer = " ".join(seg.text for seg in turn.segments).strip()
-        line = await self._speak(move, answer, turn, tr)
+        if self.hooks is not None:
+            line = await self.hooks.speak(move, answer, turn, tr)
+        else:
+            line = await self._speak(move, answer, turn, tr)
         if line.error:  # ruling 14: the actor failed or missed its budget
             turn.fallbacks.append(
                 {
@@ -597,12 +676,17 @@ class InterviewSession:
                     "spoke": line.fallback_kind,
                 }
             )
-        finished = self._apply(move, analysis)
+        if self.hooks is not None:
+            finished = self.hooks.apply(move, analysis)
+            member = self.hooks.persona_id(move.member)
+        else:
+            finished = self._apply(move, analysis)
+            member = move.member
         self.last_question = line.text
         st.board_lines.append(
             BoardLine(
                 turn_id=turn.turn_id,
-                member=move.member,
+                member=member,
                 move=move.move,
                 text=line.text,
                 is_fallback=line.is_fallback,
@@ -648,8 +732,10 @@ class InterviewSession:
             late_listener=self._late_trace(),
             stale_analyses=self._stale_trace(),
             fallbacks=turn.fallbacks,
-            prompt_versions=s.prompt_versions(),
+            prompt_versions=s.prompt_versions(self.mode),
         )
+        if self.hooks is not None:
+            tr.set(**self.hooks.trace_fields(move, line))
         trace = self.recorder.write_turn(tr)
         self.turn = None
         return TurnOutcome(
@@ -722,15 +808,18 @@ class InterviewSession:
     async def finish(self, language: ReportLanguage | str | None = None) -> SessionReport:
         t = time.monotonic()
         cancelled = await self.drain_fact_checks(self.deps.settings.fact_check_drain_timeout_s)
-        report = await generate_report(
-            self.deps,
-            session_id=self.session_id,
-            turns=self.state.turns,
-            ledger=self.state.claim_ledger,
-            moves=self.state.moves,
-            language=language,
-            callbacks=self.callbacks,
-        )
+        if self.hooks is not None:
+            report = await self.hooks.report(language)
+        else:
+            report = await generate_report(
+                self.deps,
+                session_id=self.session_id,
+                turns=self.state.turns,
+                ledger=self.state.claim_ledger,
+                moves=self.state.moves,
+                language=language,
+                callbacks=self.callbacks,
+            )
         self.recorder.write_event(
             "report",
             tag=self.session_id,

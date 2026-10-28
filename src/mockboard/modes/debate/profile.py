@@ -6,6 +6,7 @@ from __future__ import annotations
 from mockboard.brain.personas import PERSONA_DIR
 from mockboard.brain.tools import DEBATE_LISTENER_TOOL, DebateListenerOutput
 from mockboard.modes.debate.listener import debate_listener_context
+from mockboard.modes.debate.session import DebateSessionHooks, DebateSetup
 from mockboard.modes.debate.strategist import (
     DEBATE_MOVES,
     ROUNDS,
@@ -63,5 +64,12 @@ DEBATE_PROFILE = register(
         word_caps=DEBATE_WORD_CAPS,
         listener_tool=(DEBATE_LISTENER_TOOL, DebateListenerOutput),
         listener_context=debate_listener_context,
+        session_hooks=lambda session, options: DebateSessionHooks(session, _setup(options)),
     )
 )
+
+
+def _setup(options: object) -> DebateSetup:
+    if not isinstance(options, DebateSetup):
+        raise ValueError("a debate session needs a DebateSetup as mode_options")
+    return options

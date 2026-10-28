@@ -130,16 +130,16 @@ def arguments_for(move: BoardMove, d: DebateContext) -> list[str]:
 
 _T: dict[str, dict[str, str]] = {
     "hi-en": {
-        "opening": "Aapne apna paksh achhe se rakha. Main doosri taraf se kahunga: {a1}{a2} "
+        "opening": "Aapne apna paksh achhe se rakha. Ab doosri taraf se: {a1}{a2} "
         "Ab aap jawab dijiye.",
         "second": " Aur doosri baat: {claim}",
         "rebut": "Aapki baat samajh aati hai. Lekin {claim} {warrant} Iska jawab kya hai?",
-        "concede": "Yeh point aapka mazboot hai, main maanta hoon. Lekin {claim}",
-        "concede_none": "Yeh point aapka mazboot hai, main maanta hoon.",
+        "concede": "Yeh point aapka mazboot hai, ise maanna padega. Lekin {claim}",
+        "concede_none": "Yeh point aapka mazboot hai, ise maanna padega.",
         "cross": "Aapne mere is point ka jawab nahi diya: {claim} Iska jawab kya hai?",
         "cross_warrant": "Yeh baat kyun sach hai? Aapka tark kya hai?",
-        "closing": "Main maanta hoon ki {concession} Phir bhi, {claim} Isliye main apne "
-        "paksh par kaayam hoon.",
+        "closing": "Maanna padega ki {concession} Phir bhi, {claim} Isliye mera paksh wahi "
+        "hai.",
         "concession_answered": "'{claim}' par aapka jawab mazboot tha.",
         "concession_generic": "aapne kuch baatein bahut achhi rakhi.",
         "steelman": "Ek sentence mein mere paksh ka sabse mazboot tark bataiye.",
@@ -234,7 +234,8 @@ def concession_text(brief: DebateBrief) -> str:
 
 def closing_concession_sentence(brief: DebateBrief) -> str:
     mix = brief.mix
-    lead = "I accept that " if mix == "en" else "Main maanta hoon ki "
+    # Gender-neutral on purpose: Hindi verbs agree with the speaker, and opponents differ.
+    lead = "I accept that " if mix == "en" else "Maanna padega ki "
     text = concession_text(brief)
     return lead + text
 

@@ -145,7 +145,9 @@ def decide_debate_move(
     move = _decide(ctx, ctx.debate, turn, ledger, cfg)
     update: dict = {"for_turn": ctx.turn_id}
     conceded = turn.concedes_error or turn.concedes_point
-    if conceded and move.move not in (Move.clarify, Move.redirect) and move.preface is None:
+    # The Opponent acknowledges a concession; the Moderator does not take sides, so its
+    # moves carry no acknowledgement (D4's grace for an honest "I don't know" is separate).
+    if conceded and move.member == OPPONENT and move.preface is None:
         update["preface"] = "acknowledge"
         update["reason"] = move.reason + " (+ acknowledge the user's concession first)"
     return move.model_copy(update=update)

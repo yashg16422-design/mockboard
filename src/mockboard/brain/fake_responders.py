@@ -331,7 +331,10 @@ def _debate_actor_line(board: dict[str, Any], user: str) -> str:
     """Debate stand-in (actor_debate.v1): fixed shapes filled from the case file."""
     move = board.get("move", "rebut")
     args = board.get("use_arguments") or []
-    speech = " ".join(_tag(user, "candidate_speech").split()[:6]).rstrip(".,?!")
+    sentences = _sentences(_tag(user, "candidate_speech"))
+    point = next((x for x in sentences if _WARRANT.search(x)), max(sentences, key=len, default=""))
+    speech = " ".join(point.split()[:8]).rstrip(".,?!")
+    speech = speech[:1].lower() + speech[1:]
     first = args[0] if args else {"claim": "Is motion ke doosre pehlu bhi hain.", "reason": ""}
     claim = first["claim"][:1].lower() + first["claim"][1:]
     if move == Move.fact_challenge.value:
@@ -344,7 +347,7 @@ def _debate_actor_line(board: dict[str, Any], user: str) -> str:
     if move == Move.opening_statement.value:
         second = f" Doosri baat, {args[1]['claim'][:1].lower()}{args[1]['claim'][1:]}" if len(
             args) > 1 else ""
-        return (f"Aap kehte hain ki {speech}, aur yeh soch samajh aati hai. Lekin {claim} "
+        return (f"Aap kehte hain ki {speech}, aur yeh baat samajh aati hai. Lekin {claim} "
                 f"{first.get('reason', '')}{second} Ab aap jawab dijiye.")
     if move == Move.rebut.value:
         answer = "Aapke sawaal ka seedha jawab: haan, yeh fark padta hai. " if board.get(
@@ -352,15 +355,14 @@ def _debate_actor_line(board: dict[str, Any], user: str) -> str:
         return (f"{answer}Aapka kehna hai ki {speech}. Lekin {claim} "
                 f"{first.get('reason', '')} Iska jawab kya hai?")
     if move == Move.concede_point.value:
-        return f"Yeh point aapka mazboot hai, main maanta hoon. Lekin {claim}"
+        return f"Yeh point aapka mazboot hai, ise maanna padega. Lekin {claim}"
     if move == Move.cross_question.value:
         if board.get("cross_on") == "warrant":
             return f"Aap kehte hain {speech}. Yeh kyun sach hai? Aapka tark kya hai?"
         return f"Aapne mere is point ka jawab nahi diya: {first['claim']} Iska jawab kya hai?"
     if move == Move.closing_statement.value:
         concede = board.get("concede_first") or "aapne kuch baatein achhi rakhi."
-        return (f"Main maanta hoon ki {concede} Phir bhi, {claim} Isliye main apne paksh par "
-                "kaayam hoon.")
+        return f"Maanna padega ki {concede} Phir bhi, {claim} Isliye mera paksh wahi hai."
     if move == Move.steelman.value:
         return "Ek sentence mein mere paksh ka sabse mazboot tark bataiye."
     if move == Move.redirect.value:
