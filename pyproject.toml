@@ -7,7 +7,7 @@ name = "mockboard"
 version = "0.1.0"
 description = "Mock Board: a voice-first Hinglish UPSC Personality Test board (phase 1: text-only brain)."
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.12"  # numpy 2.5 (probes extra) needs 3.12+; EC2 Ubuntu 24.04 ships 3.12
 license = { text = "Proprietary" }
 authors = [{ name = "Mock Board owner" }]
 # Exact pins live in requirements.txt; these are the compatible ranges.
