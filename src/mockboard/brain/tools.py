@@ -12,7 +12,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from mockboard.brain.llm import ToolSpec
-from mockboard.brain.schemas import Balance, ClaimKind, Dimension, ModelVerdict
+from mockboard.brain.schemas import Balance, ClaimKind, Dimension, ModelVerdict, PointStrength
 
 
 class _ToolModel(BaseModel):
@@ -87,6 +87,67 @@ LISTENER_TOOL = ToolSpec(
             "honest_unknown",
             "concedes_error",
             "garbled",
+        ],
+    },
+)
+
+
+# Debate listener (CTO_NOTES_04 §2): the UPSC fields plus optional debate fields. A separate
+# tool and model, so the UPSC listener's schema and parsing are untouched.
+
+
+class DebateListenerArgument(_ToolModel):
+    claim: str
+    warrant: str = ""
+
+
+class DebateListenerOutput(ListenerOutput):
+    arguments: list[DebateListenerArgument] = Field(default_factory=list)
+    rebuts: list[str] = Field(default_factory=list)
+    question_to_opponent: str = ""
+    concedes_point: bool = False
+    point_strength: PointStrength | None = None
+    off_limits: bool = False
+
+    _blank_strength = field_validator("point_strength", mode="before")(_blank_to_none)
+
+
+DEBATE_LISTENER_TOOL = ToolSpec(
+    name="record_debate_analysis",
+    description="Record the structured analysis of one segment of the user's debate speech.",
+    input_schema={
+        "type": "object",
+        "properties": {
+            **LISTENER_TOOL.input_schema["properties"],
+            "arguments": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "claim": {"type": "string"},
+                        "warrant": {"type": "string", "description": "Why it follows; ''."},
+                    },
+                    "required": ["claim", "warrant"],
+                },
+            },
+            "rebuts": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Ids of the opponent's arguments this segment answers.",
+            },
+            "question_to_opponent": {"type": "string"},
+            "concedes_point": {"type": "boolean"},
+            "point_strength": {"type": "string", "enum": [p.value for p in PointStrength]},
+            "off_limits": {"type": "boolean"},
+        },
+        "required": [
+            *LISTENER_TOOL.input_schema["required"],
+            "arguments",
+            "rebuts",
+            "question_to_opponent",
+            "concedes_point",
+            "point_strength",
+            "off_limits",
         ],
     },
 )
@@ -304,6 +365,7 @@ CASE_FILE_TOOL = ToolSpec(
 
 ALL_TOOLS: dict[str, tuple[ToolSpec, type[BaseModel]]] = {
     "listener": (LISTENER_TOOL, ListenerOutput),
+    "listener_debate": (DEBATE_LISTENER_TOOL, DebateListenerOutput),
     "librarian": (LIBRARIAN_TOOL, LibrarianOutput),
     "judge": (JUDGE_TOOL, JudgeOutput),
     "motion_screen": (MOTION_SCREEN_TOOL, MotionScreenOutput),

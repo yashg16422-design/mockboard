@@ -46,6 +46,10 @@ class ModeProfile:
     rounds: tuple[str, ...] = ()
     # Move value -> word cap for the actor. A move not listed uses `actor_max_words`.
     word_caps: Mapping[str, int] = field(default_factory=dict)
+    # The listener's forced tool and output model; None means the UPSC listener's.
+    listener_tool: tuple[Any, Any] | None = None
+    # Extra, already-tagged context for the listener's user message; None means none.
+    listener_context: Callable[[StrategyContext], str] | None = None
 
     def prompt_id(self, role: str) -> str:
         return self.prompt_ids[role]

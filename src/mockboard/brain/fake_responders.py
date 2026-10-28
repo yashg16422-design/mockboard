@@ -168,7 +168,7 @@ def listener_responder(system: str, user: str) -> dict[str, Any]:
     reasons = [s for s in _sentences(speech) if len(s.split()) >= 4][:4]
     has_both = any(m in low for m in _BALANCE_MARKERS)
     balance = "unclear" if len(speech.split()) < 8 else ("balanced" if has_both else "one_sided")
-    return {
+    out = {
         "stance": reasons[0][:120] if reasons else "",
         "reasons": [] if garbled else reasons,
         "claims": [] if garbled else extract_claims(speech),
@@ -176,6 +176,82 @@ def listener_responder(system: str, user: str) -> dict[str, Any]:
         "honest_unknown": any(m in low for m in _UNKNOWN_MARKERS),
         "concedes_error": bool(_CONCEDE.search(speech)),
         "garbled": garbled,
+    }
+    context = _tag(user, "debate_context")
+    if context:  # debate mode (listener_debate.v1): add the optional debate fields
+        out.update(_debate_fields(speech, json.loads(context), garbled))
+    return out
+
+
+# Debate listener stand-in (CTO_NOTES_04 §2). Word lists, not understanding.
+_WARRANT = re.compile(
+    r"\b(?:kyunki|kyonki|because|since|isliye|so that|which means|jisse|taaki|therefore|"
+    r"as a result|for example|jaise ki|matlab)\b",
+    re.IGNORECASE,
+)
+_REBUT_MARKERS = (
+    "lekin", "but ", "however", "galat", "not true", "nahi", "disagree", "jawab", "par ",
+    "doesn't", "isn't", "won't", "magar", "sahi nahi",
+)
+_CONCEDE_POINT = re.compile(
+    r"\b(?:fair point|good point|i agree|i accept|maanta hoon|maanti hoon|maan leta|maan leti|"
+    r"sahi baat|point taken|you(?:'re| are) right|aapki baat sahi|accha point|achha point)\b",
+    re.IGNORECASE,
+)
+
+
+def _off_limits(speech: str) -> bool:
+    from mockboard.modes.debate.screen import RULES
+
+    if any(RULES[k].search(speech) for k in ("partisan", "caste", "communal")):
+        return True
+    groups = re.compile(
+        r"\b(?:hindus?|muslims?|christians?|sikhs?|biharis?|bengalis?|tamils?|punjabis?|"
+        r"north indians?|south indians?|women|men)\b[^.?!]*\b(?:are all|always|never|lazy|"
+        r"inferior|worse|cannot)\b",
+        re.IGNORECASE,
+    )
+    return bool(groups.search(speech))
+
+
+def _debate_fields(speech: str, ctx: dict[str, Any], garbled: bool) -> dict[str, Any]:
+    low = f" {speech.lower()} "
+    sentences = _sentences(speech)
+    arguments = []
+    for sentence in sentences:
+        if sentence.endswith("?") or len(sentence.split()) < 5:
+            continue
+        m = _WARRANT.search(sentence)
+        if m:
+            claim, warrant = sentence[: m.start()].strip(" ,"), sentence[m.start():].strip()
+            arguments.append({"claim": claim or sentence, "warrant": warrant})
+        else:
+            arguments.append({"claim": sentence, "warrant": ""})
+    rebutting = any(m in low for m in _REBUT_MARKERS)
+    rebuts = []
+    for arg in ctx.get("opponent_arguments") or []:
+        hits = sum(1 for k in arg.get("keywords") or [] if k.lower() in low)
+        if hits >= 2 or (hits >= 1 and rebutting):
+            rebuts.append(arg["id"])
+    question = next((s for s in reversed(sentences) if s.endswith("?")), "")
+    words = len(speech.split())
+    warranted = any(a["warrant"] for a in arguments)
+    if rebuts and warranted and words >= 25:
+        strength = "strong"
+    elif words < 12 or not arguments:
+        strength = "weak"
+    else:
+        strength = "adequate"
+    if garbled:
+        return {"arguments": [], "rebuts": [], "question_to_opponent": "",
+                "concedes_point": False, "point_strength": "weak", "off_limits": False}
+    return {
+        "arguments": arguments[:4],
+        "rebuts": rebuts,
+        "question_to_opponent": question,
+        "concedes_point": bool(_CONCEDE_POINT.search(speech)),
+        "point_strength": strength,
+        "off_limits": _off_limits(speech),
     }
 
 

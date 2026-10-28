@@ -71,6 +71,14 @@ class Move(StrEnum):
     interrupt = "interrupt"
 
 
+class PointStrength(StrEnum):
+    """Debate listener: how well a user's point landed (CTO_NOTES_04 §2)."""
+
+    strong = "strong"
+    adequate = "adequate"
+    weak = "weak"
+
+
 class Dimension(StrEnum):
     """Judge rubric (orchestrator ruling 6). There is deliberately NO accent, dialect,
     grammar or fluency dimension.
@@ -189,8 +197,20 @@ class VoiceSignals(_Model):
     was_interrupted_by_board: bool = False
 
 
+class DebateArgument(_Model):
+    """Debate listener: one argument the user made, as a claim and its warrant (the reason it
+    follows). An empty warrant means the user asserted without a reason."""
+
+    claim: str
+    warrant: str = ""
+
+
 class Analysis(_Model):
-    """Listener output for one segment, stamped with its turn and segment ids."""
+    """Listener output for one segment, stamped with its turn and segment ids.
+
+    The fields after `garbled` are debate-mode only (CTO_NOTES_04 §2). They are optional with
+    neutral defaults, so UPSC parsing and behaviour are unchanged.
+    """
 
     turn_id: str = ""
     segment_id: str = ""
@@ -205,6 +225,13 @@ class Analysis(_Model):
     garbled: bool = False
     word_count: int = 0
     is_fallback: bool = False
+    # Debate mode only.
+    arguments: list[DebateArgument] = Field(default_factory=list)
+    rebuts: list[str] = Field(default_factory=list)  # ids of opponent arguments answered
+    question_to_opponent: str = ""
+    concedes_point: bool = False  # the user grants one of the opponent's points
+    point_strength: PointStrength | None = None
+    off_limits: bool = False  # parties, leaders, elections, or attacks on groups
 
     @property
     def is_strong(self) -> bool:
@@ -246,6 +273,34 @@ class LibrarianVote(_Model):
     note: str = ""
 
 
+class OpponentArg(_Model):
+    """One argument in the opponent's case file, as the brain tracks it (debate mode)."""
+
+    id: str
+    claim: str
+    keywords: list[str] = Field(default_factory=list)
+
+
+class DebateContext(_Model):
+    """Debate-mode state the strategist and listener need, frozen per turn like the rest of
+    `StrategyContext`. Everything here is plain data; the rules stay pure."""
+
+    motion: str
+    user_side: Literal["for", "against"]
+    opponent_args: list[OpponentArg]  # the case file, strongest first
+    conceded_ids: list[str] = Field(default_factory=list)  # opponent args conceded (D8)
+    answered_ids: list[str] = Field(default_factory=list)  # opponent args the user rebutted
+    pressed_counts: dict[str, int] = Field(default_factory=dict)  # times each arg was used
+    last_opponent_arg: str | None = None  # the arg the opponent's last move pressed
+    cross_questioned_ids: list[str] = Field(default_factory=list)  # at most once per point
+    card_topics: list[str] = Field(default_factory=list)  # the motion's fact-card topics
+    user_conceded_last_turn: bool = False
+
+    @property
+    def standing(self) -> list[OpponentArg]:
+        return [a for a in self.opponent_args if a.id not in self.conceded_ids]
+
+
 class StrategyContext(_Model):
     """A snapshot of session counters, taken by the controller at the start of each turn."""
 
@@ -264,6 +319,8 @@ class StrategyContext(_Model):
     honest_unknowns_in_topic: int = 0  # earlier honest "I don't know" turns in this topic
     pressure_in_topic: int = 0  # `pressure` moves already used in this topic
     voice_signals: VoiceSignals = Field(default_factory=VoiceSignals)
+    # Debate mode only (None in UPSC mode).
+    debate: DebateContext | None = None
 
 
 # ---------------------------------------------------------------------------

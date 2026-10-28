@@ -56,6 +56,7 @@ from mockboard.brain.schemas import (
     BoardMove,
     Claim,
     Move,
+    PointStrength,
     StrategyContext,
     Verdict,
 )
@@ -72,6 +73,7 @@ PRESSURE: dict[Move, int] = {
     Move.interrupt: 2,
 }
 THIN_ANSWER_WORDS = 25
+_STRENGTH_ORDER = [PointStrength.weak, PointStrength.adequate, PointStrength.strong]
 CLOSE_TARGET = "close"  # move_on target meaning "no topics left: close the interview"
 
 
@@ -116,6 +118,11 @@ def merge_analyses(analyses: Sequence[Analysis]) -> Analysis:
     reasons: list[str] = []
     for a in analyses:
         reasons.extend(r for r in a.reasons if r not in reasons)
+    # Debate-mode fields (neutral defaults in UPSC mode, so this changes nothing there).
+    rebuts: list[str] = []
+    for a in analyses:
+        rebuts.extend(r for r in a.rebuts if r not in rebuts)
+    strengths = [a.point_strength for a in analyses if a.point_strength is not None]
     return Analysis(
         turn_id=analyses[-1].turn_id,
         segment_id=analyses[-1].segment_id,
@@ -129,6 +136,14 @@ def merge_analyses(analyses: Sequence[Analysis]) -> Analysis:
         or (total_words == 0 and any(a.garbled for a in analyses)),
         word_count=total_words,
         is_fallback=all(a.is_fallback for a in analyses),
+        arguments=[x for a in analyses for x in a.arguments],
+        rebuts=rebuts,
+        question_to_opponent=next(
+            (a.question_to_opponent for a in reversed(analyses) if a.question_to_opponent), ""
+        ),
+        concedes_point=any(a.concedes_point for a in analyses),
+        point_strength=max(strengths, key=_STRENGTH_ORDER.index) if strengths else None,
+        off_limits=any(a.off_limits for a in analyses),
     )
 
 

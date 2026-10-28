@@ -354,14 +354,28 @@ def _make_listener(max_attempts: int, late: LateListens) -> Callable:
         turn_id = state["turn_id"]
         start = _stamp(state, "listener_start")
         fallbacks: list[dict[str, str]] = []
+        ctx = state.get("ctx")
+        rt = deps.mode(ctx.mode if ctx is not None else None)  # ADR-009
+        mode_kwargs: dict[str, Any] = {}
+        if rt.profile.listener_tool is not None:
+            tool, output_model = rt.profile.listener_tool
+            mode_kwargs = {
+                "prompt_id": rt.profile.prompt_id("listener"),
+                "tool": tool,
+                "output_model": output_model,
+                "context": rt.profile.listener_context(ctx)
+                if rt.profile.listener_context is not None and ctx is not None
+                else "",
+            }
         call = asyncio.ensure_future(
             analyse_segment(
                 deps.llm,
-                deps.kit,
+                rt.kit,
                 segment=seg,
                 question=state.get("question", ""),
                 turn_id=turn_id,
                 turn_index=state.get("turn_index", 0),
+                **mode_kwargs,
             )
         )
         abandoned = late.abandoned(state.get("session_id", ""), turn_id)
