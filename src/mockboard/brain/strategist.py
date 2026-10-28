@@ -71,6 +71,13 @@ PRESSURE: dict[Move, int] = {
     Move.move_on: 1,
     Move.clarify: 0,
     Move.interrupt: 2,
+    # Debate mode (CTO_NOTES_04 §2).
+    Move.opening_statement: 1,
+    Move.closing_statement: 1,
+    Move.rebut: 2,
+    Move.cross_question: 2,
+    Move.concede_point: 0,
+    Move.redirect: 1,
 }
 THIN_ANSWER_WORDS = 25
 _STRENGTH_ORDER = [PointStrength.weak, PointStrength.adequate, PointStrength.strong]

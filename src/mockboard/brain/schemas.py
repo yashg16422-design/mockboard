@@ -58,7 +58,9 @@ class Balance(StrEnum):
 
 
 class Move(StrEnum):
-    """The nine board moves (PLAN_v2_DELTA §7)."""
+    """Every board move. The UPSC board uses the first nine (PLAN_v2_DELTA §7); debate mode
+    adds six (CTO_NOTES_04 §2). Each mode's profile lists the moves its rule table may emit
+    (`ModeProfile.allowed_moves`), and a test checks every table against its own set."""
 
     probe = "probe"
     counter = "counter"
@@ -69,6 +71,13 @@ class Move(StrEnum):
     move_on = "move_on"
     clarify = "clarify"
     interrupt = "interrupt"
+    # Debate mode only.
+    opening_statement = "opening_statement"
+    closing_statement = "closing_statement"
+    rebut = "rebut"
+    cross_question = "cross_question"
+    concede_point = "concede_point"
+    redirect = "redirect"
 
 
 class PointStrength(StrEnum):
@@ -294,7 +303,7 @@ class DebateContext(_Model):
     last_opponent_arg: str | None = None  # the arg the opponent's last move pressed
     cross_questioned_ids: list[str] = Field(default_factory=list)  # at most once per point
     card_topics: list[str] = Field(default_factory=list)  # the motion's fact-card topics
-    user_conceded_last_turn: bool = False
+    steelman_used: bool = False  # "make the best case for MY side": once per debate
 
     @property
     def standing(self) -> list[OpponentArg]:

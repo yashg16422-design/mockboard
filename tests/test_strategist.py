@@ -7,6 +7,7 @@ import pytest
 from conftest import make_analysis, make_claim, make_ctx
 from mockboard.brain.schemas import Balance, ClaimKind, Move, Verdict, VoiceSignals
 from mockboard.brain.strategist import CLOSE_TARGET, StrategyConfig, decide_move, merge_analyses
+from mockboard.modes.upsc import UPSC_MOVES
 
 CFG = StrategyConfig(
     chairman="chairman",
@@ -143,7 +144,7 @@ def test_concession_preface_rides_on_any_move_without_adding_a_tenth():
     conceded = make_analysis(concedes_error=True, balance=Balance.one_sided)
     m = decide_move(make_ctx(), [conceded], [], CFG)
     assert m.move == Move.counter and m.preface == "acknowledge"
-    assert len(Move) == 9
+    assert len(UPSC_MOVES) == 9  # the UPSC board's moves stay nine (debate adds its own)
 
 
 def test_no_preface_without_a_concession_or_on_clarify():
@@ -274,4 +275,4 @@ def test_every_move_has_a_rule():
         Move.pressure,
         Move.probe,
     }
-    assert reachable == set(Move)
+    assert reachable == UPSC_MOVES
