@@ -327,7 +327,61 @@ _ACTOR_LINES: dict[str, str] = {
 }
 
 
+def _debate_actor_line(board: dict[str, Any], user: str) -> str:
+    """Debate stand-in (actor_debate.v1): fixed shapes filled from the case file."""
+    move = board.get("move", "rebut")
+    args = board.get("use_arguments") or []
+    speech = " ".join(_tag(user, "candidate_speech").split()[:6]).rstrip(".,?!")
+    first = args[0] if args else {"claim": "Is motion ke doosre pehlu bhi hain.", "reason": ""}
+    claim = first["claim"][:1].lower() + first["claim"][1:]
+    if move == Move.fact_challenge.value:
+        f = json.loads(_tag(user, "fact_challenge") or "{}")
+        return challenge_sentence(
+            claim_figure=f.get("claim_figure", ""), card_figure=f.get("card_figure", ""),
+            card_year=f.get("card_year"), source_short=f.get("source_short", ""),
+            is_date=bool(f.get("is_date")), mix=f.get("language_mix"),
+        )
+    if move == Move.opening_statement.value:
+        second = f" Doosri baat, {args[1]['claim'][:1].lower()}{args[1]['claim'][1:]}" if len(
+            args) > 1 else ""
+        return (f"Aap kehte hain ki {speech}, aur yeh soch samajh aati hai. Lekin {claim} "
+                f"{first.get('reason', '')}{second} Ab aap jawab dijiye.")
+    if move == Move.rebut.value:
+        answer = "Aapke sawaal ka seedha jawab: haan, yeh fark padta hai. " if board.get(
+            "answer_first") else ""
+        return (f"{answer}Aapka kehna hai ki {speech}. Lekin {claim} "
+                f"{first.get('reason', '')} Iska jawab kya hai?")
+    if move == Move.concede_point.value:
+        return f"Yeh point aapka mazboot hai, main maanta hoon. Lekin {claim}"
+    if move == Move.cross_question.value:
+        if board.get("cross_on") == "warrant":
+            return f"Aap kehte hain {speech}. Yeh kyun sach hai? Aapka tark kya hai?"
+        return f"Aapne mere is point ka jawab nahi diya: {first['claim']} Iska jawab kya hai?"
+    if move == Move.closing_statement.value:
+        concede = board.get("concede_first") or "aapne kuch baatein achhi rakhi."
+        return (f"Main maanta hoon ki {concede} Phir bhi, {claim} Isliye main apne paksh par "
+                "kaayam hoon.")
+    if move == Move.steelman.value:
+        return "Ek sentence mein mere paksh ka sabse mazboot tark bataiye."
+    if move == Move.redirect.value:
+        return ("Chaliye, parties aur vyaktiyon ko alag rakhte hain. Motion par wapas aaiye: "
+                f"{board.get('motion', '')}")
+    if move == Move.move_on.value:
+        if board.get("next_round") == "closing":
+            return ("Samay ho gaya. Ab closing statements: pehle aap, apni sabse mazboot baat "
+                    "rakhiye.")
+        return "Shukriya. Debate yahin samaapt hoti hai."
+    if move == Move.reassure.value:
+        return "Koi baat nahi, aaram se. Apna sabse mazboot point rakhiye."
+    if move == Move.clarify.value:
+        return "Maaf kijiye, main theek se sun nahi paaya. Kya aap phir se bata sakte hain?"
+    return "Ek minute, main beech mein rokta hoon. Apne mukhya point par aaiye."
+
+
 def actor_responder(system: str, user: str) -> str:
+    debate = _tag(user, "debate_board")
+    if debate:
+        return _debate_actor_line(json.loads(debate), user)
     ctx = json.loads(_tag(user, "board_context") or "{}")
     move = ctx.get("move", Move.probe.value)
     if move == Move.fact_challenge.value:

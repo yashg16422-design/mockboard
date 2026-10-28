@@ -72,6 +72,7 @@ def _load_builtin() -> None:
     # Imported for their side effect (registration); kept here so importing the registry
     # alone gives every built-in mode.
     from mockboard.modes import upsc  # noqa: F401
+    from mockboard.modes.debate import profile  # noqa: F401
 
 
 def get_profile(mode: str | None) -> ModeProfile:

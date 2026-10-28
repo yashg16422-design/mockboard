@@ -52,7 +52,7 @@ mockboard-cli = "mockboard.cli:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-mockboard = ["prompts/*.md", "brain/personas/*.yaml"]
+mockboard = ["prompts/*.md", "brain/personas/*.yaml", "brain/personas/debate/*.yaml"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

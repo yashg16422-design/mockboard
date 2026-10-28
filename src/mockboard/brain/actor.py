@@ -555,14 +555,52 @@ async def _compose_move_line(
     )
     mix = language_mix(persona, form)
 
-    def fallback(error: str, guard: str) -> LineResult:
+    def fallback(error: str, guard: str, retried: bool) -> LineResult:
         played = bool(filler_played()) if filler_played is not None else False
         line = actor_fallback(move, persona, turn_id, error=error, guard=guard, claim=claim,
                               card=card, mix=mix, filler_played=played)
         return replace(line, retried=retried)
 
-    # One attempt (ruling 14): any failure is answered with a fallback line, not a retry. The
-    # single exception is the optional fast-throttle retry (ruling 17).
+    call = await call_actor(
+        llm, kit, user, max_words=max_words, max_tokens=max_tokens, turn_id=turn_id,
+        on_first_token=on_first_token, first_token_budget_s=first_token_budget_s,
+        fast_throttle_retry_window_s=fast_throttle_retry_window_s,
+    )
+    if call.error:
+        return fallback(call.error, call.guard, call.retried)
+    text, retried = call.text, call.retried
+    if move.move == Move.fact_challenge and claim and card:
+        return replace(guard_fact_challenge(text, claim, card, mix), retried=retried)
+    return LineResult(text, retried=retried)
+
+
+@dataclass(frozen=True)
+class ActorCall:
+    """The outcome of the actor's single attempt (ruling 14): the capped text, or an error
+    with the guard name to record ("actor_budget" or "actor_failed")."""
+
+    text: str = ""
+    error: str = ""
+    guard: str = ""
+    retried: bool = False
+
+
+async def call_actor(
+    llm: LLMClient,
+    kit: PromptKit,
+    user: str,
+    *,
+    max_words: int,
+    max_tokens: int,
+    turn_id: str,
+    on_first_token: Callable[[], None] | None,
+    first_token_budget_s: float | None,
+    fast_throttle_retry_window_s: float | None = None,
+    prompt_id: str = "actor",
+) -> ActorCall:
+    """One streamed actor attempt with the first-token budget (ruling 14) and the optional
+    fast-throttle retry (ruling 17). Never raises for model failures; the caller chooses the
+    fallback line. Shared by every mode (ADR-009); `prompt_id` picks the mode's actor prompt."""
     started = time.monotonic()
     budget = first_token_budget_s
     retried = False
@@ -579,13 +617,13 @@ async def _compose_move_line(
         try:
             text = await collect_line(
                 stream_line(llm, kit, user, max_words=max_words, max_tokens=max_tokens,
-                            tag_=turn_id),
+                            tag_=turn_id, prompt_id=prompt_id),
                 first_token_budget_s=budget,
                 on_first_token=first_token,
             )
             break
         except ActorBudgetExceeded as exc:
-            return fallback(str(exc), "actor_budget")
+            return ActorCall(error=str(exc), guard="actor_budget", retried=retried)
         except LLMError as exc:
             now = time.monotonic()
             left = None if first_token_budget_s is None else first_token_budget_s - (now - started)
@@ -599,13 +637,13 @@ async def _compose_move_line(
             ):
                 retried, budget = True, left
                 continue
-            return fallback(f"{type(exc).__name__}: {exc}"[:300], "actor_failed")
+            return ActorCall(
+                error=f"{type(exc).__name__}: {exc}"[:300], guard="actor_failed", retried=retried
+            )
     text = cap_words(text, max_words)
     if not text:
-        return fallback("empty line", "actor_failed")
-    if move.move == Move.fact_challenge and claim and card:
-        return replace(guard_fact_challenge(text, claim, card, mix), retried=retried)
-    return LineResult(text, retried=retried)
+        return ActorCall(error="empty line", guard="actor_failed", retried=retried)
+    return ActorCall(text=text, retried=retried)
 
 
 def build_opener_user(form: CandidateForm, cards: CardSet) -> str:
