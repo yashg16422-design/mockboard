@@ -26,13 +26,24 @@ dependencies = [
 dev = ["pytest>=9,<10", "pytest-asyncio>=1.4,<2", "ruff>=0.17,<0.18"]
 # Day-1 probes only (resampling and speech-length checks); exact pins in requirements-probes.txt.
 probes = ["numpy>=2.5,<3", "scipy>=1.18,<2"]
-# Phase 2 voice loop (ruling 16, ADR-001), exact pins. NOT installed yet. pipecat-ai 1.5.0 is
-# the version Gnani says it tested pipecat-gnani with; gnani-vachana 0.8.2 is what
-# `pip install --dry-run` resolves for these two pins (Oct 26, 2026). Pipecat's online docs
-# describe newer releases: read the 1.5.0 source when they disagree.
+# Phase 2 voice loop (ruling 16, ADR-001, ADR-007), exact pins. pipecat-ai 1.5.0 is the version
+# Gnani says it tested pipecat-gnani with. Pipecat's online docs describe newer releases: read
+# the 1.5.0 source when they disagree (spikes/NOTES.md lists the real names).
+# * pipecat-ai extras: `webrtc` (aiortc, for SmallWebRTC), `runner` (FastAPI, uvicorn,
+#   python-dotenv), `silero` (empty in 1.5.0, kept so the intent is explicit). Silero VAD and
+#   Smart Turn v3 ship inside the base wheel with their ONNX models.
+# * gnani-vachana 0.7.9, NOT 0.8.2: with 0.8.2 `import pipecat_gnani` fails (0.8.2 removed
+#   `TIMBRE_V20_VOICES`, which pipecat-gnani 0.5.12 imports). 0.7.9 is the 0.7 line Gnani tested
+#   and the fallback ADR-001 names. Checked by importing in a fresh venv, Oct 29, 2026.
+# * aiortc is pinned because WebRTC behaviour lives there; it is what `[webrtc]` resolved.
 # websockets is capped below 16 in the base dependencies so this extra installs into the same
 # environment (ruling 18; the probes and brain were verified on websockets 15.0.1).
-voice = ["pipecat-ai==1.5.0", "pipecat-gnani==0.5.12", "gnani-vachana==0.8.2"]
+voice = [
+  "pipecat-ai[runner,silero,webrtc]==1.5.0",
+  "pipecat-gnani==0.5.12",
+  "gnani-vachana==0.7.9",
+  "aiortc==1.15.0",
+]
 
 [project.scripts]
 mockboard-cli = "mockboard.cli:main"
