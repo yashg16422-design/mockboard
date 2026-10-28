@@ -249,6 +249,8 @@ class LibrarianVote(_Model):
 class StrategyContext(_Model):
     """A snapshot of session counters, taken by the controller at the start of each turn."""
 
+    # The session's mode (ADR-009): the brain picks the rule table and prompts from it.
+    mode: str = "upsc_interview"
     turn_id: str
     turn_index: int
     topic: str
@@ -356,6 +358,7 @@ class SessionState(_Model):
     session_id: str
     form: CandidateForm
     topics: list[str]
+    mode: str = "upsc_interview"  # ADR-009: a session-level setting
     topic_index: int = 0
     turn_index: int = 0
     turns_in_topic: int = 0

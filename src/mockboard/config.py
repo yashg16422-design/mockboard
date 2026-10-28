@@ -200,8 +200,12 @@ class Settings(BaseSettings):
             )
         return v
 
-    def prompt_versions(self) -> dict[str, int]:
-        """The prompt id -> version map recorded in every trace line."""
+    def prompt_versions(self, mode: str = "upsc_interview") -> dict[str, int]:
+        """The prompt id -> version map recorded in every trace line, for one mode.
+
+        The UPSC map is unchanged by modes (ADR-009); another mode lists its own prompts."""
+        if mode != "upsc_interview":
+            return self._mode_prompt_versions(mode)
         return {
             "listener": self.prompt_listener_version,
             "librarian": self.prompt_librarian_version,
@@ -209,6 +213,9 @@ class Settings(BaseSettings):
             "judge": self.prompt_judge_version,
             "opener": self.prompt_opener_version,
         }
+
+    def _mode_prompt_versions(self, mode: str) -> dict[str, int]:
+        raise ValueError(f"no prompt versions for mode {mode!r}")
 
     def feature_flags(self) -> dict[str, bool]:
         """All feature flags by name, for logging and the report footer."""

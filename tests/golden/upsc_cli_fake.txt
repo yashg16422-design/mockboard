@@ -1,0 +1,65 @@
+Mock Board (text mode) | LLM: FAKE offline (-) | cards: data:<repo>/data/cards (6, version b702455ad97a) | prefix ~929 tokens (approx)
+All fact cards are SYNTHETIC TEST CARDS. Nothing the board cites is a real fact.
+
+== Application form (no names, roll numbers, phone numbers or colleges) ==
+Home state: Uttar Pradesh
+District (optional, Enter to skip): Kanpur Nagar
+Degree subject: Electronics
+Hobbies, up to 3, comma-separated (optional): chess, cycling
+UPSC optional subject (optional): 
+Work experience in one line (optional): 
+Interview language [hinglish/hindi/english] (default hinglish): hinglish
+
+[Chairperson Sharma] Namaste, baithiye. Aap Kanpur Nagar se hain aur Electronics padha hai. Aapke hisaab se Electronics ki samajh Kanpur Nagar ki kis ek samasya ko suljhane mein kaise madad kar sakti hai?
+
+You: Kanpur mein maine dekha ki small electronics repair shops bahut hain, lekin skilled training kam hai. Main ITI ke saath tie-up karke repair skilling badhaunga.
+[Dr. Iyer] (move_on, R5) Theek hai, shukriya. Ab tourism par aate hain: is kshetra mein aapko kaunsi chunauti sabse zaroori lagti hai, aur kyun?
+
+You: Exampleland mein tourism GDP ka 30 percent hai in 2023, isliye tourism hi growth ka main engine hai and jobs bhi wahi deta hai.
+[Dr. Iyer] (counter, R6) Lekin kai log kehte hain iska nuksaan bhi hai. Us paksh ko aap kaise dekhenge?
+
+You: Mujhe lagta hai tourism se local logon ko rozgaar milta hai. Lekin environment par bhi asar padta hai, so carrying capacity rules zaroori hain.
+[Dr. Iyer] (fact_challenge, R4) Aapne 30 percent kaha. Exampleland test data ke 2023 ke figure ke hisaab se yeh 12 percent hai. Aapka figure kahan se hai?
+   show-your-work: R4: claim t1.s0.c0 contradicts card test_tourism_gdp_share (model + numeric check agree)
+
+You: Haan, shayad mera figure galat tha. Main card wala data check karunga, lekin mera point ki tourism important hai abhi bhi valid hai.
+[Dr. Iyer] (probe, R8) Theek hai, yeh maanna achhi baat hai. Achha. Aap jo keh rahe hain, uska zameeni asar kaise dikhega?
+
+You: Homestays aur local guides ko train karna chahiye. Saath hi waste management par cess lagana chahiye.
+[Shri Rathore] (move_on, R5) Theek hai, shukriya. Ab internal security par aate hain: is kshetra mein aapko kaunsi chunauti sabse zaroori lagti hai, aur kyun?
+
+You: Exampleland ne 37 districts ko affected list kiya tha in 2024. Community policing aur development dono saath chalne chahiye, lekin rights ka dhyan rakhna zaroori hai.
+[Shri Rathore] (probe, R8) Achha. Aap jo keh rahe hain, uska zameeni asar kaise dikhega?
+
+You: Mujhe exact pata nahi hai, but I think intelligence sharing improve karni chahiye.
+[Chairperson Sharma] (reassure, R3) Koi baat nahi, aaram se. Aap apne anubhav se kya kehna chahenge?
+
+You: 
+
+======================================================================
+REPORT  (session golden-sess, language en)
+======================================================================
+UPSC personal qualities (1-5, or insufficient evidence):
+  mental_alertness               3/5  Rule-based offline stand-in score from the session transcript (not a model judgement).
+  critical_assimilation          3/5  Rule-based offline stand-in score from the session transcript (not a model judgement).
+  clear_logical_exposition       3/5  Rule-based offline stand-in score from the session transcript (not a model judgement).
+  balance_of_judgement           3/5  Rule-based offline stand-in score from the session transcript (not a model judgement).
+  variety_depth_of_interest      3/5  Rule-based offline stand-in score from the session transcript (not a model judgement).
+  social_cohesion_leadership       -  Rule-based offline stand-in score from the session transcript (not a model judgement).
+  intellectual_moral_integrity   3/5  Rule-based offline stand-in score from the session transcript (not a model judgement).
+Mock Board practice indicators (our own, not UPSC criteria):
+  factual_accuracy               3/5  Rule-based offline stand-in score from the session transcript (not a model judgement).
+  composure                      3/5  Rule-based offline stand-in score from the session transcript (not a model judgement).
+    evidence [mental_alertness / t0]: "Kanpur mein maine dekha ki small"
+    evidence [critical_assimilation / t0]: "Kanpur mein maine dekha ki small"
+    evidence [clear_logical_exposition / t0]: "Kanpur mein maine dekha ki small"
+    evidence [balance_of_judgement / t0]: "Kanpur mein maine dekha ki small"
+    evidence [variety_depth_of_interest / t0]: "Kanpur mein maine dekha ki small"
+    evidence [intellectual_moral_integrity / t0]: "Kanpur mein maine dekha ki small"
+    evidence [factual_accuracy / t0]: "Kanpur mein maine dekha ki small"
+    evidence [composure / t6]: "Mujhe exact pata nahi hai, but"
+Claims checked against fact cards:
+  [contradicted     ] Exampleland mein tourism GDP ka 30 percent hai in 2023, isliye tourism  <- card test_tourism_gdp_share (SYNTHETIC TEST CARD (no real source))
+  [supported        ] Exampleland ne 37 districts ko affected list kiya tha in 2024.  <- card test_security_affected_districts (SYNTHETIC TEST CARD (no real source))
+NOTE: every fact card in this run is a SYNTHETIC TEST CARD, not a real fact.
+Model answer: Rule-based offline stand-in score from the session transcript (not a model judgement).

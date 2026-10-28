@@ -102,14 +102,12 @@ from mockboard.brain.schemas import (
     CandidateTurn,
     Claim,
     LibrarianVote,
-    Move,
     ReportLanguage,
     Segment,
     SessionReport,
     StrategyContext,
     Verdict,
 )
-from mockboard.brain.strategist import PRESSURE, decide_move
 from mockboard.brain.tools import JudgeEvidence, JudgeOutput
 
 MAX_JUDGE_REVISIONS = 1
@@ -418,19 +416,13 @@ async def strategist(state: FastState, runtime: Runtime[BrainDeps]) -> dict[str,
     """Pure rules over this turn's segments so far and the ledger snapshot."""
     deps = runtime.context
     ctx = state["ctx"]
+    rt = deps.mode(ctx.mode)  # ADR-009: the mode's own rule table and wiring
     analyses = [a for a in state.get("analyses") or [] if a.turn_id == ctx.turn_id]
     try:
-        move = decide_move(ctx, analyses, state.get("ledger") or [], deps.strategy)
+        move = rt.profile.decide(ctx, analyses, state.get("ledger") or [], rt.strategy)
         fallbacks: list[dict[str, str]] = []
     except Exception as exc:  # the rules are pure, but a bug must not stall the board
-        move = BoardMove(
-            move=Move.probe,
-            member=deps.strategy.member_for(ctx.topic),
-            pressure=PRESSURE[Move.probe],
-            reason="FALLBACK: strategist error",
-            rule_id="FALLBACK",
-            for_turn=ctx.turn_id,
-        )
+        move = rt.profile.fallback_move(ctx, True, "strategist error", rt.strategy)
         fallbacks = [_fallback("strategist", ctx.turn_id, exc)]
     return {
         "move": move,

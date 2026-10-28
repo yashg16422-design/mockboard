@@ -38,6 +38,7 @@ from mockboard.brain.schemas import (
     Verdict,
 )
 from mockboard.config import Settings, get_settings
+from mockboard.modes import DEFAULT_MODE, mode_ids
 from mockboard.obs.trace import TraceRecorder
 from mockboard.obs.tracing import langfuse_callbacks
 from mockboard.session import SEGMENT_MARK, InterviewSession
@@ -220,6 +221,7 @@ async def run(args: argparse.Namespace) -> int:
         analyzer=analyzer,
         max_turns=args.max_turns,
         callbacks=callbacks,
+        mode=args.mode,
         **kwargs,
     )
     recorder.session_id = session.session_id
@@ -273,6 +275,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     p.add_argument("--fake", action="store_true", help="run fully offline with the fake LLM")
+    p.add_argument(
+        "--mode",
+        choices=mode_ids(),
+        default=DEFAULT_MODE,
+        help=f"session mode (ADR-009; default {DEFAULT_MODE})",
+    )
     p.add_argument("--script", help="file with scripted inputs, one per line (form, then answers)")
     p.add_argument("--language", choices=["en", "hi"], help="report language (default: settings)")
     p.add_argument("--max-turns", type=int, default=9, help="hard cap on candidate turns")

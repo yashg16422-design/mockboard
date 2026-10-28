@@ -37,8 +37,10 @@ def member_for_topic(personas: dict[str, Persona], topic: str) -> Persona:
     return chairman(personas)
 
 
-def render_persona_pack(personas: dict[str, Persona]) -> str:
-    lines = ["## The interview board (persona pack)"]
+def render_persona_pack(
+    personas: dict[str, Persona], heading: str = "## The interview board (persona pack)"
+) -> str:
+    lines = [heading]
     for p in personas.values():
         lines.append(
             f"- id={p.id} | {p.name}, {p.title} | role={p.role} | topics={', '.join(p.topics)}"

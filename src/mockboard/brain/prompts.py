@@ -80,17 +80,43 @@ class PromptKit:
         return approx_tokens(self.shared_prefix)
 
 
-def build_shared_prefix(personas: dict[str, Persona], card_set: CardSet, version: int = 1) -> str:
-    """Stable ordering matters: any byte change here invalidates Nova's prompt cache."""
-    shared = load_prompt("shared", version)
-    return "\n\n".join([shared.body, render_persona_pack(personas), render_cards_block(card_set)])
+def build_shared_prefix(
+    personas: dict[str, Persona],
+    card_set: CardSet,
+    version: int = 1,
+    *,
+    shared_id: str = "shared",
+    persona_heading: str | None = None,
+) -> str:
+    """Stable ordering matters: any byte change here invalidates Nova's prompt cache.
+
+    One prefix per mode (ADR-009): `shared_id` names the mode's shared prompt and
+    `persona_heading` its persona pack's heading; the UPSC defaults are unchanged."""
+    shared = load_prompt(shared_id, version)
+    pack = (
+        render_persona_pack(personas)
+        if persona_heading is None
+        else render_persona_pack(personas, persona_heading)
+    )
+    return "\n\n".join([shared.body, pack, render_cards_block(card_set)])
 
 
 def build_prompt_kit(
-    personas: dict[str, Persona], card_set: CardSet, versions: dict[str, int]
+    personas: dict[str, Persona],
+    card_set: CardSet,
+    versions: dict[str, int],
+    *,
+    shared_id: str = "shared",
+    persona_heading: str | None = None,
 ) -> PromptKit:
     return PromptKit(
-        shared_prefix=build_shared_prefix(personas, card_set),
+        shared_prefix=build_shared_prefix(
+            personas,
+            card_set,
+            versions.get(shared_id, 1),
+            shared_id=shared_id,
+            persona_heading=persona_heading,
+        ),
         versions=dict(versions),
         card_set_version=card_set.version,
     )

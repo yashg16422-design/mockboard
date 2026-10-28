@@ -83,7 +83,8 @@ from mockboard.brain.schemas import (
     StrategyContext,
     VoiceSignals,
 )
-from mockboard.brain.strategist import CLOSE_TARGET, PRESSURE, decide_move, merge_analyses
+from mockboard.brain.strategist import CLOSE_TARGET, merge_analyses
+from mockboard.modes import DEFAULT_MODE, ModeProfile
 from mockboard.obs.trace import TraceRecorder, TurnTrace
 
 SEGMENT_MARK = " | "  # typing " | " in an answer forces a segment boundary
@@ -156,6 +157,9 @@ class InterviewSession:
     max_turns: int = 9
     callbacks: Sequence[Any] = ()
     fact_checker: FactChecker | None = None
+    # ADR-009: the session's mode. The brain takes its rule table, prompts, personas and
+    # rubric from the mode's profile; the voice loop never asks which mode it is in.
+    mode: str = DEFAULT_MODE
     state: SessionState = field(init=False)
     last_question: str = ""
     turn: OpenTurn | None = field(init=False, default=None)
@@ -179,7 +183,12 @@ class InterviewSession:
             session_id=self.session_id,
             form=self.form,
             topics=[BACKGROUND_TOPIC, *self.deps.settings.topics],
+            mode=self.mode,
         )
+
+    @property
+    def profile(self) -> ModeProfile:
+        return self.deps.mode(self.mode).profile
 
     # -- helpers -------------------------------------------------------------
 
@@ -193,6 +202,7 @@ class InterviewSession:
     def _ctx(self, turn_id: str, signals: VoiceSignals) -> StrategyContext:
         s = self.state
         return StrategyContext(
+            mode=self.mode,
             turn_id=turn_id,
             turn_index=s.turn_index,
             topic=s.topic,
@@ -365,20 +375,11 @@ class InterviewSession:
 
     def _fallback_move(self, turn: OpenTurn, reason: str) -> BoardMove:
         """Deterministic fast rule when no analysis of this turn finished in time
-        (CTO_NOTES_02 M4.4): nothing said -> reassure (chairman), otherwise a neutral probe."""
-        cfg = self.deps.strategy
-        if not any(s.text.strip() for s in turn.segments):
-            move, member = Move.reassure, cfg.chairman
-        else:
-            move, member = Move.probe, cfg.member_for(turn.ctx.topic)
-        return BoardMove(
-            move=move,
-            member=member,
-            pressure=PRESSURE[move],
-            reason=f"FALLBACK: {reason}",
-            rule_id="FALLBACK",
-            for_turn=turn.turn_id,
-        )
+        (CTO_NOTES_02 M4.4), from the mode's profile. UPSC: nothing said -> reassure
+        (chairman), otherwise a neutral probe."""
+        rt = self.deps.mode(self.mode)
+        spoke = any(s.text.strip() for s in turn.segments)
+        return rt.profile.fallback_move(turn.ctx, spoke, reason, rt.strategy)
 
     # -- public API ----------------------------------------------------------
 
@@ -516,9 +517,10 @@ class InterviewSession:
         fresh = [r for r in results if r.move.for_turn == turn.turn_id]
         turn.results = fresh
 
+        rt = self.deps.mode(self.mode)
         if not turn.tasks:
             # Silence: no segment arrived. The rules are pure and instant, so run them.
-            move = decide_move(turn.ctx, [], turn.ledger, self.deps.strategy)
+            move = rt.profile.decide(turn.ctx, [], turn.ledger, rt.strategy)
         elif pending and fresh:
             move = fresh[-1].move
             turn.fallback_reason = (
@@ -537,19 +539,9 @@ class InterviewSession:
             turn.fallback_reason = "no segment analysis succeeded"
             move = self._fallback_move(turn, turn.fallback_reason)
 
-        if st.turn_index + 1 >= self.max_turns and not (
-            move.move == Move.move_on and move.target == CLOSE_TARGET
-        ):
-            move = BoardMove(
-                move=Move.move_on,
-                target=CLOSE_TARGET,
-                member=self.deps.strategy.chairman,
-                pressure=PRESSURE[Move.move_on],
-                reason=f"CAP: session turn cap ({self.max_turns}) reached",
-                rule_id="CAP",
-                for_turn=turn.turn_id,
-                preface=move.preface,  # a conceded error is still acknowledged at the close
-            )
+        if st.turn_index + 1 >= self.max_turns:
+            # The hard turn cap: the mode decides how the session closes.
+            move = rt.profile.cap_move(turn.ctx, move, self.max_turns, rt.strategy)
         tr.mark("move_ready")
 
         if fresh:
