@@ -336,6 +336,75 @@ def judge_responder(system: str, user: str) -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
+# Debate: motion screen classifier and custom case file (stand-ins for Nova)
+# ---------------------------------------------------------------------------
+
+# The fake classifier stands in for Nova's MEANING-level judgement with a second, wider word
+# list. It says nothing about how well Nova screens; eval/motions marks every decision made at
+# this layer as "needs real Nova".
+_FAKE_SCREEN: dict[str, re.Pattern[str]] = {
+    "partisan": re.compile(
+        r"\b(?:ministers?|mlas?|mps?|politicians?|political|opposition|ruling|leaders?|"
+        r"left-wing|right-wing|liberals|nationalists?|anti-national|bhakts?|governance|"
+        r"party|parties|cabinet|parliament)\b",
+        re.IGNORECASE,
+    ),
+    "group_targeting": re.compile(
+        r"\b(?:biharis?|bengalis?|tamils?|punjabis?|gujaratis?|marathis?|kashmiris?|"
+        r"north indians?|south indians?|northeasterners?|migrants?|outsiders|tribals?|"
+        r"women|men|girls|boys)\b.*\b(?:are|taking|take|cannot|can't|should not|shouldn't|"
+        r"worse|better|inferior|lazy)\b",
+        re.IGNORECASE,
+    ),
+    "violence": re.compile(r"\b(?:war|wars|army|military|fight\w*)\b", re.IGNORECASE),
+    "private_individual": re.compile(r"\b(?:my|our) (?:neighbou?r|teacher|boss|friend|classmate)"
+                                     r"|\b[A-Z][a-z]+ [A-Z][a-z]+\b"),
+}
+_LOADED = re.compile(
+    r"^(?:this house believes\s+)?(?P<subject>.+?)\s+(?P<verb>is|are)\s+(?:a\s+)?"
+    r"(?:total\s+|complete\s+)?(?:disaster|useless|stupid|pathetic|rubbish|a joke|"
+    r"waste of time)\b.*$",
+    re.IGNORECASE,
+)
+
+
+def motion_screen_responder(system: str, user: str) -> dict[str, Any]:
+    motion = _tag(user, "motion").strip()
+    body = re.sub(r"^This House\s+", "", motion)
+    for category, pattern in _FAKE_SCREEN.items():
+        if pattern.search(body):
+            return {"decision": "refuse", "category": category,
+                    "reason": f"stand-in classifier: {category}", "neutral_rewording": ""}
+    m = _LOADED.match(motion)
+    if m:
+        do = "do" if m.group("verb").lower() == "are" else "does"
+        return {"decision": "reframe", "category": "loaded",
+                "reason": "stand-in classifier: loaded wording",
+                "neutral_rewording": f"This House believes {m.group('subject')} {do} more harm "
+                "than good."}
+    return {"decision": "allow", "category": "none", "reason": "stand-in classifier: allowed",
+            "neutral_rewording": ""}
+
+
+def case_file_responder(system: str, user: str) -> dict[str, Any]:
+    side = _tag(user, "side").strip()
+    verb = "helps" if side == "for" else "costs more than it helps"
+    return {
+        "arguments": [
+            {"claim": f"The proposal {verb} the people it affects most.",
+             "warrant": "Its effects fall first on everyday life, not on abstractions.",
+             "keywords": ["people", "everyday", "affects"]},
+            {"claim": "There is a simpler way to look at this question.",
+             "warrant": "When the main trade-off is clear, the answer follows from it.",
+             "keywords": ["simple", "trade-off", "clear"]},
+            {"claim": "Experience elsewhere points the same way.",
+             "warrant": "Similar choices tend to show the same pattern over time.",
+             "keywords": ["experience", "pattern", "elsewhere"]},
+        ]
+    }
+
+
+# ---------------------------------------------------------------------------
 # Factory
 # ---------------------------------------------------------------------------
 
@@ -350,6 +419,8 @@ def fake_responders(
         "actor": actor_responder,
         "opener": opener_responder,
         "judge": judge_responder,
+        "motion_screen": motion_screen_responder,
+        "case_file": case_file_responder,
     }
 
 

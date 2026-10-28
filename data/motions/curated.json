@@ -1,0 +1,1263 @@
+{
+ "description": "The 13 curated debate motions of CTO_NOTES_04 §5, each with a hand-written case file for both sides (the board argues the side the user does not pick). Arguments are qualitative: no statistics or numbers. Only motions 5 and 6 list card_topics, and their card_ids point at the existing tourism and internal_security cards, which are SYNTHETIC TEST CARDS until the owner replaces them with real, sourced cards (data/cards/README.md). Arguments are listed strongest first. Keywords are for the offline fake listener and the restate check only.",
+ "reviewed": "Written by the debate builder on Oct 29, 2026; the orchestrator reviewed the 13 motion texts in ruling 21. The case files themselves await the owner's review.",
+ "motions": [
+  {
+   "number": 1,
+   "id": "smartphones_in_schools",
+   "text": "This House would ban smartphones in schools up to Class 10.",
+   "title": "Smartphones in schools",
+   "category": "education",
+   "card_topics": [],
+   "case": {
+    "for": [
+     {
+      "id": "F1",
+      "claim": "Phones in class pull attention away from learning.",
+      "warrant": "Notifications and games compete with the teacher, and young students find it hard to regulate themselves.",
+      "keywords": [
+       "distraction",
+       "attention",
+       "notification",
+       "games",
+       "focus",
+       "dhyan",
+       "padhai"
+      ]
+     },
+     {
+      "id": "F2",
+      "claim": "A ban protects younger students from online harms during the school day.",
+      "warrant": "Cyberbullying, unsuitable content and social media pressure follow children into school through their phones.",
+      "keywords": [
+       "cyberbullying",
+       "bullying",
+       "harm",
+       "social media",
+       "content",
+       "safety"
+      ]
+     },
+     {
+      "id": "F3",
+      "claim": "A clear rule is easier to enforce than case-by-case judgement.",
+      "warrant": "Teachers spend less time policing use when everyone knows phones stay in lockers.",
+      "keywords": [
+       "rule",
+       "enforce",
+       "teacher",
+       "simple",
+       "lockers",
+       "clear"
+      ]
+     },
+     {
+      "id": "F4",
+      "claim": "School becomes a space for face-to-face friendships.",
+      "warrant": "Breaks without screens push children to talk, play and settle disagreements in person.",
+      "keywords": [
+       "friends",
+       "play",
+       "social skills",
+       "face to face",
+       "khel",
+       "dosti"
+      ]
+     }
+    ],
+    "against": [
+     {
+      "id": "A1",
+      "claim": "Phones are learning tools when used well.",
+      "warrant": "Dictionaries, educational videos and practice apps can support lessons, especially where libraries are thin.",
+      "keywords": [
+       "learning",
+       "apps",
+       "videos",
+       "educational",
+       "tool",
+       "resources"
+      ]
+     },
+     {
+      "id": "A2",
+      "claim": "Parents need to reach children for safety and logistics.",
+      "warrant": "Long commutes and working parents make contact during the day reassuring for families.",
+      "keywords": [
+       "parents",
+       "safety",
+       "contact",
+       "emergency",
+       "commute",
+       "ghar"
+      ]
+     },
+     {
+      "id": "A3",
+      "claim": "Teaching responsible use beats banning it.",
+      "warrant": "Students will use phones anyway after school, so guided practice builds the self-control a ban never teaches.",
+      "keywords": [
+       "responsible",
+       "self-control",
+       "digital literacy",
+       "teach",
+       "discipline",
+       "habit"
+      ]
+     },
+     {
+      "id": "A4",
+      "claim": "A blanket ban hits the students who rely on phones most.",
+      "warrant": "For some families the phone is the only device for homework and school notices, so one rule for all ignores unequal access.",
+      "keywords": [
+       "access",
+       "only device",
+       "equity",
+       "homework",
+       "inequality",
+       "notices"
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "number": 2,
+   "id": "board_exams",
+   "text": "This House would replace board exams with continuous assessment.",
+   "title": "Board exams vs continuous assessment",
+   "category": "education",
+   "card_topics": [],
+   "case": {
+    "for": [
+     {
+      "id": "F1",
+      "claim": "One high-stakes exam measures a single day, not a year of learning.",
+      "warrant": "Illness, anxiety or a bad morning can outweigh months of steady work.",
+      "keywords": [
+       "one day",
+       "pressure",
+       "stress",
+       "anxiety",
+       "high stakes",
+       "ek din"
+      ]
+     },
+     {
+      "id": "F2",
+      "claim": "Continuous assessment rewards understanding over rote memorisation.",
+      "warrant": "Projects, presentations and regular tests check whether students can apply ideas, not just recall them.",
+      "keywords": [
+       "rote",
+       "ratta",
+       "memorisation",
+       "projects",
+       "understanding",
+       "apply"
+      ]
+     },
+     {
+      "id": "F3",
+      "claim": "Regular feedback helps students improve while there is still time.",
+      "warrant": "A teacher who sees a weak area in the middle of the year can respond, whereas an exam result arrives too late.",
+      "keywords": [
+       "feedback",
+       "improve",
+       "regular",
+       "timely",
+       "weak area"
+      ]
+     }
+    ],
+    "against": [
+     {
+      "id": "A1",
+      "claim": "Board exams set the same paper for everyone, so results are fairer to compare.",
+      "warrant": "Continuous assessment depends on each school and teacher, and marking standards can vary widely.",
+      "keywords": [
+       "fair",
+       "standard",
+       "same paper",
+       "compare",
+       "uniform",
+       "marking"
+      ]
+     },
+     {
+      "id": "A2",
+      "claim": "Teacher-marked assessment opens the door to favouritism and pressure.",
+      "warrant": "When the class teacher controls the marks, tuition links, parent pressure or bias can creep in.",
+      "keywords": [
+       "favouritism",
+       "bias",
+       "pressure",
+       "teacher",
+       "influence",
+       "tuition"
+      ]
+     },
+     {
+      "id": "A3",
+      "claim": "Continuous assessment can mean continuous stress.",
+      "warrant": "If every week counts, students may never get a break from being graded.",
+      "keywords": [
+       "continuous stress",
+       "every week",
+       "burden",
+       "workload",
+       "constant"
+      ]
+     },
+     {
+      "id": "A4",
+      "claim": "Many schools may lack the capacity to run it well.",
+      "warrant": "Good continuous assessment needs trained teachers and time, and overstretched schools may turn it into paperwork.",
+      "keywords": [
+       "capacity",
+       "training",
+       "teachers",
+       "paperwork",
+       "resources"
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "number": 3,
+   "id": "coding_from_class_6",
+   "text": "This House would make coding compulsory from Class 6.",
+   "title": "Compulsory coding",
+   "category": "education",
+   "card_topics": [],
+   "case": {
+    "for": [
+     {
+      "id": "F1",
+      "claim": "Coding teaches logical, step-by-step problem solving.",
+      "warrant": "Breaking a task into instructions trains a way of thinking that helps in maths, science and daily life.",
+      "keywords": [
+       "logic",
+       "problem solving",
+       "thinking",
+       "step by step",
+       "algorithm",
+       "sochna"
+      ]
+     },
+     {
+      "id": "F2",
+      "claim": "Early exposure widens who sees technology careers as possible.",
+      "warrant": "If every child tries coding, interest is not limited to those whose families already know the field.",
+      "keywords": [
+       "exposure",
+       "careers",
+       "opportunity",
+       "everyone",
+       "early"
+      ]
+     },
+     {
+      "id": "F3",
+      "claim": "Digital literacy is becoming a basic skill, like reading a map.",
+      "warrant": "Understanding how software works helps citizens use, and question, the technology around them.",
+      "keywords": [
+       "digital literacy",
+       "basic skill",
+       "technology",
+       "software",
+       "understand"
+      ]
+     }
+    ],
+    "against": [
+     {
+      "id": "A1",
+      "claim": "Many schools lack computers, power or trained teachers.",
+      "warrant": "A compulsory subject without infrastructure becomes rote theory, or widens the gap between schools.",
+      "keywords": [
+       "infrastructure",
+       "computers",
+       "electricity",
+       "teachers",
+       "labs",
+       "gap"
+      ]
+     },
+     {
+      "id": "A2",
+      "claim": "The timetable is already full.",
+      "warrant": "Making coding compulsory means cutting time from languages, arts, sport or core subjects.",
+      "keywords": [
+       "timetable",
+       "burden",
+       "time",
+       "arts",
+       "sports",
+       "syllabus"
+      ]
+     },
+     {
+      "id": "A3",
+      "claim": "Every child needs strong basics first, not necessarily code.",
+      "warrant": "Reading, arithmetic and reasoning come first, and coding can stay an option for those who are interested.",
+      "keywords": [
+       "basics",
+       "foundation",
+       "reading",
+       "maths",
+       "optional",
+       "choice"
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "number": 4,
+   "id": "ai_tutors",
+   "text": "This House believes AI tutors will do Indian students more good than harm.",
+   "title": "AI tutors",
+   "category": "technology",
+   "card_topics": [],
+   "case": {
+    "for": [
+     {
+      "id": "F1",
+      "claim": "AI tutors give patient, one-to-one help at any hour.",
+      "warrant": "A student stuck at night can ask the same question again and again without embarrassment.",
+      "keywords": [
+       "patient",
+       "one-to-one",
+       "personal",
+       "anytime",
+       "doubt",
+       "embarrassment"
+      ]
+     },
+     {
+      "id": "F2",
+      "claim": "They can reach students who cannot afford private tuition.",
+      "warrant": "A low-cost tutor on a shared phone can narrow gaps that coaching fees widen.",
+      "keywords": [
+       "afford",
+       "tuition",
+       "cost",
+       "access",
+       "coaching",
+       "fees"
+      ]
+     },
+     {
+      "id": "F3",
+      "claim": "They can teach in a student's own language and at their own pace.",
+      "warrant": "Explanations can be adapted to the learner instead of one pace for a whole class.",
+      "keywords": [
+       "language",
+       "pace",
+       "adapt",
+       "mother tongue",
+       "personalised",
+       "bhasha"
+      ]
+     }
+    ],
+    "against": [
+     {
+      "id": "A1",
+      "claim": "AI tutors can be confidently wrong.",
+      "warrant": "A student may not notice a fluent but incorrect explanation, and learn the mistake.",
+      "keywords": [
+       "wrong",
+       "mistakes",
+       "hallucination",
+       "errors",
+       "accuracy",
+       "galat"
+      ]
+     },
+     {
+      "id": "A2",
+      "claim": "Easy answers can replace real effort.",
+      "warrant": "If the tutor does the thinking, students may skip the struggle that builds understanding.",
+      "keywords": [
+       "shortcut",
+       "cheating",
+       "effort",
+       "copy",
+       "dependence",
+       "lazy"
+      ]
+     },
+     {
+      "id": "A3",
+      "claim": "Teachers do more than explain content.",
+      "warrant": "Mentoring, motivation and noticing a child in trouble need a human relationship.",
+      "keywords": [
+       "teacher",
+       "human",
+       "mentor",
+       "motivation",
+       "relationship",
+       "care"
+      ]
+     },
+     {
+      "id": "A4",
+      "claim": "Children's data and privacy are at risk.",
+      "warrant": "Learning platforms collect detailed records about children, and safeguards may lag behind.",
+      "keywords": [
+       "privacy",
+       "data",
+       "surveillance",
+       "children",
+       "records"
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "number": 5,
+   "id": "tourism_hill_towns",
+   "text": "This House believes tourism does more good than harm to India's hill towns.",
+   "title": "Tourism in hill towns",
+   "category": "policy",
+   "card_topics": [
+    "tourism"
+   ],
+   "case": {
+    "for": [
+     {
+      "id": "F1",
+      "claim": "Tourism brings income to places with few other industries.",
+      "warrant": "Hotels, guides, taxis and shops give local families earnings they might otherwise have to migrate to find.",
+      "keywords": [
+       "income",
+       "jobs",
+       "livelihood",
+       "rozgaar",
+       "hotels",
+       "guides",
+       "migration"
+      ],
+      "card_ids": [
+       "test_tourism_gdp_share"
+      ]
+     },
+     {
+      "id": "F2",
+      "claim": "Visitors create demand that pays for better services.",
+      "warrant": "Roads, connectivity and health facilities tend to improve where there is a steady flow of visitors.",
+      "keywords": [
+       "roads",
+       "infrastructure",
+       "services",
+       "connectivity",
+       "development",
+       "demand"
+      ],
+      "card_ids": [
+       "test_tourism_foreign_arrivals"
+      ]
+     },
+     {
+      "id": "F3",
+      "claim": "Tourism gives local culture a market and a reason to survive.",
+      "warrant": "Crafts, food and festivals find buyers, which encourages young people to keep traditions alive.",
+      "keywords": [
+       "culture",
+       "crafts",
+       "tradition",
+       "festivals",
+       "heritage",
+       "sanskriti"
+      ]
+     }
+    ],
+    "against": [
+     {
+      "id": "A1",
+      "claim": "Crowds strain water, waste systems and fragile slopes.",
+      "warrant": "Hill towns have limited carrying capacity, and peak-season pressure can outrun what the land can bear.",
+      "keywords": [
+       "water",
+       "waste",
+       "garbage",
+       "environment",
+       "carrying capacity",
+       "landslide",
+       "slopes",
+       "paryavaran"
+      ]
+     },
+     {
+      "id": "A2",
+      "claim": "Much of the money leaves the town.",
+      "warrant": "Outside hotel chains and operators can capture the profits while locals get seasonal, low-paid work.",
+      "keywords": [
+       "leakage",
+       "outsiders",
+       "profits",
+       "seasonal",
+       "low-paid",
+       "chains"
+      ]
+     },
+     {
+      "id": "A3",
+      "claim": "Unplanned construction changes towns for the worse.",
+      "warrant": "Hotels built to meet demand can crowd out residents, raise rents and weaken building safety rules.",
+      "keywords": [
+       "construction",
+       "buildings",
+       "rents",
+       "unplanned",
+       "concrete",
+       "housing"
+      ]
+     },
+     {
+      "id": "A4",
+      "claim": "Residents' daily life suffers in peak season.",
+      "warrant": "Traffic jams and rising prices make ordinary needs harder for people who live there all year.",
+      "keywords": [
+       "traffic",
+       "prices",
+       "residents",
+       "locals",
+       "jam",
+       "mehngai"
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "number": 6,
+   "id": "community_policing",
+   "text": "This House believes community policing beats building more police stations.",
+   "title": "Community policing",
+   "category": "policy",
+   "card_topics": [
+    "internal_security"
+   ],
+   "case": {
+    "for": [
+     {
+      "id": "F1",
+      "claim": "Trust brings information that buildings cannot.",
+      "warrant": "When residents know and trust officers, they report problems early and help solve cases.",
+      "keywords": [
+       "trust",
+       "information",
+       "residents",
+       "community",
+       "bharosa",
+       "report"
+      ]
+     },
+     {
+      "id": "F2",
+      "claim": "Prevention is better than response.",
+      "warrant": "Officers who know a neighbourhood can spot and calm tensions before they turn into crimes.",
+      "keywords": [
+       "prevention",
+       "early",
+       "tensions",
+       "neighbourhood",
+       "beat"
+      ],
+      "card_ids": [
+       "test_security_incident_decline"
+      ]
+     },
+     {
+      "id": "F3",
+      "claim": "People, not walls, do the policing.",
+      "warrant": "Money spent on staff, training and patrols reaches citizens directly, while a new building still needs officers.",
+      "keywords": [
+       "staff",
+       "training",
+       "patrols",
+       "officers",
+       "people",
+       "cost"
+      ],
+      "card_ids": [
+       "test_security_budget"
+      ]
+     }
+    ],
+    "against": [
+     {
+      "id": "A1",
+      "claim": "Some areas are simply too far from any station.",
+      "warrant": "Where the nearest station is hours away, a complaint or an emergency response depends on physical presence.",
+      "keywords": [
+       "distance",
+       "far",
+       "remote",
+       "response time",
+       "access",
+       "door"
+      ],
+      "card_ids": [
+       "test_security_affected_districts"
+      ]
+     },
+     {
+      "id": "A2",
+      "claim": "Community policing needs a base to work from.",
+      "warrant": "Officers need a place for records, custody and coordination, so stations and community work go together.",
+      "keywords": [
+       "base",
+       "records",
+       "infrastructure",
+       "coordination",
+       "station"
+      ]
+     },
+     {
+      "id": "A3",
+      "claim": "Community policing can be uneven and depend on individuals.",
+      "warrant": "It relies on particular officers and can fade when they are transferred, while a station is a lasting commitment.",
+      "keywords": [
+       "transfer",
+       "uneven",
+       "depends",
+       "officers",
+       "lasting",
+       "institution"
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "number": 7,
+   "id": "metro_before_flyovers",
+   "text": "This House would build metro lines before flyovers in growing cities.",
+   "title": "Metros before flyovers",
+   "category": "policy",
+   "card_topics": [],
+   "case": {
+    "for": [
+     {
+      "id": "F1",
+      "claim": "A metro moves far more people in the same space.",
+      "warrant": "Roads fill up again as cities grow, while rail carries crowds without widening streets.",
+      "keywords": [
+       "capacity",
+       "people",
+       "space",
+       "congestion",
+       "traffic",
+       "crowds"
+      ]
+     },
+     {
+      "id": "F2",
+      "claim": "Flyovers can invite more cars and more jams.",
+      "warrant": "When driving gets easier, more people drive, and the congestion returns at the next junction.",
+      "keywords": [
+       "induced demand",
+       "cars",
+       "jams",
+       "more traffic",
+       "junction"
+      ]
+     },
+     {
+      "id": "F3",
+      "claim": "Public transport is cleaner and fairer.",
+      "warrant": "It cuts pollution and serves people who cannot afford a car.",
+      "keywords": [
+       "pollution",
+       "clean",
+       "fair",
+       "afford",
+       "public transport",
+       "environment"
+      ]
+     }
+    ],
+    "against": [
+     {
+      "id": "A1",
+      "claim": "Metros take many years and large budgets to build.",
+      "warrant": "Flyovers can relieve the worst junctions much sooner, while a metro is still under construction.",
+      "keywords": [
+       "cost",
+       "years",
+       "time",
+       "budget",
+       "slow",
+       "quick relief"
+      ]
+     },
+     {
+      "id": "A2",
+      "claim": "A metro does not reach every doorstep.",
+      "warrant": "Without buses and last-mile links, many trips still need roads, so road fixes remain necessary.",
+      "keywords": [
+       "last mile",
+       "doorstep",
+       "buses",
+       "connectivity",
+       "roads"
+      ]
+     },
+     {
+      "id": "A3",
+      "claim": "Buses, goods and ambulances also need road space.",
+      "warrant": "Freight, emergency vehicles and buses all run on roads, so fixing bottlenecks helps everyone, not just cars.",
+      "keywords": [
+       "freight",
+       "goods",
+       "buses",
+       "ambulance",
+       "bottleneck"
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "number": 8,
+   "id": "single_use_plastic",
+   "text": "This House would ban single-use plastic completely, even if prices rise.",
+   "title": "Single-use plastic ban",
+   "category": "environment",
+   "card_topics": [],
+   "case": {
+    "for": [
+     {
+      "id": "F1",
+      "claim": "Single-use plastic outlives its use by generations.",
+      "warrant": "It clogs drains, harms animals and breaks into fragments that stay in soil and water.",
+      "keywords": [
+       "pollution",
+       "drains",
+       "animals",
+       "microplastic",
+       "waste",
+       "environment"
+      ]
+     },
+     {
+      "id": "F2",
+      "claim": "Partial bans leak; a complete ban is clearer.",
+      "warrant": "When some items are allowed, enforcement gets confusing and banned items slip back in.",
+      "keywords": [
+       "complete",
+       "partial",
+       "enforcement",
+       "clear",
+       "loopholes"
+      ]
+     },
+     {
+      "id": "F3",
+      "claim": "Higher prices push innovation in alternatives.",
+      "warrant": "A firm rule gives businesses a reason to invest in reusable and compostable options.",
+      "keywords": [
+       "innovation",
+       "alternatives",
+       "reusable",
+       "compostable",
+       "business"
+      ]
+     }
+    ],
+    "against": [
+     {
+      "id": "A1",
+      "claim": "Price rises hurt the poorest most.",
+      "warrant": "Small vendors and low-income buyers feel every extra rupee spent on packaging.",
+      "keywords": [
+       "price",
+       "poor",
+       "vendors",
+       "cost",
+       "afford",
+       "mehnga"
+      ]
+     },
+     {
+      "id": "A2",
+      "claim": "Some uses of plastic protect health and reduce waste.",
+      "warrant": "Medical supplies and food packaging can keep things sterile and stop food from spoiling.",
+      "keywords": [
+       "medical",
+       "hygiene",
+       "food waste",
+       "packaging",
+       "sterile"
+      ]
+     },
+     {
+      "id": "A3",
+      "claim": "Collection and recycling may work better than a ban.",
+      "warrant": "The harm comes from plastic that escapes, and better waste systems tackle that without removing useful materials.",
+      "keywords": [
+       "recycling",
+       "collection",
+       "waste management",
+       "segregation"
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "number": 9,
+   "id": "work_from_home",
+   "text": "This House believes work-from-home is better than office work for young professionals.",
+   "title": "Work from home",
+   "category": "society",
+   "card_topics": [],
+   "case": {
+    "for": [
+     {
+      "id": "F1",
+      "claim": "No commute means more time and energy.",
+      "warrant": "Hours lost in traffic can go to rest, learning or family instead.",
+      "keywords": [
+       "commute",
+       "time",
+       "traffic",
+       "energy",
+       "travel"
+      ]
+     },
+     {
+      "id": "F2",
+      "claim": "Remote work opens good jobs beyond big cities.",
+      "warrant": "Young people from smaller towns can work for strong employers without moving away from home.",
+      "keywords": [
+       "small towns",
+       "cities",
+       "migrate",
+       "home town",
+       "opportunity"
+      ]
+     },
+     {
+      "id": "F3",
+      "claim": "Many people focus better without office interruptions.",
+      "warrant": "Quiet time at home can suit deep work better than a noisy open office.",
+      "keywords": [
+       "focus",
+       "deep work",
+       "interruptions",
+       "productivity",
+       "quiet"
+      ]
+     }
+    ],
+    "against": [
+     {
+      "id": "A1",
+      "claim": "Young professionals learn by watching and asking.",
+      "warrant": "Mentoring and informal advice happen easily side by side and are hard to replicate on calls.",
+      "keywords": [
+       "mentoring",
+       "learning",
+       "seniors",
+       "informal",
+       "observe"
+      ]
+     },
+     {
+      "id": "A2",
+      "claim": "Home is not a workplace for everyone.",
+      "warrant": "Shared rooms, unreliable internet and family demands make focus hard for many young people.",
+      "keywords": [
+       "space",
+       "internet",
+       "family",
+       "shared",
+       "distractions"
+      ]
+     },
+     {
+      "id": "A3",
+      "claim": "Being seen and building networks shapes careers.",
+      "warrant": "People who are present build relationships that lead to projects and promotions.",
+      "keywords": [
+       "visibility",
+       "network",
+       "promotion",
+       "relationships",
+       "career"
+      ]
+     },
+     {
+      "id": "A4",
+      "claim": "The line between work and rest can vanish.",
+      "warrant": "Without leaving for an office, some people work late and struggle to switch off.",
+      "keywords": [
+       "burnout",
+       "boundaries",
+       "switch off",
+       "overwork",
+       "isolation"
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "number": 10,
+   "id": "gap_year",
+   "text": "This House would take a gap year before college.",
+   "title": "Gap year",
+   "category": "society",
+   "card_topics": [],
+   "case": {
+    "for": [
+     {
+      "id": "F1",
+      "claim": "A gap year helps students choose a course with clarity.",
+      "warrant": "Time to work, volunteer or explore can reveal interests before an expensive choice.",
+      "keywords": [
+       "clarity",
+       "choose",
+       "explore",
+       "interests",
+       "decision"
+      ]
+     },
+     {
+      "id": "F2",
+      "claim": "Real-world experience builds maturity.",
+      "warrant": "Managing money, work or travel teaches an independence that classrooms rarely do.",
+      "keywords": [
+       "maturity",
+       "experience",
+       "independence",
+       "work",
+       "volunteer"
+      ]
+     },
+     {
+      "id": "F3",
+      "claim": "A break can prevent burnout after school exams.",
+      "warrant": "Students who arrive rested may engage better than those rushing from one exam to the next.",
+      "keywords": [
+       "burnout",
+       "rest",
+       "break",
+       "exams",
+       "stress"
+      ]
+     }
+    ],
+    "against": [
+     {
+      "id": "A1",
+      "claim": "Momentum is easy to lose.",
+      "warrant": "Study habits fade, and some students find it hard to return after a year away.",
+      "keywords": [
+       "momentum",
+       "habit",
+       "return",
+       "drop out",
+       "lose touch"
+      ]
+     },
+     {
+      "id": "A2",
+      "claim": "A good gap year needs money and safety nets.",
+      "warrant": "Travel and unpaid work are easier for families who can afford them, so the benefit is unequal.",
+      "keywords": [
+       "money",
+       "afford",
+       "privilege",
+       "cost",
+       "unequal"
+      ]
+     },
+     {
+      "id": "A3",
+      "claim": "Peers move ahead.",
+      "warrant": "Starting later can mean entering jobs later, and some families and employers still question the gap.",
+      "keywords": [
+       "peers",
+       "behind",
+       "late",
+       "employers",
+       "social pressure"
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "number": 11,
+   "id": "cricket_attention",
+   "text": "This House believes cricket gets too much attention compared with other sports in India.",
+   "title": "Cricket and other sports",
+   "category": "culture",
+   "card_topics": [],
+   "case": {
+    "for": [
+     {
+      "id": "F1",
+      "claim": "Sponsorship and coverage follow cricket, leaving other sports short.",
+      "warrant": "Athletes in other sports often struggle for coaching, equipment and visibility.",
+      "keywords": [
+       "sponsorship",
+       "coverage",
+       "media",
+       "money",
+       "funding",
+       "other sports"
+      ]
+     },
+     {
+      "id": "F2",
+      "claim": "Talent is lost when children see only one path.",
+      "warrant": "A child suited to athletics or football may never try it if cricket is the only dream on offer.",
+      "keywords": [
+       "talent",
+       "children",
+       "choice",
+       "athletics",
+       "football",
+       "hockey"
+      ]
+     },
+     {
+      "id": "F3",
+      "claim": "A broader sporting culture is healthier for the country.",
+      "warrant": "More sports mean more ways for more people to stay active.",
+      "keywords": [
+       "health",
+       "fitness",
+       "variety",
+       "culture",
+       "active"
+      ]
+     }
+    ],
+    "against": [
+     {
+      "id": "A1",
+      "claim": "Attention follows what fans love.",
+      "warrant": "Cricket's popularity reflects genuine interest, and audiences cannot be ordered to care.",
+      "keywords": [
+       "fans",
+       "popular",
+       "love",
+       "interest",
+       "audience",
+       "demand"
+      ]
+     },
+     {
+      "id": "A2",
+      "claim": "Cricket's success can lift other sports.",
+      "warrant": "Leagues, broadcasting and sponsorship models built for cricket show other sports a way to grow.",
+      "keywords": [
+       "model",
+       "leagues",
+       "broadcast",
+       "example",
+       "lift"
+      ]
+     },
+     {
+      "id": "A3",
+      "claim": "The real gap is grassroots facilities, not attention.",
+      "warrant": "Other sports need playgrounds, coaches and school programmes more than they need less cricket.",
+      "keywords": [
+       "grassroots",
+       "facilities",
+       "coaches",
+       "schools",
+       "playgrounds"
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "number": 12,
+   "id": "filter_coffee_vs_chai",
+   "text": "This House believes filter coffee beats masala chai.",
+   "title": "Filter coffee vs masala chai",
+   "category": "fun",
+   "card_topics": [],
+   "case": {
+    "for": [
+     {
+      "id": "F1",
+      "claim": "Filter coffee is a craft.",
+      "warrant": "The decoction, the frothy pour between tumbler and dabarah, and the timing make every cup a small ritual.",
+      "keywords": [
+       "decoction",
+       "tumbler",
+       "dabarah",
+       "froth",
+       "craft",
+       "ritual"
+      ]
+     },
+     {
+      "id": "F2",
+      "claim": "Its flavour is bold and clear.",
+      "warrant": "Coffee's roasted depth stands on its own instead of hiding behind spices.",
+      "keywords": [
+       "flavour",
+       "bold",
+       "roast",
+       "strong",
+       "aroma"
+      ]
+     },
+     {
+      "id": "F3",
+      "claim": "It wakes you up properly.",
+      "warrant": "A strong cup gives a firm start to a morning or a long study session.",
+      "keywords": [
+       "wake",
+       "energy",
+       "morning",
+       "alert",
+       "study"
+      ]
+     }
+    ],
+    "against": [
+     {
+      "id": "A1",
+      "claim": "Masala chai is made in almost every home and on every street corner.",
+      "warrant": "Its reach makes it a shared ritual across regions and seasons.",
+      "keywords": [
+       "everywhere",
+       "tapri",
+       "street",
+       "home",
+       "shared",
+       "ritual"
+      ]
+     },
+     {
+      "id": "A2",
+      "claim": "Chai can be tuned to every mood.",
+      "warrant": "Ginger, cardamom, cloves or tulsi let each cup change with the weather and the person.",
+      "keywords": [
+       "ginger",
+       "adrak",
+       "elaichi",
+       "spices",
+       "variety",
+       "mood"
+      ]
+     },
+     {
+      "id": "A3",
+      "claim": "Chai is about company.",
+      "warrant": "The chai break is where conversations, friendships and ideas happen.",
+      "keywords": [
+       "company",
+       "conversation",
+       "friends",
+       "break",
+       "gup shup"
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "number": 13,
+   "id": "street_food",
+   "text": "This House believes street food is India's greatest culinary treasure.",
+   "title": "Street food",
+   "category": "fun",
+   "card_topics": [],
+   "case": {
+    "for": [
+     {
+      "id": "F1",
+      "claim": "Street food brings regional variety to a single city block.",
+      "warrant": "From chaat to vada pav to momos, flavours from many regions show up where everyone can taste them.",
+      "keywords": [
+       "variety",
+       "regional",
+       "chaat",
+       "vada pav",
+       "momos",
+       "flavours"
+      ]
+     },
+     {
+      "id": "F2",
+      "claim": "It is affordable for everyone.",
+      "warrant": "A student, a worker and a visitor can all eat well at the same stall.",
+      "keywords": [
+       "affordable",
+       "cheap",
+       "everyone",
+       "stall",
+       "sasta"
+      ]
+     },
+     {
+      "id": "F3",
+      "claim": "It keeps family recipes and skills alive.",
+      "warrant": "Many stalls pass their techniques down through generations of cooks.",
+      "keywords": [
+       "recipes",
+       "family",
+       "tradition",
+       "generations",
+       "skill"
+      ]
+     }
+    ],
+    "against": [
+     {
+      "id": "A1",
+      "claim": "Home cooking holds the deepest traditions.",
+      "warrant": "Festival dishes and everyday family food carry knowledge that rarely reaches a street stall.",
+      "keywords": [
+       "home cooking",
+       "ghar ka khana",
+       "festivals",
+       "family",
+       "tradition"
+      ]
+     },
+     {
+      "id": "A2",
+      "claim": "Hygiene varies widely.",
+      "warrant": "Without clean water and safe storage, a treasure can become a health risk.",
+      "keywords": [
+       "hygiene",
+       "clean",
+       "water",
+       "safety",
+       "illness"
+      ]
+     },
+     {
+      "id": "A3",
+      "claim": "Calling one style the greatest ignores the rest.",
+      "warrant": "Community kitchens, regional thalis and home kitchens are treasures too: different, not lesser.",
+      "keywords": [
+       "thali",
+       "regional",
+       "kitchens",
+       "diversity",
+       "cuisines"
+      ]
+     }
+    ]
+   }
+  }
+ ]
+}

@@ -6,7 +6,7 @@ VENV_PY := .venv/bin/python
 PYTHON ?= $(if $(wildcard $(VENV_PY)),$(VENV_PY),python3)
 export PYTHONPATH := src:.
 
-.PHONY: help venv install test lint format cli cli-fake cli-fake-hi cli-real eval eval-gate clean-traces
+.PHONY: help venv install test lint format cli cli-fake cli-fake-hi cli-real eval eval-gate eval-motions clean-traces
 
 help:
 	@echo "venv         create .venv and install everything (run this first on macOS)"
@@ -18,6 +18,7 @@ help:
 	@echo "cli-real     interactive text interview on Nova Pro (costs money; needs AWS creds)"
 	@echo "eval         run the example eval set with the fake LLM (dev split)"
 	@echo "eval-gate    run the dev eval and fail on low recall or any false correction"
+	@echo "eval-motions debate: labelled custom-motion set through the safety screen (fake)"
 
 venv:
 	python3 -m venv .venv
@@ -58,6 +59,10 @@ eval:
 EVAL_BASELINE ?=
 eval-gate:
 	$(PYTHON) -m eval.gate --split dev $(if $(EVAL_BASELINE),--baseline $(EVAL_BASELINE),)
+
+# Debate mode: the custom-motion safety screen gate (zero partisan motions may pass).
+eval-motions:
+	$(PYTHON) -m eval.motions.runner
 
 clean-traces:
 	rm -rf traces

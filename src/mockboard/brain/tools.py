@@ -227,8 +227,85 @@ JUDGE_TOOL = ToolSpec(
     },
 )
 
+# ---------------------------------------------------------------------------
+# Debate mode: motion screen and custom case file (CTO_NOTES_04 §5, §2)
+# ---------------------------------------------------------------------------
+
+SCREEN_DECISIONS = ("allow", "reframe", "refuse")
+SCREEN_CATEGORIES = (
+    "none", "loaded", "partisan", "religion", "caste", "communal", "group_targeting",
+    "private_individual", "court_case", "violence", "self_harm", "sexual", "illegal", "other",
+)
+
+
+class MotionScreenOutput(_ToolModel):
+    decision: Literal["allow", "reframe", "refuse"]
+    category: str = "other"
+    reason: str = ""
+    neutral_rewording: str = ""
+
+    @field_validator("decision", "category", mode="before")
+    @classmethod
+    def _lower(cls, v: object) -> object:
+        return v.strip().lower() if isinstance(v, str) else v
+
+
+MOTION_SCREEN_TOOL = ToolSpec(
+    name="record_motion_screen",
+    description="Record whether a custom debate motion is allowed, must be reframed, or refused.",
+    input_schema={
+        "type": "object",
+        "properties": {
+            "decision": {"type": "string", "enum": list(SCREEN_DECISIONS)},
+            "category": {"type": "string", "enum": list(SCREEN_CATEGORIES)},
+            "reason": {"type": "string", "description": "One short English sentence."},
+            "neutral_rewording": {
+                "type": "string",
+                "description": "For reframe only: a neutral 'This House ...' motion; else ''.",
+            },
+        },
+        "required": ["decision", "category", "reason", "neutral_rewording"],
+    },
+)
+
+
+class CaseFileArgument(_ToolModel):
+    claim: str
+    warrant: str
+    keywords: list[str] = Field(default_factory=list)
+
+
+class CaseFileOutput(_ToolModel):
+    arguments: list[CaseFileArgument] = Field(default_factory=list)
+
+
+CASE_FILE_TOOL = ToolSpec(
+    name="record_case_file",
+    description="Record three or four qualitative arguments for one side of a debate motion.",
+    input_schema={
+        "type": "object",
+        "properties": {
+            "arguments": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "claim": {"type": "string"},
+                        "warrant": {"type": "string"},
+                        "keywords": {"type": "array", "items": {"type": "string"}},
+                    },
+                    "required": ["claim", "warrant", "keywords"],
+                },
+            },
+        },
+        "required": ["arguments"],
+    },
+)
+
 ALL_TOOLS: dict[str, tuple[ToolSpec, type[BaseModel]]] = {
     "listener": (LISTENER_TOOL, ListenerOutput),
     "librarian": (LIBRARIAN_TOOL, LibrarianOutput),
     "judge": (JUDGE_TOOL, JudgeOutput),
+    "motion_screen": (MOTION_SCREEN_TOOL, MotionScreenOutput),
+    "case_file": (CASE_FILE_TOOL, CaseFileOutput),
 }

@@ -151,6 +151,13 @@ class Settings(BaseSettings):
     prompt_actor_version: int = 2
     prompt_judge_version: int = 1
     prompt_opener_version: int = 1
+    # Debate mode (ADR-009, CTO_NOTES_04).
+    prompt_shared_debate_version: int = 1
+    prompt_listener_debate_version: int = 1
+    prompt_actor_debate_version: int = 1
+    prompt_judge_debate_version: int = 1
+    prompt_motion_screen_version: int = 1
+    prompt_case_file_version: int = 1
     report_language: str = Field(default="en", pattern=r"^(en|hi)$")
 
     # --- Eval gate (ENGINEERING.md §5): `make eval-gate` exits non-zero when a dev-split run
@@ -172,6 +179,9 @@ class Settings(BaseSettings):
     feature_echo_filter: bool = False
     feature_prisma_partials: bool = False
     feature_second_prompt_vote: bool = False
+    # Debate mode (ruling 21): custom motions go through the fail-closed safety screen.
+    # Off by default and off in the public demo: only the 13 curated motions are offered.
+    feature_custom_motions: bool = False
 
     # --- Observability ---
     trace_dir: Path = Path("traces")  # per-turn JSONL traces (git-ignored)
@@ -215,6 +225,16 @@ class Settings(BaseSettings):
         }
 
     def _mode_prompt_versions(self, mode: str) -> dict[str, int]:
+        if mode == "debate":
+            return {
+                "shared_debate": self.prompt_shared_debate_version,
+                "listener_debate": self.prompt_listener_debate_version,
+                "actor_debate": self.prompt_actor_debate_version,
+                "judge_debate": self.prompt_judge_debate_version,
+                "librarian": self.prompt_librarian_version,  # the fact-check graph is shared
+                "motion_screen": self.prompt_motion_screen_version,
+                "case_file": self.prompt_case_file_version,
+            }
         raise ValueError(f"no prompt versions for mode {mode!r}")
 
     def feature_flags(self) -> dict[str, bool]:

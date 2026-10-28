@@ -68,6 +68,7 @@ def test_all_feature_flags_default_off(settings):
         "echo_filter": False,
         "prisma_partials": False,
         "second_prompt_vote": False,
+        "custom_motions": False,  # debate mode: curated motions only by default (ruling 21)
     }
     assert settings.langfuse_enabled is False
 
