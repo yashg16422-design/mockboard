@@ -6,7 +6,7 @@ It runs on your Mac only, on `localhost`. Chrome allows the microphone on `local
 
 ## Files
 
-- `bot.py` builds the pipeline: the echo processor, the JSONL frame log, and the two small fixes to the Gnani plugin described in NOTES.md.
+- `bot.py` builds the pipeline: the echo processor and the JSONL frame log. Since V2 it uses the app's own speech services from `src/mockboard/speech/`: `PrismaSTTService` (our Prisma client, ruling 24) and `TimbreTTSService` (the Gnani plugin plus the barge-in fix, ruling 25). The plugin's own classes are one flag away, for comparison (see below).
 - `server.py` is a small web server. It serves the page and the WebRTC "offer" endpoint that the page calls to connect.
 - `index.html` is the page: a Start button, a microphone level bar, and a short connection log.
 - `fakes.py` holds a fake Prisma and a fake Timbre (a beep), used by `--fake-speech` and by the offline test in `tests/voice/`.
@@ -34,6 +34,8 @@ open -e .env
 ```
 
 `cp -n` copies the example only if `.env` does not exist yet, and `open -e` opens it in TextEdit. Replace `replace-me-with-your-gnani-key` with your real key on the `GNANI_API_KEY=` line and save. The key never goes into code or logs.
+
+If your `.env` is older than October 30, 2026, it probably has the line `TTS_LANGUAGE=hi-en`. The Gnani SDK refuses that value, and the spike would stop with an error naming ruling 25. In TextEdit, change that line to `TTS_LANGUAGE=auto` and save.
 
 ## Step 1: a free check with fake speech (no Gnani, no credits)
 
@@ -74,6 +76,7 @@ Open http://localhost:7860 in Chrome, press **Start**, and say these, pausing af
 
 **What to expect:**
 
+- In the terminal, a line `[prisma] connected request_id=mb_...` when the page connects. If you see `Prisma rejected the API key` or `Prisma refused the headers (1008)` instead, stop and send the builder that line; it never contains your key.
 - After each pause, Poorvi's voice says your sentence back. Prisma's `en-IN` model writes Hinglish in Latin script, so the Hindi words are read in Poorvi's Hinglish voice. How long the reply takes depends on Smart Turn and on when Prisma sends its final transcript; the summary shows the real numbers.
 - In the barge-in test, the bot should go quiet within a fraction of a second of you starting to speak.
 
@@ -87,6 +90,33 @@ python -m spikes.echo_bot.summarize
 
 It prints the newest log as a timeline in milliseconds: when Silero heard you stop, when each Prisma final arrived (with Prisma's own latency fields), when Smart Turn ended the turn, when the echo's audio reached the output, and any errors. The raw log is the newest `spikes/echo_bot/logs/echo_*.jsonl` file.
 
+## Our STT or the stock one
+
+By default the spike sends your voice to Prisma through **our** `PrismaSTTService`: exact 1,024-byte frames, one every 32 ms (what Gnani's documentation asks for), our headers (`lang_code`, `x-format`, `x-max-speech-s`, and the VAD values if you set them), automatic reconnects, and a `prisma_processing` line in the log each time Prisma closes a speech segment. Adding `--stock-stt` switches to the plugin's own `GnaniSTTService`, which forwards Pipecat's 20 ms (640-byte) frames as they are and sends none of our VAD headers.
+
+To compare them, do the same three sentences once with each. On your Mac, in the mockboard folder, with the `.venv` active, first ours:
+
+```zsh
+python -m spikes.echo_bot.server
+```
+
+then, after pressing Stop and Ctrl+C, the stock one:
+
+```zsh
+python -m spikes.echo_bot.server --stock-stt
+```
+
+After each run, `python -m spikes.echo_bot.summarize` shows the timeline. Compare three things: whether every sentence came back at all (if the stock run returns nothing or garbled text, Prisma does not accept 640-byte frames), the `latency` field on each "Prisma final" line, and the gap between "Silero: speech stopped" and "Prisma final". Our run also shows "Prisma: segment ended, transcript pending" lines, which the stock one cannot.
+
+`--stock-tts` does the same for speech output: the plugin's own `GnaniTTSService` instead of our `TimbreTTSService`. With it, a barge-in is expected to leave the old line playing.
+
+To try Prisma's voice-detection settings with our STT (they are ignored with `--stock-stt`):
+
+```zsh
+python -m spikes.echo_bot.server --min-silence-ms 300
+python -m spikes.echo_bot.server --vad-threshold 0.5 --max-speech-s 8
+```
+
 ## Optional comparison runs
 
 Each of these is one extra short run. Each flag switches off one of the spike's fixes or changes one default, so we can see what the plugin does on its own.
@@ -94,10 +124,10 @@ Each of these is one extra short run. Each flag switches off one of the spike's 
 | Command (on your Mac, in the mockboard folder) | What it shows |
 |---|---|
 | `python -m spikes.echo_bot.server --stock-tts` | The plugin's own barge-in. The interrupted line is expected to keep playing (NOTES.md). |
-| `python -m spikes.echo_bot.server --stock-stt` | Whether Prisma accepts Pipecat's 640-byte audio frames, instead of the 1,024-byte frames its documentation requires. |
+| `python -m spikes.echo_bot.server --stock-stt` | The plugin's own STT: whether Prisma accepts Pipecat's 640-byte audio frames, instead of the 1,024-byte frames its documentation requires. |
 | `python -m spikes.echo_bot.server --vad-start-only` | Only Silero may start your turn. A late Prisma final then cannot interrupt the bot. |
 | `python -m spikes.echo_bot.server --lang hi-IN` | Prisma's Hindi model (Devanagari output) instead of `en-IN`. |
-| `python -m spikes.echo_bot.server --tts-language hi-IN` | Timbre's Hindi language setting. `hi-en` is refused by the Gnani SDK, so the spike leaves the language out by default. |
+| `python -m spikes.echo_bot.server --tts-language hi-IN` | Timbre's Hindi language setting instead of `auto` (the new `TTS_LANGUAGE` default, ruling 25; the Gnani SDK refuses `hi-en`). Also try `en-IN`, or `none` to send no language. Listen for how the Hindi words in Latin script are pronounced. |
 | `python -m spikes.echo_bot.server --log-audio-frames` | Logs every audio frame, not only the first of each burst. Use it with `--stock-tts` to count stale audio after a barge-in. |
 
 Use `--port 7870` if port 7860 is busy, and `--voice Vikrant` (or any Timbre v2.5 voice) to try another voice.
@@ -111,7 +141,8 @@ Press **Stop** on the page, then press Ctrl+C in the terminal. Closing the tab a
 Nothing in this spike has talked to Gnani yet, and no human has spoken into it. The builder could only run it headless: an aiortc client played a synthetic (flite) voice clip into the server with `--fake-speech`, and offline tests used fake sockets. These items need your run:
 
 - that Prisma and Timbre connect and respond through the plugin with your key;
-- that 1,024-byte framing is accepted (and whether the plugin's 640-byte frames are too);
+- that our 1,024-byte framing and headers are accepted (and whether the plugin's 640-byte frames are too, with `--stock-stt`);
 - how long Prisma's final takes after you stop, and whether it ever lands after Smart Turn has ended the turn (the log line `transcript_outside_turn`);
 - that barge-in stops Timbre's audio in a real browser;
+- how `auto`, `hi-IN` and `en-IN` sound for Hinglish (`--tts-language`);
 - that Chrome on macOS connects with no STUN server on `localhost`.

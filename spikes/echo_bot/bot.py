@@ -9,11 +9,13 @@ The pipeline, in order (Pipecat 1.5.0 names, read from the installed source):
     SmallWebRTCTransport.input()      browser microphone, 20 ms frames of 16 kHz PCM
     VADProcessor(SileroVADAnalyzer)   pushes VADUserStartedSpeakingFrame and
                                       VADUserStoppedSpeakingFrame
-    GnaniSTTService (Prisma)          pushes TranscriptionFrame for each final transcript
+    PrismaSTTService (Prisma)         ours (mockboard.speech, V2): 1,024-byte frames, our
+                                      headers; pushes TranscriptionFrame for each final
     UserTurnProcessor                 Smart Turn v3 decides the user turn is over; it broadcasts
                                       UserStoppedSpeakingFrame and fires `on_user_turn_stopped`
     EchoProcessor                     ours: on turn stop, says the turn's transcript back
-    GnaniTTSService (Timbre)          turns TTSSpeakFrame text into TTSAudioRawFrame audio
+    TimbreTTSService (Timbre)         ours (V2): the plugin plus the barge-in fix; turns
+                                      TTSSpeakFrame text into TTSAudioRawFrame audio
     SmallWebRTCTransport.output()     back to the browser
 
 Every frame that moves between two processors is written to a JSONL log with timestamps, so we
@@ -58,7 +60,6 @@ from pipecat.turns.user_turn_processor import UserTurnProcessor
 from pipecat.turns.user_turn_strategies import UserTurnStrategies
 
 SAMPLE_RATE = 16000  # Prisma and Timbre both take 16 kHz; the probes used it too.
-GNANI_FRAME_BYTES = 1024  # Gnani's STT docs: "each binary frame is exactly 1,024 bytes".
 AUDIO_BURST_GAP_S = 0.25  # an audio frame after this much quiet on a hop starts a new "burst"
 
 
@@ -74,9 +75,13 @@ class EchoConfig:
     stt_format: str = "verbatim"
     tts_voice: str = "Poorvi"
     tts_model: str = "timbre-v2.5"
-    tts_language: str | None = None  # None: let Timbre use the voice's own default
-    stock_stt: bool = False  # True: send Pipecat's 20 ms frames to Prisma as they are
-    stock_tts: bool = False  # True: the plugin's own (leaky) interruption handling
+    tts_language: str | None = "auto"  # TTS_LANGUAGE's default (ruling 25); None: omit it
+    stt_url: str = "wss://api.vachana.ai/stt/v3/stream"
+    stt_max_speech_s: float | None = 15.0
+    stt_min_silence_ms: int | None = None  # None: Prisma's default (500 ms)
+    stt_vad_threshold: float | None = None  # None: Prisma's default (0.7)
+    stock_stt: bool = False  # True: the plugin's GnaniSTTService (640-byte frames, no headers)
+    stock_tts: bool = False  # True: the plugin's GnaniTTSService (leaky interruption)
     vad_start_only: bool = False  # True: only Silero may start a user turn, not a transcript
     log_dir: Path = Path("spikes/echo_bot/logs")
     log_audio_frames: bool = False  # True: log every audio frame, not only burst starts
@@ -256,82 +261,75 @@ class EchoProcessor(FrameProcessor):
 
 
 def make_gnani_services(cfg: EchoConfig, log: JsonlLog | None = None):
-    """Build Prisma STT and Timbre TTS from the plugin, with the spike's two fixes by default.
+    """Build Prisma STT and Timbre TTS. By default these are our own V2 services from
+    `mockboard.speech` (ruling 24 and 25); `--stock-stt` / `--stock-tts` swap in the plain
+    plugin classes for comparison.
 
     Imported here, not at module level, so the smoke test needs no Gnani packages."""
-    from gnani.tts.client import SUPPORTED_TTS_LANGUAGES
     from pipecat.transcriptions.language import Language
     from pipecat_gnani import GnaniSTTService, GnaniTTSService
 
-    class Framed1024GnaniSTT(GnaniSTTService):
-        """Re-frames Pipecat's 20 ms (640-byte) audio into the exact 1,024-byte frames that
-        Gnani's STT docs require. The plugin sends whatever size it is given."""
+    from mockboard.speech.gnani_protocol import STTConfig
+    from mockboard.speech.prisma_stt import PrismaSTTService
+    from mockboard.speech.timbre_tts import TimbreTTSService
 
-        def __init__(self, **kwargs):
-            super().__init__(**kwargs)
-            self._buf = b""
-
-        # UNVERIFIED: that Prisma accepts these frames (only fake sockets so far), and whether
-        # it would also accept the plugin's 640-byte frames (try --stock-stt).
-        async def run_stt(self, audio: bytes):
-            self._buf += audio
-            while len(self._buf) >= GNANI_FRAME_BYTES:
-                chunk, self._buf = self._buf[:GNANI_FRAME_BYTES], self._buf[GNANI_FRAME_BYTES:]
-                async for out in super().run_stt(chunk):
-                    if out is not None:
-                        yield out
-            yield None
-
-    class ClosingGnaniTTS(GnaniTTSService):
-        """Makes barge-in actually stop Timbre.
-
-        Pipecat 1.5.0's InterruptibleTTSService calls `_disconnect()` then `_connect()` when
-        the user interrupts, but in 1.5.0 those two only flip a flag; the plugin implements
-        `_disconnect_websocket()` / `_connect_websocket()` instead. Without this override the
-        old socket keeps streaming the interrupted line, and its audio still plays (shown
-        offline with a fake socket; see spikes/NOTES.md)."""
-
-        # UNVERIFIED: in a real browser against real Timbre (checked offline with a fake socket).
-        async def _disconnect(self):
-            await super()._disconnect()
-            await self._disconnect_websocket()
-
-        async def _connect(self):
-            await super()._connect()
-            await self._connect_websocket()
-
-    try:
-        language: Any = Language(cfg.stt_language)
-    except ValueError:
-        language = cfg.stt_language  # the plugin passes unknown strings through as-is
-    # UNVERIFIED: that Prisma connects through the plugin with these settings (no live call yet).
-    stt_cls = GnaniSTTService if cfg.stock_stt else Framed1024GnaniSTT
-    stt = stt_cls(
-        api_key=cfg.api_key,
-        sample_rate=SAMPLE_RATE,
-        settings=GnaniSTTService.Settings(language=language, format=cfg.stt_format),
-    )
-
-    tts_language = cfg.tts_language
-    if tts_language is not None and tts_language not in SUPPORTED_TTS_LANGUAGES:
-        # gnani-vachana validates the language before sending; "hi-en" (in Gnani's docs and
-        # our config) is not in its list, so it would raise. Omit it and say so.
-        logger.warning(
-            f"TTS language {tts_language!r} is not in gnani-vachana's list "
-            f"{sorted(SUPPORTED_TTS_LANGUAGES)}; omitting it (Timbre uses the voice's default)."
+    if cfg.stock_stt:
+        # The plugin as it ships: Pipecat's 20 ms (640-byte) frames, no VAD headers.
+        # UNVERIFIED: whether Prisma accepts 640-byte frames (its docs say 1,024).
+        try:
+            language: Any = Language(cfg.stt_language)
+        except ValueError:
+            language = cfg.stt_language  # the plugin passes unknown strings through as-is
+        stt = GnaniSTTService(
+            api_key=cfg.api_key,
+            sample_rate=SAMPLE_RATE,
+            settings=GnaniSTTService.Settings(language=language, format=cfg.stt_format),
+        )
+    else:
+        # Ours: exact 1,024-byte frames at real-time cadence, our headers, reconnects.
+        # UNVERIFIED: that Prisma accepts these headers and frames (fake server only so far).
+        stt = PrismaSTTService(
+            api_key=cfg.api_key,
+            url=cfg.stt_url,
+            config=STTConfig(
+                lang_code=cfg.stt_language,
+                sample_rate=SAMPLE_RATE,
+                fmt=cfg.stt_format,
+                max_speech_s=cfg.stt_max_speech_s,
+                min_silence_ms=cfg.stt_min_silence_ms,
+                vad_threshold=cfg.stt_vad_threshold,
+            ),
         )
         if log is not None:
-            log.write("tts_language_omitted", requested=tts_language)
-        tts_language = None
-    # UNVERIFIED: which language Timbre uses for Poorvi when none is sent (no live call yet).
-    tts_cls = GnaniTTSService if cfg.stock_tts else ClosingGnaniTTS
-    tts = tts_cls(
-        api_key=cfg.api_key,
-        # gnani-vachana 0.7.9's default model is timbre-v2.0, which has no Poorvi: say v2.5.
-        model=cfg.tts_model,
-        sample_rate=SAMPLE_RATE,
-        settings=GnaniTTSService.Settings(voice=cfg.tts_voice, language=tts_language),
-    )
+            @stt.event_handler("on_processing")
+            async def _processing(_stt, event):
+                log.write("prisma_processing", request_id=event.request_id,
+                          pending_segments=_stt.pending_segments)
+
+            @stt.event_handler("on_prisma_error")
+            async def _prisma_error(_stt, message):
+                log.write("prisma_error", message=message)
+
+    if cfg.stock_tts:
+        # The plugin's own (leaky) interruption handling, its wav container, and no check
+        # for a socket Timbre closed while idle (spikes/NOTES.md).
+        tts = GnaniTTSService(
+            api_key=cfg.api_key,
+            # gnani-vachana 0.7.9's default model is timbre-v2.0, which has no Poorvi.
+            model=cfg.tts_model,
+            sample_rate=SAMPLE_RATE,
+            settings=GnaniTTSService.Settings(voice=cfg.tts_voice, language=cfg.tts_language),
+        )
+    else:
+        # Ours: closes the socket on barge-in, asks for raw 16-bit PCM.
+        # UNVERIFIED: in a real browser against real Timbre (fake socket only so far).
+        tts = TimbreTTSService(
+            api_key=cfg.api_key,
+            voice=cfg.tts_voice,
+            model=cfg.tts_model,
+            language=cfg.tts_language,
+            sample_rate=SAMPLE_RATE,
+        )
     return stt, tts
 
 
@@ -420,6 +418,8 @@ async def run_echo_bot(webrtc_connection, cfg: EchoConfig) -> None:
     log = JsonlLog(cfg.log_dir / f"echo_{stamp}.jsonl")
     log.write("session_start", stt_language=cfg.stt_language, tts_voice=cfg.tts_voice,
               tts_model=cfg.tts_model, tts_language=cfg.tts_language,
+              stt_max_speech_s=cfg.stt_max_speech_s, stt_min_silence_ms=cfg.stt_min_silence_ms,
+              stt_vad_threshold=cfg.stt_vad_threshold,
               stock_stt=cfg.stock_stt, stock_tts=cfg.stock_tts,
               vad_start_only=cfg.vad_start_only, fake_speech=cfg.fake_speech)
     logger.info(f"Frame log: {log.path}")

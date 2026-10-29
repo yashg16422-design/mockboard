@@ -55,12 +55,21 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                    help="Prisma lang_code (default from STT_LANG_CODE, normally en-IN)")
     p.add_argument("--stt-format", default=s.stt_format, choices=["verbatim", "transcribe"])
     p.add_argument("--voice", default="Poorvi", help="Timbre v2.5 voice (Poorvi is Hinglish)")
-    p.add_argument("--tts-language", default=None,
-                   help="Timbre language, e.g. hi-IN or en-IN; default: omit (voice default)")
+    p.add_argument("--tts-language", default=s.tts_language,
+                   help="Timbre language (default from TTS_LANGUAGE, normally auto); "
+                        "e.g. hi-IN or en-IN; 'none' omits it")
+    p.add_argument("--max-speech-s", type=float, default=s.stt_max_speech_s,
+                   help="Prisma x-max-speech-s (default from STT_MAX_SPEECH_S)")
+    p.add_argument("--min-silence-ms", type=int, default=None,
+                   help="Prisma x-min-silence-ms (100-2000); default: Prisma's own (500)")
+    p.add_argument("--vad-threshold", type=float, default=None,
+                   help="Prisma x-vad-threshold (0-1); default: Prisma's own (0.7)")
     p.add_argument("--stock-stt", action="store_true",
-                   help="send Pipecat's 20 ms frames to Prisma unchanged (no 1,024-byte framing)")
+                   help="the plugin's GnaniSTTService instead of ours (640-byte frames, no "
+                        "VAD headers), for comparison")
     p.add_argument("--stock-tts", action="store_true",
-                   help="use the plugin's own interruption handling (expect stale audio)")
+                   help="the plugin's GnaniTTSService instead of ours (expect stale audio "
+                        "after a barge-in)")
     p.add_argument("--vad-start-only", action="store_true",
                    help="only Silero may start a user turn (a late transcript cannot)")
     p.add_argument("--log-audio-frames", action="store_true",
@@ -70,6 +79,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                    help="no Gnani: every pause gets a fake transcript and a beep back (free)")
     args = p.parse_args(argv)
     args.api_key = "" if args.fake_speech else _api_key(s)
+    args.stt_url = s.gnani_stt_url
     return args
 
 
@@ -134,7 +144,11 @@ def main(argv: list[str] | None = None) -> None:
         stt_language=args.lang,
         stt_format=args.stt_format,
         tts_voice=args.voice,
-        tts_language=args.tts_language,
+        tts_language=None if args.tts_language.lower() == "none" else args.tts_language,
+        stt_url=args.stt_url,
+        stt_max_speech_s=args.max_speech_s,
+        stt_min_silence_ms=args.min_silence_ms,
+        stt_vad_threshold=args.vad_threshold,
         stock_stt=args.stock_stt,
         stock_tts=args.stock_tts,
         vad_start_only=args.vad_start_only,

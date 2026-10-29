@@ -35,6 +35,8 @@ def _frame_line(r: dict) -> str | None:
         res = r.get("stt_result") or {}
         extra = {k: res[k] for k in ("latency", "audio_duration_ms", "segment_id") if k in res}
         return f"Prisma final: {r.get('text')!r} {extra or ''}"
+    if frame == "PrismaProcessingFrame" and dst == "UserTurnProcessor":
+        return "Prisma: segment ended, transcript pending"
     if frame == "InterruptionFrame" and src == "UserTurnProcessor" and down:
         return "interruption broadcast"
     if frame == "TTSAudioRawFrame" and r.get("burst_start") and dst.endswith("OutputTransport"):

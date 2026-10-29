@@ -10,7 +10,8 @@ What it checks:
 2. A final transcript travels the real turn controller and comes back as speech.
 3. The echo survives Pipecat's ordering trap (a SystemFrame stop overtaking DataFrame
    transcripts).
-4. The spike's two Gnani fixes do what spikes/NOTES.md says (needs pipecat-gnani; fake socket).
+4. The spike runs our V2 services by default (mockboard.speech) and the stock plugin
+   classes with --stock-stt / --stock-tts; the interruption fix holds (fake socket).
 """
 
 from __future__ import annotations
@@ -159,7 +160,7 @@ async def test_echo_waits_for_transcripts_queued_behind_a_system_stop_frame():
 
 
 # ---------------------------------------------------------------------------
-# The spike's Gnani fixes, against a fake socket (needs pipecat-gnani installed)
+# The Gnani services the spike builds, against a fake socket (needs pipecat-gnani)
 # ---------------------------------------------------------------------------
 
 
@@ -242,27 +243,24 @@ async def test_stock_gnani_tts_keeps_playing_after_an_interruption(monkeypatch):
     assert sockets == 1  # no reconnect happened
 
 
-async def test_closing_gnani_tts_stops_audio_at_the_interruption(monkeypatch):
+async def test_our_timbre_tts_stops_audio_at_the_interruption(monkeypatch):
     after, sockets = await _audio_after_interruption(monkeypatch, stock_tts=False)
     assert after == 0
     assert sockets == 2  # closed on interruption, reopened for the next line
 
 
-async def test_framed_stt_sends_exact_1024_byte_frames():
+def test_spike_uses_our_v2_services_by_default_and_stock_on_request():
     pytest.importorskip("pipecat_gnani")
+    from pipecat_gnani import GnaniSTTService, GnaniTTSService
     from spikes.echo_bot.bot import make_gnani_services
 
-    class RecordingSocket:
-        def __init__(self):
-            self.sent: list[bytes] = []
+    from mockboard.speech.prisma_stt import PrismaSTTService
+    from mockboard.speech.timbre_tts import TimbreTTSService
 
-        async def send(self, data):
-            self.sent.append(data)
+    stt, tts = make_gnani_services(EchoConfig(api_key="test-key", stt_min_silence_ms=300))
+    assert type(stt) is PrismaSTTService and type(tts) is TimbreTTSService
+    assert stt.config.min_silence_ms == 300 and stt.config.sample_rate == 16000
+    assert tts._settings.language == "auto" and tts._settings.container == "raw"
 
-    stt, _ = make_gnani_services(EchoConfig(api_key="test-key"))
-    socket = RecordingSocket()
-    stt._ws = socket  # skip the real connect; run_stt only needs .send()
-    for _ in range(8):  # eight 20 ms frames of 16 kHz PCM, as SmallWebRTC delivers them
-        async for _frame in stt.run_stt(b"\x00\x00" * 320):
-            pass
-    assert [len(chunk) for chunk in socket.sent] == [1024] * 5  # 5,120 bytes in, 5 frames out
+    stt, tts = make_gnani_services(EchoConfig(api_key="test-key", stock_stt=True, stock_tts=True))
+    assert type(stt) is GnaniSTTService and type(tts) is GnaniTTSService
