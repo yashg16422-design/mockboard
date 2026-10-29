@@ -14,7 +14,11 @@ _L: dict[str, dict[str, str]] = {
         "sides": "for|against",
         "verdict": "Moderator's verdict",
         "scoreboard": "Scoreboard (computed by code from the debate record, not by a model)",
-        "cols": "round|turns|arguments|answered|standing|concessions won|figures questioned",
+        "cols": "round|turns|your points|their points answered|their points conceded|"
+                "their points still standing|figures questioned",
+        "legend": "Your points: the arguments you made. Their points: the opponent's "
+                  "case; answering a point does not remove it, only a concession does "
+                  "(still standing = their points - conceded).",
         "total": "total",
         "best": "Best line",
         "why": "Why",
@@ -33,7 +37,11 @@ _L: dict[str, dict[str, str]] = {
         "sides": "पक्ष में|विपक्ष में",
         "verdict": "मॉडरेटर का निर्णय",
         "scoreboard": "स्कोरबोर्ड (बहस के रिकॉर्ड से कोड द्वारा गिना गया, किसी मॉडल द्वारा नहीं)",
-        "cols": "दौर|बारी|तर्क|जवाब दिए|खड़े तर्क|मनवाए बिंदु|पूछे गए आँकड़े",
+        "cols": "दौर|बारी|आपके बिंदु|उनके बिंदु जिनका जवाब दिया|उनके माने गए बिंदु|"
+                "उनके खड़े बिंदु|पूछे गए आँकड़े",
+        "legend": "आपके बिंदु: आपके रखे गए तर्क। उनके बिंदु: विपक्ष का पक्ष; जवाब देने "
+                  "से बिंदु हटता नहीं, केवल विपक्ष के मानने से हटता है (खड़े = उनके बिंदु - "
+                  "माने गए)।",
         "total": "कुल",
         "best": "सबसे अच्छी पंक्ति",
         "why": "क्यों",
@@ -77,13 +85,14 @@ def format_debate_report(report: DebateReport, cards: CardSet) -> str:
     sb = report.scoreboard
     table = [
         [_ROUNDS.get(lang, {}).get(r.round, r.round), r.turns, r.arguments_made, r.answered,
-         r.standing_after, r.concessions_won, r.figures_questioned]
+         r.concessions_won, r.standing_after, r.figures_questioned]
         for r in sb.rounds
     ]
     table.append([t["total"], sum(r.turns for r in sb.rounds), sb.arguments_made, sb.answered,
-                  sb.standing_at_end, sb.concessions_won, sb.figures_questioned])
+                  sb.concessions_won, sb.standing_at_end, sb.figures_questioned])
     widths = [max(len(str(row[i])) for row in [cols, *table]) + 2 for i in range(len(cols))]
     lines += [_row(row, widths) for row in [cols, *table]]
+    lines.append(f"  {t['legend']}")
     if report.best_line is not None:
         b = report.best_line
         lines += ["", f'{t["best"]} [{b.turn_id}]: "{b.quote}"', f"  {t['why']}: {b.reason}"]

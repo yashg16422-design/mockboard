@@ -285,7 +285,10 @@ def test_verdict_reasons_map_to_rubric_scores_and_the_scoreboard():
         assert r.score == by_dim[r.dimension].score
         assert by_dim[r.dimension].rationale in r.text
     assert [r.kind for r in v.reasons][-1] == "scoreboard"
-    assert "answered 2 of the opponent's 4 arguments" in v.reasons[-1].text
+    assert v.reasons[-1].text == (
+        "You answered 2 of the opponent's 4 points. It conceded 1, so 3 were still standing "
+        "at the end."
+    )
     assert v.text.endswith(f"{DISCLAIMER}.")
 
 
@@ -370,3 +373,79 @@ def test_judge_prompt_is_versioned_and_logged(deps):
     assert "NO score for accent" in body and "best_line_quote" in body
     log = (REPO_ROOT / "src" / "mockboard" / "prompts" / "CHANGELOG.md").read_text()
     assert "| judge_debate | 1 |" in log
+
+
+# ---------------------------------------------------------------------------
+# Defect C (orchestrator round 14): whose numbers are whose
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(("total", "answered", "conceded", "en", "hi"), [
+    (4, 3, 1, "You answered 3 of the opponent's 4 points. It conceded 1, so 3 were still "
+              "standing at the end.",
+     "आपने विपक्ष के 4 बिंदुओं में से 3 का जवाब दिया। विपक्ष ने 1 बिंदु माना, इसलिए अंत में "
+     "3 बिंदु खड़े रहे।"),
+    (4, 4, 3, "You answered 4 of the opponent's 4 points. It conceded 3, so 1 was still "
+              "standing at the end.",
+     "आपने विपक्ष के 4 बिंदुओं में से 4 का जवाब दिया। विपक्ष ने 3 बिंदु माने, इसलिए अंत में "
+     "1 बिंदु खड़ा रहा।"),
+    (1, 0, 0, "You answered 0 of the opponent's 1 point. It conceded 0, so 1 was still "
+              "standing at the end.",
+     "आपने विपक्ष के 1 बिंदु में से 0 का जवाब दिया। विपक्ष ने 0 बिंदु माने, इसलिए अंत में "
+     "1 बिंदु खड़ा रहा।"),
+])
+def test_scoreboard_sentence_separates_answering_from_conceding(total, answered, conceded,
+                                                                en, hi):
+    from mockboard.modes.debate.verdict import scoreboard_sentence
+
+    board = DebateScoreboard(rounds=[], opponent_arguments=total, arguments_made=2,
+                             answered=answered, standing_at_end=total - conceded,
+                             concessions_won=conceded, figures_questioned=0)
+    assert scoreboard_sentence(board, "en") == en
+    assert scoreboard_sentence(board, "hi") == hi
+
+
+@pytest.mark.parametrize("seed", range(12))
+async def test_standing_is_their_points_minus_concessions_and_the_verdict_says_so(deps, seed):
+    import re
+
+    from eval.debate.invariants import make_setup, play_debate
+
+    from test_debate_invariants import random_debate
+
+    spec, answers = random_debate(seed)
+    setup = make_setup(spec["motion"], spec["side"], spec["length"], spec["style"])
+    p = await play_debate(deps, setup, answers, f"defc-{seed}", report=True)
+    sb = p.report.scoreboard
+    assert sb.standing_at_end == sb.opponent_arguments - sb.concessions_won
+    assert sb.concessions_won == sum(r.concessions_won for r in sb.rounds)
+    running = sb.opponent_arguments
+    for r in sb.rounds:
+        running -= r.concessions_won
+        assert r.standing_after == running  # per round too
+    reason = next(x for x in p.report.verdict.reasons if x.kind == "scoreboard")
+    numbers = [int(x) for x in re.findall(r"\d+", reason.text)]
+    assert numbers == [sb.answered, sb.opponent_arguments, sb.concessions_won,
+                       sb.standing_at_end]
+
+
+def test_scoreboard_table_names_whose_numbers_are_whose(deps):
+    sb = DebateScoreboard(
+        rounds=[], opponent_arguments=4, arguments_made=9, answered=3,
+        standing_at_end=3, concessions_won=1, figures_questioned=0,
+    )
+    rep = DebateReport(
+        session_id="s", motion="m", user_side="for", is_fallback=True, scores=[],
+        scoreboard=sb, verdict=build_verdict([], sb, "en", judged=False),
+    )
+    text = format_debate_report(rep, deps.cards)
+    header = next(line for line in text.splitlines() if line.strip().startswith("round"))
+    assert header.split() == ["round", "turns", "your", "points", "their", "points",
+                              "answered", "their", "points", "conceded", "their", "points",
+                              "still", "standing", "figures", "questioned"]
+    total = next(line for line in text.splitlines() if line.strip().startswith("total"))
+    assert total.split() == ["total", "0", "9", "3", "1", "3", "0"]
+    assert "only a concession does" in text
+    hi = format_debate_report(rep.model_copy(update={"report_language": ReportLanguage.hi}),
+                              deps.cards)
+    assert "उनके खड़े बिंदु" in hi and "केवल विपक्ष के मानने से हटता है" in hi

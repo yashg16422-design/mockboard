@@ -82,9 +82,11 @@ _T: dict[str, dict[str, str]] = {
     "en": {
         "strength": "Strongest: {dim}, {score}/5. {rationale}",
         "work_on": "To work on: {dim}, {score}/5. {rationale}",
+        # Answering a point does not remove it; only the opponent's concession does
+        # (orchestrator Defect C). Filled by `scoreboard_sentence`, with singular/plural.
         "scoreboard": (
-            "You answered {answered} of the opponent's {total} arguments and won {won} "
-            "concession(s), so {standing} of its arguments were still standing at the end."
+            "You answered {answered} of the opponent's {total} {points}. It conceded "
+            "{conceded}, so {standing} {were} still standing at the end."
         ),
         "disclaimer": (
             "This verdict judges how the debate was argued, not which side of the motion "
@@ -98,8 +100,9 @@ _T: dict[str, dict[str, str]] = {
         "strength": "सबसे मज़बूत: {dim}, {score}/5. {rationale}",
         "work_on": "सुधार की जगह: {dim}, {score}/5. {rationale}",
         "scoreboard": (
-            "आपने विपक्ष के {total} में से {answered} तर्कों का जवाब दिया और {won} बिंदु "
-            "मनवाए, इसलिए अंत में उसके {standing} तर्क खड़े रहे।"
+            "आपने विपक्ष के {total} {points_total} में से {answered} का जवाब दिया। विपक्ष ने "
+            "{conceded} {points_conceded} {maana}, इसलिए अंत में {standing} {points_standing} "
+            "{khade}।"
         ),
         "disclaimer": (
             "यह निर्णय इस पर है कि बहस कैसे की गई, इस पर नहीं कि प्रस्ताव का कौन सा पक्ष "
@@ -135,6 +138,24 @@ def _rationale(text: str) -> str:
     if not text or takes_sides(text):
         return ""
     return text if text[-1] in ".?!।" else text + "."
+
+
+def scoreboard_sentence(board: DebateScoreboard, language: ReportLanguage | str) -> str:
+    """The verdict's scoreboard reason: what the user answered, what the opponent conceded,
+    and what was still standing (= the opponent's points minus its concessions)."""
+    lang = _lang(language)
+    a, n, c, st = (board.answered, board.opponent_arguments, board.concessions_won,
+                   board.standing_at_end)
+    if lang == "hi":  # "बिंदु" is the same in singular and plural except before "में से"
+        return _T["hi"]["scoreboard"].format(
+            total=n, points_total="बिंदुओं" if n != 1 else "बिंदु", answered=a,
+            conceded=c, points_conceded="बिंदु", maana="माना" if c == 1 else "माने",
+            standing=st, points_standing="बिंदु", khade="खड़ा रहा" if st == 1 else "खड़े रहे",
+        )
+    return _T["en"]["scoreboard"].format(
+        answered=a, total=n, points="point" if n == 1 else "points", conceded=c,
+        standing=st, were="was" if st == 1 else "were",
+    )
 
 
 def choose_label(
@@ -186,10 +207,7 @@ def build_verdict(
             ))
     reasons.append(VerdictReason(
         kind="scoreboard",
-        text=t["scoreboard"].format(
-            answered=board.answered, total=board.opponent_arguments,
-            won=board.concessions_won, standing=board.standing_at_end,
-        ),
+        text=scoreboard_sentence(board, lang),
     ))
     if label == VerdictLabel.no_verdict:
         opening = t["no_judge"] if not judged else t["too_little"]
