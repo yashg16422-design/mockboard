@@ -6,7 +6,7 @@ VENV_PY := .venv/bin/python
 PYTHON ?= $(if $(wildcard $(VENV_PY)),$(VENV_PY),python3)
 export PYTHONPATH := src:.
 
-.PHONY: help venv install test lint format cli cli-fake cli-fake-hi cli-real cli-fake-debate cli-debate cli-real-debate eval eval-gate eval-motions clean-traces
+.PHONY: help venv install test lint format cli cli-fake cli-fake-hi cli-real cli-fake-debate cli-debate cli-real-debate eval eval-gate eval-motions eval-debate clean-traces
 
 help:
 	@echo "venv         create .venv and install everything (run this first on macOS)"
@@ -22,6 +22,7 @@ help:
 	@echo "eval         run the example eval set with the fake LLM (dev split)"
 	@echo "eval-gate    run the dev eval and fail on low recall or any false correction"
 	@echo "eval-motions debate: labelled custom-motion set through the safety screen (fake)"
+	@echo "eval-debate  debate: scripted debates; fails on any invariant violation or report problem"
 
 venv:
 	python3 -m venv .venv
@@ -76,6 +77,11 @@ eval-gate:
 # Debate mode: the custom-motion safety screen gate (zero partisan motions may pass).
 eval-motions:
 	$(PYTHON) -m eval.motions.runner
+
+# Debate mode (DB7): scripted debates, the CTO_NOTES_04 §7 invariants and the report checks.
+# Offline by default; `$(PYTHON) -m eval.debate.runner --real` runs it on Nova (costs money).
+eval-debate:
+	$(PYTHON) -m eval.debate.runner
 
 clean-traces:
 	rm -rf traces
