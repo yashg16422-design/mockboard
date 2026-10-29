@@ -269,3 +269,38 @@ async def test_the_api_key_never_reaches_the_logs():
     assert "[prisma]" in text and "headers=" in text  # we did log the connect headers
     assert KEY not in text
     assert all(KEY not in json.dumps(e.raw) for e in stt.events)
+
+
+async def test_a_rejected_key_is_reported_once_and_not_retried():
+    async with FakePrisma(reject_http_status=401) as server:
+        stt = make_stt(server.url)
+        async with Harness(stt) as h:
+            await h.wait_until(lambda: server.http_rejections >= 1)
+            await asyncio.sleep(0.5)  # longer than the whole test backoff
+    assert server.http_rejections == 1
+    assert any("HTTP 401" in e for e in h.errors)
+    assert all(KEY not in e for e in h.errors)
+
+
+async def test_audio_held_while_disconnected_is_bounded_then_caught_up():
+    async with FakePrisma() as server:
+        # 0.3 s of backlog at most; the reconnect waits 0.6 s, so some audio is dropped.
+        stt = make_stt(server.url, reconnect_backoff_s=(0.6,), max_backlog_s=0.3)
+        async with Harness(stt) as h:
+            first = await server.wait_for_conns(1)
+            feed = asyncio.create_task(h.feed_audio(1.6))
+            await asyncio.sleep(0.2)
+            await server.close(first, code=1011, reason="internal error")
+            second = await server.wait_for_conns(2, timeout=3)
+            await feed
+            await asyncio.sleep(0.3)
+
+    assert stt.stats["frames_dropped"] > 0
+    assert stt.stats["max_backlog_frames"] <= int(0.3 / 0.032)
+    times = [t for t, _ in second.frames]
+    gaps_ms = [(b - a) * 1000 for a, b in itertools.pairwise(times)]
+    # The held frames go out faster than real time (catch-up), then the cadence returns.
+    assert min(gaps_ms[:4]) < 24, gaps_ms[:10]
+    tail = gaps_ms[-10:]
+    assert 28 <= statistics.mean(tail) <= 36, tail
+    assert all(size == 1024 for _, size in second.frames)

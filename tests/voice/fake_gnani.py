@@ -118,7 +118,10 @@ class FakePrisma:
         transcript_delay_s: float = 0.05,
         refuse_with_1008: bool = False,
         reply_settings_updated: bool = True,
+        reject_http_status: int | None = None,
     ):
+        self.reject_http_status = reject_http_status
+        self.http_rejections = 0
         self.segment_frames = segment_frames
         self.transcript_delay_s = transcript_delay_s
         self.refuse_with_1008 = refuse_with_1008
@@ -130,7 +133,9 @@ class FakePrisma:
         self.new_conn = asyncio.Condition()
 
     async def __aenter__(self) -> FakePrisma:
-        self._server = await serve(self._handler, "127.0.0.1", 0)
+        self._server = await serve(
+            self._handler, "127.0.0.1", 0, process_request=self._process_request
+        )
         port = self._server.sockets[0].getsockname()[1]
         self.url = f"ws://127.0.0.1:{port}/stt/v3/stream"
         return self
@@ -141,6 +146,13 @@ class FakePrisma:
         self._server.close()
         with contextlib.suppress(Exception):
             await asyncio.wait_for(self._server.wait_closed(), timeout=2)
+
+    def _process_request(self, connection, request):
+        # Docs: "HTTP 401: Missing or invalid API key. The handshake is refused."
+        if self.reject_http_status is not None:
+            self.http_rejections += 1
+            return connection.respond(self.reject_http_status, "Invalid API key\n")
+        return None
 
     async def wait_for_conns(self, n: int, timeout: float = 5.0) -> PrismaConn:
         async with self.new_conn:
@@ -253,7 +265,9 @@ class FakeTimbre:
         chunk_bytes: int = 1600,
         chunk_gap_s: float = 0.05,
         error_marker: str = "FAIL",
+        idle_close_s: float | None = None,
     ):
+        self.idle_close_s = idle_close_s
         self.chunks = chunks
         self.chunk_bytes = chunk_bytes
         self.chunk_gap_s = chunk_gap_s
@@ -277,7 +291,12 @@ class FakeTimbre:
         conn = TimbreConn(headers={k.lower(): v for k, v in ws.request.headers.raw_items()})
         self.conns.append(conn)
         try:
-            async for msg in ws:
+            while True:
+                try:
+                    msg = await asyncio.wait_for(ws.recv(), timeout=self.idle_close_s)
+                except TimeoutError:
+                    await ws.close(code=1000, reason="idle timeout")
+                    return
                 req = json.loads(msg)
                 conn.requests.append(req)
                 if self.error_marker in req.get("text", ""):

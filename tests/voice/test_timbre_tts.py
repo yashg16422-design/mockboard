@@ -168,3 +168,20 @@ def test_the_default_tts_language_is_accepted_by_the_sdk_and_the_docs():
     default = Settings.model_fields["tts_language"].default
     assert default == "auto"
     assert default in SUPPORTED_TTS_LANGUAGES and default in TTS_LANGUAGES
+
+
+async def test_a_socket_timbre_closed_while_idle_is_replaced_before_the_next_line(monkeypatch):
+    async with FakeTimbre(chunks=3, chunk_gap_s=0.01, idle_close_s=0.2) as server:
+        monkeypatch.setattr(plugin_tts, "GNANI_TTS_WS_URL", server.url)
+        tts = make_tts()
+        async with Harness(tts) as h:
+            await h.queue(TTSSpeakFrame("Pehli line.", append_to_context=False))
+            await h.wait_until(lambda: len(h.collector.of_type(TTSAudioRawFrame)) >= 3)
+            await asyncio.sleep(0.5)  # the server closes the idle socket
+            await h.queue(TTSSpeakFrame("Doosri line.", append_to_context=False))
+            await h.wait_until(lambda: len(h.collector.of_type(TTSAudioRawFrame)) >= 6)
+
+    assert len(h.collector.of_type(TTSAudioRawFrame)) == 6
+    assert [r["text"] for c in server.conns for r in c.requests] == ["Pehli line.", "Doosri line."]
+    assert tts.idle_reconnects == 1
+    assert not h.errors

@@ -33,6 +33,7 @@ from pipecat.frames.frames import Frame, InterruptionFrame, StartFrame, TTSAudio
 from pipecat.processors.frame_processor import FrameDirection
 from pipecat_gnani import GnaniTTSService
 from pipecat_gnani import tts as _plugin_tts
+from websockets.protocol import State
 
 from mockboard.config import Settings
 from mockboard.speech.gnani_protocol import TTS_SAMPLE_RATES, check_voice
@@ -82,6 +83,7 @@ class TimbreTTSService(GnaniTTSService):
         self._audio_gate_open = True
         self.interruptions = 0
         self.audio_dropped_after_interruption = 0
+        self.idle_reconnects = 0
 
     @classmethod
     def from_settings(
@@ -144,6 +146,13 @@ class TimbreTTSService(GnaniTTSService):
 
     async def run_tts(self, text: str, context_id: str) -> AsyncGenerator[Frame, None]:
         self._audio_gate_open = True  # a new line: its audio may play
+        if self._ws is not None and getattr(self._ws, "state", State.OPEN) is not State.OPEN:
+            # Timbre closed the socket while it was idle (tts-websocket.md mentions an idle
+            # timeout). The plugin keeps the dead socket and the send would fail, losing the
+            # line; drop it so the plugin opens a fresh one.
+            # UNVERIFIED: Timbre's idle timeout length (the docs do not give it).
+            self.idle_reconnects += 1
+            await self._disconnect_websocket()
         async for frame in super().run_tts(text, context_id):
             yield frame
 
