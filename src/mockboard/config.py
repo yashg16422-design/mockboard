@@ -33,9 +33,15 @@ class Settings(BaseSettings):
     stt_format: str = "verbatim"
     stt_max_speech_s: float = 15.0
     tts_model: str = "timbre-v2.5"
-    # Ruling 8: Timbre language for the board's voice; Hinglish by default.
-    # UNVERIFIED: the exact language-code string Timbre expects; the timbre probe settles it.
-    tts_language: str = "hi-en"
+    # Ruling 8: Timbre language for the board's voice; Hinglish by default. Ruling 25: the value
+    # must be one that BOTH gnani-vachana 0.7.9 (SUPPORTED_TTS_LANGUAGES in gnani/tts/client.py:
+    # auto, bn/en/gu/hi/kn/ml/mr/pa/ta/te-IN; it refuses "hi-en") and Timbre accept. Gnani's
+    # tts-websocket.md (checked Oct 30, 2026) lists "hi-en" (Hinglish) and describes "auto" as
+    # "Auto-detect from script (recommended for mixed content)", so "auto" is the one value
+    # in both lists meant for Hinglish text.
+    # UNVERIFIED: how "auto" voices Latin-script Hinglish compared with "hi-IN"/"en-IN" (and
+    # with "hi-en", which only the timbre probe can send); the owner decides by ear.
+    tts_language: str = "auto"
     tts_sample_rate: int = 16000
 
     # --- AWS Bedrock / Nova Pro ---

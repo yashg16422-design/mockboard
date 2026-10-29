@@ -67,7 +67,7 @@ In the headless run, `BotStoppedSpeaking` followed the interruption within about
 5. **The STT plugin does not follow Gnani's framing or send our headers.** `GnaniSTTService.run_stt` sends each pipeline frame as it is (640 bytes), while Gnani's documentation says each binary frame is exactly 1,024 bytes (the SDK's own `STREAM_CHUNK_BYTES` is 1024). The spike's `Framed1024GnaniSTT` re-frames the audio. The plugin's connect headers are only `x-api-key-id`, `lang_code`, `x-sample-rate`, `x-api-request-id`, `x-format`, `itn_native_numerals` and the SDK's identification headers. None of our VAD headers, `x-max-speech-s` or bias settings are sent, so the V2 adapter must override the connect step. [source, offline test; UNVERIFIED whether Prisma accepts 640-byte frames]
 6. **TTS model and language defaults.**
    - gnani-vachana 0.7.9's default model is `timbre-v2.0`, which has only Deepak, Kaveri, Pranav and Shubhra, and the plugin's default voice is Pranav. We must pass `model="timbre-v2.5"`.
-   - The SDK validates the language before sending and refuses `hi-en`. It accepts only `auto`, `bn-IN`, `en-IN`, `gu-IN`, `hi-IN`, `kn-IN`, `ml-IN`, `mr-IN`, `pa-IN`, `ta-IN` and `te-IN`. Our `config.py` default `TTS_LANGUAGE=hi-en` would therefore raise in the plugin, so the V2 adapter must map it (omit it, or use `auto`) until the Timbre probe shows what the server accepts. The spike omits the language by default.
+   - The SDK validates the language before sending and refuses `hi-en`. It accepts only `auto`, `bn-IN`, `en-IN`, `gu-IN`, `hi-IN`, `kn-IN`, `ml-IN`, `mr-IN`, `pa-IN`, `ta-IN` and `te-IN`. Our `config.py` default `TTS_LANGUAGE=hi-en` would therefore raise in the plugin. **Settled in V2 (section 6): the default is now `auto`.**
 
    [source]
 7. **TTS audio framing.** The plugin asks Timbre for a `wav` container and strips the header itself, while our probes asked for `raw`. The WebSocket service pushes `TTSAudioRawFrame`s from its receive task with no `context_id`. [source]
@@ -92,3 +92,28 @@ In the headless run, `BotStoppedSpeaking` followed the interruption within about
 - How often does Smart Turn wait the full 3 s on real Hinglish speech?
 - Does barge-in silence Poorvi within a fraction of a second, and does `--stock-tts` keep talking as predicted?
 - Does Chrome on macOS connect to `localhost` without STUN, and does the browser's echo cancellation keep the bot from interrupting itself without headphones?
+
+## 6. V2 additions (October 30, 2026)
+
+### TTS language (ruling 25)
+
+- **What the installed SDK accepts** [source]: `gnani-vachana` 0.7.9, `gnani/tts/client.py`, `SUPPORTED_TTS_LANGUAGES` = `auto`, `bn-IN`, `en-IN`, `gu-IN`, `hi-IN`, `kn-IN`, `ml-IN`, `mr-IN`, `pa-IN`, `ta-IN`, `te-IN`. `_validate_timbre_options` raises `ValueError` for anything else, and only for model `timbre-v2.5` (v2.0 takes no language at all). The plugin calls it in `GnaniTTSService.__init__` and again for every request.
+- **What Gnani documents** [docs, re-read Oct 30, 2026]: https://docs.gnani.ai/api/TTS/tts-websocket.md lists the same eleven values plus `hi-en`, "Hinglish (code-mixed Hindi–English)", and describes `auto` as "Auto-detect from script (recommended for mixed content)". https://docs.gnani.ai/api/TTS/available-voices.md lists Poorvi's preferred language as `hi-en`, warns that "using a mismatched `language` may reduce quality", and says that for Timbre v2.5 you can "pass `auto` to detect language from the input script".
+- **Chosen: `TTS_LANGUAGE=auto`** (config.py and .env.example). It is the only value in both lists that Gnani recommends for mixed text. `hi-en` is in the docs but the SDK refuses it, and ruling 25 asks for a value both accept.
+- **UNVERIFIED, for the owner's ear.** Our board speaks Hinglish in Latin script (the actor prompts), so `auto` will see Latin script and may read the Hindi words with English pronunciation. Compare on the same line: `python -m probes.timbre_probe Poorvi --language auto`, then `--language hi-IN`, `--language en-IN` and `--language hi-en` (the probe does not use the SDK, so it can still send `hi-en`). If `hi-en` sounds clearly better, the fix is to send it past the SDK's client-side check in `speech/timbre_tts.py`, which needs an orchestrator ruling. The brain's language mix (`hi-en`, `en`, `hi` in `brain/spoken.py`) is a different setting; V3 could map it per session to `auto`, `en-IN` and `hi-IN`.
+- **If your `.env` was copied from the old `.env.example`**, it still says `TTS_LANGUAGE=hi-en`, and `TimbreTTSService.from_settings` will refuse it with a message naming ruling 25. Change that line to `TTS_LANGUAGE=auto`.
+
+### The new services
+
+- `mockboard.speech.prisma_stt.PrismaSTTService` (our STT, ruling 24) and `mockboard.speech.timbre_tts.TimbreTTSService` (stock TTS plus the interruption fix and raw PCM). Both have `from_settings(settings, ...)`. The protocol code moved from `probes/gnani_ws.py` to `mockboard.speech.gnani_protocol`; the probes re-export it.
+- `PrismaSTTService` pushes a `PrismaProcessingFrame` (a ControlFrame) for each `processing` message, in order with the `TranscriptionFrame`s, and keeps `events` (every message with its `time.monotonic()` arrival) and `pending_segments` (segments whose transcript has not arrived). These are for V3's turn gating (ruling 26).
+- Interruption in `TimbreTTSService`: the socket is closed and reopened (the spike's fix), and an audio gate drops any chunk that reaches `push_frame` between the interruption and the next line.
+
+### Prisma docs changed after October 25 (found while re-checking)
+
+Gnani's STT WebSocket page (re-read Oct 30, 2026) now documents more than the probes were built on. Nothing here is acted on yet, because the old names are still documented as accepted:
+
+- Header names were renamed: `language_code` (was `lang_code`), `format` (was `x-format`), `model` (was `x-model`), `bias_list` and `bias_score` (underscores). The page says "The older spellings (`lang_code`, `x-model`, `x-format`, `x-keyterms` and the rest) are still accepted". We still send `lang_code` and `x-format`, which the probes and the offline self-test cover. **UNVERIFIED** whether the probes' `x-bias-list`/`x-bias-score` headers count among "the rest"; our STT service sends bias only through the `update_settings` frame, whose shape is unchanged.
+- New: a `model` header choosing `prisma-v2.5` (the default when omitted) or `prisma-v3.0`; an `x-idle-timeout-sec` header (default 60 s, 5 to 900); a `{"type": "commit"}` control frame that "closes the open utterance immediately"; a `speech_start` message; `utterance_id` and `is_final` (always `true`) on transcripts.
+- Documented closes: 1008 for a bad header (an `error` first), 1001 at the 15-minute cap (an `error` first), HTTP 401 for a bad key; a failed single utterance sends `error` and keeps the session open. `PrismaSTTService` follows these: 401 and 1008 are not retried, other closes reconnect with backoff, `error` alone is not a disconnect.
+- `PrismaSTTService` sends `commit` to the old socket when it rotates before the cap. **UNVERIFIED**: that `commit` works, and that two sockets may be open at once for one key during the rotation (the docs mention a concurrent-session cap without a number).

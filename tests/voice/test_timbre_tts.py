@@ -156,3 +156,15 @@ def test_from_settings_uses_tts_model_and_language():
     assert tts._settings.language == "hi-IN"
     assert tts._settings.model == "timbre-v2.5"
     assert tts._settings.container == "raw" and tts._settings.encoding == "linear_pcm"
+
+
+def test_the_default_tts_language_is_accepted_by_the_sdk_and_the_docs():
+    """Ruling 25: TTS_LANGUAGE's default must pass gnani-vachana's own check (it refuses
+    "hi-en") and be in Gnani's documented list."""
+    from gnani.tts.client import SUPPORTED_TTS_LANGUAGES
+
+    from mockboard.speech.gnani_protocol import TTS_LANGUAGES
+
+    default = Settings.model_fields["tts_language"].default
+    assert default == "auto"
+    assert default in SUPPORTED_TTS_LANGUAGES and default in TTS_LANGUAGES

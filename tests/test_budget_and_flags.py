@@ -81,7 +81,7 @@ def test_flags_read_from_environment(monkeypatch):
 def test_region_and_model_defaults(settings):
     assert settings.aws_region == "ap-southeast-2"
     assert settings.nova_model_id == "amazon.nova-pro-v1:0"
-    assert settings.tts_language == "hi-en"
+    assert settings.tts_language == "auto"  # ruling 25: the SDK refuses "hi-en"
 
 
 @pytest.mark.parametrize("bad", [0, -1])
