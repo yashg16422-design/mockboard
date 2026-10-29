@@ -34,12 +34,14 @@ from mockboard.brain.numbers import Tolerance
 from mockboard.brain.schemas import (
     INSUFFICIENT_EVIDENCE,
     CandidateForm,
+    DebateReport,
     Move,
     SessionReport,
     Verdict,
 )
 from mockboard.config import Settings, get_settings
 from mockboard.modes import DEFAULT_MODE, mode_ids
+from mockboard.modes.debate.report_format import format_debate_report
 from mockboard.modes.debate.setup_cli import read_debate_setup
 from mockboard.obs.trace import TraceRecorder
 from mockboard.obs.tracing import langfuse_callbacks
@@ -129,7 +131,9 @@ def build_llm(settings: Settings, fake: bool, cards, recorder: TraceRecorder) ->
         ) from exc
 
 
-def format_report(report: SessionReport, cards) -> str:
+def format_report(report: SessionReport | DebateReport, cards) -> str:
+    if isinstance(report, DebateReport):
+        return format_debate_report(report, cards)
     lines = [
         "",
         "=" * 70,
@@ -263,6 +267,8 @@ async def run(args: argparse.Namespace) -> int:
     if confer:
         print(f"\n[{session.speaker_name(rt.strategy.chairman)}] {confer}")
     report = await session.finish(args.language)
+    if isinstance(report, DebateReport):  # the Moderator reads the verdict aloud
+        print(f"[{session.speaker_name(rt.strategy.chairman)}] {report.verdict.text}")
     print(format_report(report, cards))
     if args.report_json:
         Path(args.report_json).write_text(report.model_dump_json(indent=2), encoding="utf-8")

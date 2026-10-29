@@ -12,7 +12,14 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from mockboard.brain.llm import ToolSpec
-from mockboard.brain.schemas import Balance, ClaimKind, Dimension, ModelVerdict, PointStrength
+from mockboard.brain.schemas import (
+    Balance,
+    ClaimKind,
+    DebateDimension,
+    Dimension,
+    ModelVerdict,
+    PointStrength,
+)
 
 
 class _ToolModel(BaseModel):
@@ -288,6 +295,139 @@ JUDGE_TOOL = ToolSpec(
     },
 )
 
+# Debate judge (CTO_NOTES_04 §4, DB6): six debate dimensions plus one "best line" the judge
+# picks from the user's own words. The best line is three flat fields, not a nested object,
+# to keep the flat-schema rule. A separate tool and model, so the UPSC judge is untouched.
+
+
+def _coerce_score(v: object) -> object:
+    if isinstance(v, str) and v.strip().isdigit():
+        return int(v.strip())
+    if isinstance(v, str):
+        return v.strip().lower()
+    return v
+
+
+class DebateJudgeScore(_ToolModel):
+    dimension: DebateDimension
+    score: int | Literal["insufficient_evidence"]
+    rationale: str
+
+    _coerce = field_validator("score", mode="before")(_coerce_score)
+
+    @field_validator("score")
+    @classmethod
+    def _range(cls, v: int | str) -> int | str:
+        if isinstance(v, int) and not 1 <= v <= 5:
+            raise ValueError("score must be 1-5 or insufficient_evidence")
+        return v
+
+
+class DebateJudgeEvidence(_ToolModel):
+    dimension: DebateDimension
+    turn_id: str
+    quote: str
+
+
+class DebateBestLineCitation(BaseModel):
+    """The judge's best line, shaped like an evidence item so the shared citation check
+    (`judge.check_citations`) can verify it and the revision request can list it."""
+
+    model_config = ConfigDict(frozen=True)
+    dimension: Literal["best_line"] = "best_line"
+    turn_id: str
+    quote: str
+
+
+class DebateJudgeOutput(_ToolModel):
+    scores: list[DebateJudgeScore]
+    evidence: list[DebateJudgeEvidence] = Field(default_factory=list)
+    best_line_turn_id: str = ""
+    best_line_quote: str = ""
+    best_line_reason: str = ""
+
+    @model_validator(mode="after")
+    def _all_dimensions(self) -> DebateJudgeOutput:
+        dims = [s.dimension for s in self.scores]
+        if sorted(dims) != sorted(DebateDimension):
+            raise ValueError(
+                "scores must contain each debate dimension exactly once: "
+                + ", ".join(d.value for d in DebateDimension)
+            )
+        return self
+
+    @property
+    def best_line(self) -> DebateBestLineCitation | None:
+        if not (self.best_line_turn_id.strip() and self.best_line_quote.strip()):
+            return None
+        return DebateBestLineCitation(
+            turn_id=self.best_line_turn_id.strip(), quote=self.best_line_quote
+        )
+
+    def citations(self) -> list[DebateJudgeEvidence | DebateBestLineCitation]:
+        """Every quote the citation check must find in its turn: evidence and the best line."""
+        best = self.best_line
+        return [*self.evidence, *([best] if best is not None else [])]
+
+
+DEBATE_JUDGE_TOOL = ToolSpec(
+    name="record_debate_report",
+    description=(
+        "Record the post-debate rubric with verbatim evidence, and the user's best line."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "scores": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "dimension": {
+                            "type": "string",
+                            "enum": [d.value for d in DebateDimension],
+                        },
+                        "score": {
+                            "type": "string",
+                            "enum": ["1", "2", "3", "4", "5", "insufficient_evidence"],
+                        },
+                        "rationale": {"type": "string"},
+                    },
+                    "required": ["dimension", "score", "rationale"],
+                },
+            },
+            "evidence": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "dimension": {
+                            "type": "string",
+                            "enum": [d.value for d in DebateDimension],
+                        },
+                        "turn_id": {"type": "string"},
+                        "quote": {"type": "string"},
+                    },
+                    "required": ["dimension", "turn_id", "quote"],
+                },
+            },
+            "best_line_turn_id": {"type": "string", "description": "The quote's turn_id."},
+            "best_line_quote": {
+                "type": "string",
+                "description": "One sentence copied exactly from the user's own speech.",
+            },
+            "best_line_reason": {"type": "string", "description": "Why, in one sentence."},
+        },
+        "required": [
+            "scores",
+            "evidence",
+            "best_line_turn_id",
+            "best_line_quote",
+            "best_line_reason",
+        ],
+    },
+)
+
 # ---------------------------------------------------------------------------
 # Debate mode: motion screen and custom case file (CTO_NOTES_04 §5, §2)
 # ---------------------------------------------------------------------------
@@ -368,6 +508,7 @@ ALL_TOOLS: dict[str, tuple[ToolSpec, type[BaseModel]]] = {
     "listener_debate": (DEBATE_LISTENER_TOOL, DebateListenerOutput),
     "librarian": (LIBRARIAN_TOOL, LibrarianOutput),
     "judge": (JUDGE_TOOL, JudgeOutput),
+    "judge_debate": (DEBATE_JUDGE_TOOL, DebateJudgeOutput),
     "motion_screen": (MOTION_SCREEN_TOOL, MotionScreenOutput),
     "case_file": (CASE_FILE_TOOL, CaseFileOutput),
 }

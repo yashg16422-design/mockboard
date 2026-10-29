@@ -521,3 +521,156 @@ class SessionReport(_Model):
 
     def score_for(self, dim: Dimension) -> DimensionScore | None:
         return next((s for s in self.scores if s.dimension == dim), None)
+
+
+# ---------------------------------------------------------------------------
+# Debate report (CTO_NOTES_04 §4, DB6)
+# ---------------------------------------------------------------------------
+#
+# Separate types from the UPSC report on purpose: the UPSC `Dimension`, `DimensionScore` and
+# `SessionReport` are unchanged, so the UPSC report cannot change shape by accident. The debate
+# profile's `rubric` is `tuple(DebateDimension)`, and a test checks they agree.
+
+
+class DebateDimension(StrEnum):
+    """The debate rubric. Like the UPSC rubric, there is NO accent, grammar or fluency score."""
+
+    clarity_structure = "clarity_structure"
+    evidence_use = "evidence_use"  # card-consistent claims and honest uncertainty
+    rebuttal_quality = "rebuttal_quality"  # engaging the opponent's ACTUAL points
+    responsiveness = "responsiveness"  # answering questions directly
+    fairness_to_other_side = "fairness_to_other_side"
+    composure = "composure"
+
+
+class DebateDimensionScore(_Model):
+    """One debate rubric line: 1-5 with verified evidence, or "insufficient_evidence"."""
+
+    dimension: DebateDimension
+    score: int | Literal["insufficient_evidence"]
+    rationale: str
+    evidence: list[Evidence] = Field(default_factory=list)
+
+    @field_validator("score")
+    @classmethod
+    def _range(cls, v: int | str) -> int | str:
+        if isinstance(v, int) and not 1 <= v <= 5:
+            raise ValueError("score must be 1-5 or 'insufficient_evidence'")
+        return v
+
+    @model_validator(mode="after")
+    def _evidence_for_numeric_scores(self) -> DebateDimensionScore:
+        if isinstance(self.score, int) and not self.evidence:
+            raise ValueError(
+                f"{self.dimension.value}: a numeric score needs at least one evidence quote"
+            )
+        return self
+
+
+class RoundScore(_Model):
+    """One round of the scoreboard, computed by code from the debate record (never a model)."""
+
+    round: str
+    turns: int = Field(ge=0)  # the user's turns in this round
+    arguments_made: int = Field(ge=0)  # claim-and-warrant pairs the listener found
+    answered: int = Field(ge=0)  # opponent arguments the user answered for the first time
+    standing_after: int = Field(ge=0)  # opponent arguments still standing at the round's end
+    concessions_won: int = Field(ge=0)  # opponent arguments the opponent conceded (D8)
+    figures_questioned: int = Field(ge=0)  # the user's figures the board asked about (D9)
+
+
+class DebateScoreboard(_Model):
+    rounds: list[RoundScore]
+    opponent_arguments: int = Field(ge=0)  # the size of the opponent's case file
+    arguments_made: int = Field(ge=0)
+    answered: int = Field(ge=0)
+    standing_at_end: int = Field(ge=0)
+    concessions_won: int = Field(ge=0)
+    figures_questioned: int = Field(ge=0)
+
+
+class BestLine(_Model):
+    """One verbatim quote from the user's own speech, with the reason it was chosen."""
+
+    turn_id: str
+    quote: str = Field(min_length=1)
+    reason: str = Field(min_length=1)
+    chosen_by: Literal["judge", "code"]
+
+
+class VerdictLabel(StrEnum):
+    carried = "carried_on_argument"
+    close = "close_debate"
+    opponent_held = "opponent_held_the_floor"
+    no_verdict = "no_verdict"  # too little verified evidence, or the judge was unavailable
+
+
+class VerdictReason(_Model):
+    """One reason the Moderator gives. A `strength` or `work_on` reason maps to one rubric
+    score; a `scoreboard` reason maps to the code-computed scoreboard."""
+
+    kind: Literal["strength", "work_on", "scoreboard"]
+    dimension: DebateDimension | None = None
+    score: int | None = None
+    text: str
+
+    @model_validator(mode="after")
+    def _traceable(self) -> VerdictReason:
+        if self.kind != "scoreboard" and (self.dimension is None or self.score is None):
+            raise ValueError("a rubric reason must name its dimension and score")
+        return self
+
+
+class DebateVerdict(_Model):
+    """The Moderator's verdict, built by template (never written by a model). It judges how
+    the debate was argued, never which side of the motion is right."""
+
+    label: VerdictLabel
+    headline: str
+    reasons: list[VerdictReason] = Field(default_factory=list)
+    text: str  # what the Moderator says, in the report language
+
+
+class DebateReport(_Model):
+    mode: Literal["debate"] = "debate"
+    session_id: str
+    created_at: str = Field(default_factory=lambda: datetime.now(UTC).isoformat())
+    report_language: ReportLanguage = ReportLanguage.en
+    motion: str
+    user_side: Literal["for", "against"]
+    scores: list[DebateDimensionScore]
+    scoreboard: DebateScoreboard
+    best_line: BestLine | None = None
+    verdict: DebateVerdict
+    claims: list[Claim] = Field(default_factory=list)
+    card_sources: dict[str, str] = Field(default_factory=dict)
+    moves: list[BoardMove] = Field(default_factory=list)
+    citation_check_passed: bool = True
+    judge_revisions: int = 0
+    is_fallback: bool = False
+    notes: list[str] = Field(default_factory=list)
+    feature_flags: dict[str, bool] = Field(default_factory=dict)
+    prompt_versions: dict[str, int] = Field(default_factory=dict)
+
+    @field_validator("scores")
+    @classmethod
+    def _one_score_per_dimension(
+        cls, v: list[DebateDimensionScore]
+    ) -> list[DebateDimensionScore]:
+        dims = [s.dimension for s in v]
+        if len(dims) != len(set(dims)):
+            raise ValueError("duplicate dimension in scores")
+        return v
+
+    @model_validator(mode="after")
+    def _complete_unless_fallback(self) -> DebateReport:
+        if not self.is_fallback and {s.dimension for s in self.scores} != set(DebateDimension):
+            raise ValueError(
+                f"a non-fallback debate report must cover all {len(DebateDimension)} dimensions"
+            )
+        if self.is_fallback and self.scores:
+            raise ValueError("a fallback debate report carries no scores (none are guessed)")
+        return self
+
+    def score_for(self, dim: DebateDimension) -> DebateDimensionScore | None:
+        return next((s for s in self.scores if s.dimension == dim), None)

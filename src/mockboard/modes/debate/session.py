@@ -357,19 +357,24 @@ class DebateSessionHooks:
     # -- report ---------------------------------------------------------------
 
     async def report(self, language: Any = None):
-        """DB5 placeholder: the debate judge, scoreboard and verdict arrive in DB6. Until
-        then the report carries no scores at all (none are guessed)."""
-        from mockboard.brain.schemas import ReportLanguage, SessionReport
+        """The debate report (DB6): the judge's rubric and best line (citation-checked, one
+        revision at most), the scoreboard computed from `rows`, and the templated verdict."""
+        # Imported here: the judge module imports the graphs, which import the mode registry.
+        from mockboard.modes.debate.judge import generate_debate_report
 
-        s = self.session.deps.settings
-        return SessionReport(
+        st = self.session.state
+        return await generate_debate_report(
+            self.session.deps,
             session_id=self.session.session_id,
-            report_language=ReportLanguage(language or s.report_language),
-            scores=[],
-            moves=list(self.session.state.moves),
-            is_fallback=True,
-            citation_check_passed=False,
-            notes=["debate report: judge not built yet (DB6); no scores shown"],
-            feature_flags=s.feature_flags(),
-            prompt_versions=s.prompt_versions("debate"),
+            turns=st.turns,
+            ledger=st.claim_ledger,
+            moves=st.moves,
+            board_lines=st.board_lines,
+            rows=self.rows,
+            motion=self.setup.motion.text,
+            user_side=self.setup.user_side.value,
+            case=self.setup.opponent_case,
+            allowed=self.allowed,
+            language=language,
+            callbacks=self.session.callbacks,
         )

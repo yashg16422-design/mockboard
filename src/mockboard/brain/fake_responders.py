@@ -467,6 +467,121 @@ def judge_responder(system: str, user: str) -> dict[str, Any]:
     }
 
 
+# Debate judge stand-in (judge_debate.v1). Word rules over the session block, clearly labelled
+# as such in every rationale; it says nothing about how Nova scores a debate.
+_DEBATE_RATIONALE: dict[str, dict[str, str]] = {
+    "en": {
+        "clarity": "Stand-in (rule-based, not a model): the user stated a position with reasons.",
+        "evidence_contradicted": "Stand-in (rule-based, not a model): a figure was contradicted "
+                                 "by a fact card.",
+        "evidence_supported": "Stand-in (rule-based, not a model): figures matched the fact "
+                              "cards.",
+        "evidence_honest": "Stand-in (rule-based, not a model): the user said honestly what "
+                           "they did not know.",
+        "evidence_reason": "Stand-in (rule-based, not a model): claims came with reasons.",
+        "rebuttal_answered": "Stand-in (rule-based, not a model): the user answered the "
+                             "opponent's actual arguments.",
+        "rebuttal_missed": "Stand-in (rule-based, not a model): no opponent argument was "
+                           "answered directly.",
+        "responsive": "Stand-in (rule-based, not a model): the user replied to the board's "
+                      "question.",
+        "fair": "Stand-in (rule-based, not a model): the user granted the opponent a fair point.",
+        "composure": "Stand-in (rule-based, not a model): steady to the last turn.",
+        "insufficient": "Stand-in (rule-based, not a model): not shown in this debate.",
+        "best": "Stand-in (rule-based, not a model): the first sentence in a rebuttal that "
+                "gives a reason.",
+    },
+    "hi": {
+        "clarity": "ऑफ़लाइन नियम-आधारित अनुमान: उपयोगकर्ता ने कारणों के साथ अपना पक्ष रखा।",
+        "evidence_contradicted": "ऑफ़लाइन नियम-आधारित अनुमान: एक आँकड़ा फ़ैक्ट कार्ड से मेल "
+                                 "नहीं खाया।",
+        "evidence_supported": "ऑफ़लाइन नियम-आधारित अनुमान: आँकड़े फ़ैक्ट कार्ड से मेल खाए।",
+        "evidence_honest": "ऑफ़लाइन नियम-आधारित अनुमान: उपयोगकर्ता ने ईमानदारी से बताया कि "
+                           "उन्हें क्या नहीं पता।",
+        "evidence_reason": "ऑफ़लाइन नियम-आधारित अनुमान: दावों के साथ कारण दिए गए।",
+        "rebuttal_answered": "ऑफ़लाइन नियम-आधारित अनुमान: उपयोगकर्ता ने विपक्ष के असली तर्कों "
+                             "का जवाब दिया।",
+        "rebuttal_missed": "ऑफ़लाइन नियम-आधारित अनुमान: विपक्ष के किसी तर्क का सीधा जवाब "
+                           "नहीं दिया गया।",
+        "responsive": "ऑफ़लाइन नियम-आधारित अनुमान: उपयोगकर्ता ने बोर्ड के प्रश्न का उत्तर दिया।",
+        "fair": "ऑफ़लाइन नियम-आधारित अनुमान: उपयोगकर्ता ने विपक्ष की एक सही बात मानी।",
+        "composure": "ऑफ़लाइन नियम-आधारित अनुमान: अंत तक संयम बना रहा।",
+        "insufficient": "ऑफ़लाइन नियम-आधारित अनुमान: इस बहस में यह नहीं दिखा।",
+        "best": "ऑफ़लाइन नियम-आधारित चुनाव: खंडन का पहला वाक्य जो कारण भी देता है।",
+    },
+}
+_FAKE_WARRANT = re.compile(r"\b(?:kyunki|kyonki|because|since|isliye|therefore|taaki)\b|क्योंकि",
+                           re.IGNORECASE)
+
+
+def debate_judge_responder(system: str, user: str) -> dict[str, Any]:
+    language = _tag(user, "report_language").strip() or "en"
+    texts = _DEBATE_RATIONALE.get(language, _DEBATE_RATIONALE["en"])
+    rows = json.loads(_tag(user, "debate_session") or "[]")
+    skipped = {"redirect", "clarify"}
+    spoke = [
+        r for r in rows
+        if r.get("user_speech", "").strip()
+        and ((r.get("board_reply") or {}).get("move") not in skipped)
+    ]
+
+    def quote(row: dict[str, Any]) -> str:
+        return " ".join(row["user_speech"].split()[:6])
+
+    def pick(rule: Callable[[dict[str, Any]], bool]) -> dict[str, Any] | None:
+        return next((r for r in spoke if rule(r)), None)
+
+    verdicts = [c["verdict"] for r in spoke for c in r.get("claims", [])]
+    plan: list[tuple[str, str, dict[str, Any] | None, str]] = []  # dim, score, row, text key
+    plan.append(("clarity_structure", "3", spoke[0] if spoke else None, "clarity"))
+    if "contradicted" in verdicts:
+        row = pick(lambda r: any(c["verdict"] == "contradicted" for c in r.get("claims", [])))
+        plan.append(("evidence_use", "2", row, "evidence_contradicted"))
+    elif "supported" in verdicts:
+        row = pick(lambda r: any(c["verdict"] == "supported" for c in r.get("claims", [])))
+        plan.append(("evidence_use", "4", row, "evidence_supported"))
+    elif (row := pick(lambda r: r.get("honest_unknown"))) is not None:
+        plan.append(("evidence_use", "3", row, "evidence_honest"))
+    else:
+        row = pick(lambda r: bool(_FAKE_WARRANT.search(r["user_speech"])))
+        plan.append(("evidence_use", "3", row, "evidence_reason"))
+    row = pick(lambda r: bool(r.get("opponent_arguments_answered")))
+    if row is not None:
+        plan.append(("rebuttal_quality", "4", row, "rebuttal_answered"))
+    else:
+        plan.append(("rebuttal_quality", "2", spoke[1] if len(spoke) > 1 else None,
+                     "rebuttal_missed"))
+    row = pick(lambda r: str(r.get("board_said_before", "")).rstrip().endswith("?"))
+    plan.append(("responsiveness", "3", row, "responsive"))
+    plan.append(("fairness_to_other_side", "4", pick(lambda r: r.get("user_conceded_a_point")),
+                 "fair"))
+    plan.append(("composure", "3", spoke[-1] if spoke else None, "composure"))
+
+    scores, evidence = [], []
+    for dim, score, row, key in plan:
+        if row is None:
+            scores.append({"dimension": dim, "score": "insufficient_evidence",
+                           "rationale": texts["insufficient"]})
+            continue
+        scores.append({"dimension": dim, "score": score, "rationale": texts[key]})
+        evidence.append({"dimension": dim, "turn_id": row["turn_id"], "quote": quote(row)})
+
+    best_turn, best_quote = "", ""
+    for row in sorted(spoke, key=lambda r: not r.get("opponent_arguments_answered")):
+        hit = next((s for s in _sentences(row["user_speech"])
+                    if len(s.split()) >= 6 and _FAKE_WARRANT.search(s)), None)
+        if hit:
+            best_turn, best_quote = row["turn_id"], hit
+            break
+    return {
+        "scores": scores,
+        "evidence": evidence,
+        "best_line_turn_id": best_turn,
+        "best_line_quote": best_quote,
+        "best_line_reason": texts["best"] if best_quote else "",
+    }
+
+
 # ---------------------------------------------------------------------------
 # Debate: motion screen classifier and custom case file (stand-ins for Nova)
 # ---------------------------------------------------------------------------
@@ -551,6 +666,7 @@ def fake_responders(
         "actor": actor_responder,
         "opener": opener_responder,
         "judge": judge_responder,
+        "judge_debate": debate_judge_responder,
         "motion_screen": motion_screen_responder,
         "case_file": case_file_responder,
     }

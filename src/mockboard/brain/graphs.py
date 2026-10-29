@@ -72,7 +72,7 @@ import asyncio
 import inspect
 import operator
 import time
-from collections.abc import Callable, Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Annotated, Any, TypedDict
@@ -828,22 +828,31 @@ class FactChecker:
 # ---------------------------------------------------------------------------
 
 
-def _make_judge(max_attempts: int) -> Callable:
+# run(deps, state, failed) -> draft: one judge call. A mode with its own rubric (debate, DB6)
+# passes its own; the node around it (revision count, retries, error handling) is shared.
+JudgeRun = Callable[[BrainDeps, Any, list], Awaitable[Any]]
+
+
+async def _run_upsc_judge(deps: BrainDeps, state: ReportState, failed: list) -> JudgeOutput:
+    return await run_judge(
+        deps.llm,
+        deps.kit,
+        state.get("turns", []),
+        state.get("ledger", []),
+        state.get("language", ReportLanguage.en),
+        session_id=state["session_id"],
+        failed=failed,
+        max_tokens=deps.settings.judge_max_tokens,
+    )
+
+
+def _make_judge(max_attempts: int, run: JudgeRun = _run_upsc_judge) -> Callable:
     async def judge(state: ReportState, runtime: Runtime[BrainDeps]) -> dict[str, Any]:
         deps = runtime.context
         failed = state.get("failed") or []
         revisions = state.get("revisions", 0) + (1 if failed else 0)
         try:
-            draft = await run_judge(
-                deps.llm,
-                deps.kit,
-                state.get("turns", []),
-                state.get("ledger", []),
-                state.get("language", ReportLanguage.en),
-                session_id=state["session_id"],
-                failed=failed,
-                max_tokens=deps.settings.judge_max_tokens,
-            )
+            draft = await run(deps, state, failed)
             return {"draft": draft, "revisions": revisions}
         except Exception as exc:
             if _should_reraise(exc, runtime, max_attempts):
@@ -904,14 +913,38 @@ async def report(state: ReportState, runtime: Runtime[BrainDeps]) -> dict[str, A
 def build_report_graph(
     *, max_attempts: int = 3, initial_interval_s: float = 0.5, jitter: bool = True
 ) -> StateGraph:
-    g = StateGraph(ReportState, context_schema=BrainDeps)
+    return wire_report_graph(
+        ReportState,
+        run=_run_upsc_judge,
+        check=citation_check,
+        report_node=report,
+        max_attempts=max_attempts,
+        initial_interval_s=initial_interval_s,
+        jitter=jitter,
+    )
+
+
+def wire_report_graph(
+    state_schema: Any,
+    *,
+    run: JudgeRun,
+    check: Callable,
+    report_node: Callable,
+    max_attempts: int = 3,
+    initial_interval_s: float = 0.5,
+    jitter: bool = True,
+) -> StateGraph:
+    """The report graph's shape, shared by every mode: judge -> citation check -> (one
+    revision at most) -> report. A mode supplies its judge call, its citation check (which
+    quotes to verify) and its report assembly; the loop and its bound are the same."""
+    g = StateGraph(state_schema, context_schema=BrainDeps)
     g.add_node(
         "judge",
-        _make_judge(max_attempts),
+        _make_judge(max_attempts, run),
         retry_policy=retry_policy(max_attempts, initial_interval_s, jitter),
     )
-    g.add_node("citation_check", citation_check)
-    g.add_node("report", report)
+    g.add_node("citation_check", check)
+    g.add_node("report", report_node)
     g.add_edge(START, "judge")
     g.add_edge("judge", "citation_check")
     g.add_conditional_edges("citation_check", route_after_check, ["judge", "report"])

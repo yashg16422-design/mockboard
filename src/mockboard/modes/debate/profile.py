@@ -4,6 +4,7 @@ CTO_NOTES_04). Registered as a profile on the same engine (ADR-009)."""
 from __future__ import annotations
 
 from mockboard.brain.personas import PERSONA_DIR
+from mockboard.brain.schemas import DebateDimension
 from mockboard.brain.tools import DEBATE_LISTENER_TOOL, DebateListenerOutput
 from mockboard.modes.debate.listener import debate_listener_context
 from mockboard.modes.debate.session import DebateSessionHooks, DebateSetup
@@ -33,15 +34,9 @@ DEBATE_WORD_CAPS: dict[str, int] = {
     "interrupt": 25,
 }
 
-# The six rubric dimensions (CTO_NOTES_04 §4). No accent, grammar or fluency score.
-DEBATE_RUBRIC: tuple[str, ...] = (
-    "clarity_structure",
-    "evidence_use",
-    "rebuttal_quality",
-    "responsiveness",
-    "fairness_to_other_side",
-    "composure",
-)
+# The six rubric dimensions (CTO_NOTES_04 §4), in report order, from the schema's enum so the
+# judge tool, the report check and the profile cannot drift. No accent, grammar or fluency.
+DEBATE_RUBRIC: tuple[str, ...] = tuple(d.value for d in DebateDimension)
 
 DEBATE_PROFILE = register(
     ModeProfile(
