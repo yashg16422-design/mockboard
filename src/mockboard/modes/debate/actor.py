@@ -45,12 +45,17 @@ from mockboard.brain.schemas import (
     Persona,
 )
 from mockboard.modes.debate.guards import (
+    OPPONENT_OFF_LIMITS,
     RESTATE_MOVES,
     FigurePolicy,
+    content_words,
     has_concession,
     number_guard,
+    off_limits_category,
     off_limits_guard,
     restates_user,
+    sentence_allowed,
+    split_sentences,
 )
 from mockboard.modes.debate.motions import CaseArgument
 from mockboard.modes.debate.strategist import (
@@ -92,6 +97,10 @@ class DebateBrief:
     mix: str = "hi-en"
     user_question: str = ""  # D7: the question to answer first
     user_point: str = ""  # the user's best argument this turn (for templates)
+    # For the closing concession (ruling 29): what the user actually said and argued.
+    user_speech: tuple[str, ...] = ()  # the user's transcripts so far
+    user_arguments: tuple[str, ...] = ()  # the listener's claims for the user's arguments
+    user_case: tuple[CaseArgument, ...] = ()  # the case file for the USER's side (curated)
 
     @property
     def opponent_side(self) -> str:
@@ -147,8 +156,9 @@ _T: dict[str, dict[str, str]] = {
         "cross_warrant": "Yeh baat kyun sach hai? Aapka tark kya hai?",
         "closing": "Maanna padega ki {concession} Phir bhi, {claim} Isliye mera paksh wahi "
         "hai.",
-        "concession_answered": "'{claim}' par aapka jawab mazboot tha.",
-        "concession_generic": "aapne kuch baatein bahut achhi rakhi.",
+        "concession_user": "aapke is tark mein dum hai: {claim}.",
+        "concession_side": "aapke paksh ke is tark mein dum hai: {claim}.",
+        "concession_none": "aapke paksh mein bhi dum hai.",
         "steelman": "Ek sentence mein mere paksh ka sabse mazboot tark bataiye.",
         "redirect": "Chaliye, parties, netaon aur samoohon ko alag rakhte hain. Motion par "
         "wapas aaiye: {motion}",
@@ -169,8 +179,9 @@ _T: dict[str, dict[str, str]] = {
         "cross": "You have not answered this point: {claim} What is your answer?",
         "cross_warrant": "Why does that follow? What is your reason?",
         "closing": "I accept that {concession} Even so, {claim} So I stand by my side.",
-        "concession_answered": "your answer on '{claim}' was strong.",
-        "concession_generic": "you made some very good points.",
+        "concession_user": "there is real force in your argument that {claim}.",
+        "concession_side": "there is real force in the argument for your side that {claim}.",
+        "concession_none": "your side has a real case on this motion.",
         "steelman": "In one sentence, make the best case for my side.",
         "redirect": "Let's keep parties, personalities and groups out of this. Back to the "
         "motion: {motion}",
@@ -229,14 +240,73 @@ def move_template(move: BoardMove, brief: DebateBrief) -> str:
     return t["reassure"]
 
 
+_MIN_ARG_OVERLAP = 2
+_MAX_OWN_WORDS = 14
+
+
+def _hits(arg: CaseArgument, speech: str) -> int:
+    low = speech.lower()
+    return sum(1 for k in arg.keywords if k.lower() in low)
+
+
+def user_made_arguments(brief: DebateBrief) -> list[str]:
+    """Arguments the user really made, best first (ruling 29, CTO should-fix 7):
+
+    1. arguments from the USER's side of the curated case file that the user's own words
+       raise (two or more of its keywords, or two shared content words with its claim);
+       these are hand-written, reviewed and figure-free, so they are safe to say aloud;
+    2. otherwise the listener's claims for the user's arguments, if they carry no figure the
+       guard would drop and nothing off-limits, cut to a short phrase.
+    """
+    speech = " ".join(brief.user_speech)
+    spoken = content_words(speech)
+    ranked = sorted(
+        (
+            (max(_hits(a, speech), len(content_words(a.claim) & spoken)), -i, a.claim)
+            for i, a in enumerate(brief.user_case)
+        ),
+        reverse=True,
+    )
+    out = [claim for score, _, claim in ranked if score >= _MIN_ARG_OVERLAP]
+    for claim in brief.user_arguments:
+        words = claim.split()
+        if len(words) < 4 or not sentence_allowed(claim, brief.allowed):
+            continue
+        if off_limits_category(claim, OPPONENT_OFF_LIMITS):
+            continue
+        out.append(" ".join(words[:_MAX_OWN_WORDS]).rstrip(".,;:"))
+    return list(dict.fromkeys(out))
+
+
 def concession_text(brief: DebateBrief) -> str:
-    """The honest concession a closing statement makes: the user's answer on one of the
-    opponent's arguments they actually answered, else a generic one."""
-    t, d = _t(brief.mix), brief.debate
-    answered = [a for a in brief.case if a.id in d.answered_ids or a.id in d.conceded_ids]
-    if answered:
-        return t["concession_answered"].format(claim=answered[0].claim.rstrip("."))
-    return t["concession_generic"]
+    """The honest concession a closing statement makes. It names a real argument the user
+    made; it never praises ("your answer was strong" claims a judgement the listener never
+    made). With no identifiable argument it concedes the strongest point for the user's side
+    from the case file, attributed to the side, not to the user."""
+    t = _t(brief.mix)
+    made = user_made_arguments(brief)
+    if made:
+        return t["concession_user"].format(claim=_lc(made[0]).rstrip("."))
+    if brief.user_case:
+        return t["concession_side"].format(claim=_lc(brief.user_case[0].claim).rstrip("."))
+    return t["concession_none"]
+
+
+def concession_names_user_argument(text: str, brief: DebateBrief) -> bool:
+    """True when a sentence of the line that concedes something shares at least two content
+    words with one argument the user really made. With no identifiable argument, any honest
+    concession is accepted (there is nothing to name). UNVERIFIED: a word-overlap test, so a
+    paraphrase with different words is replaced by the template."""
+    made = user_made_arguments(brief)
+    conceding = [x for x in split_sentences(text) if has_concession(x)]
+    if not conceding:
+        return False
+    if not made:
+        return True
+    return any(
+        len(content_words(x) & content_words(arg)) >= _MIN_ARG_OVERLAP
+        for x in conceding for arg in made
+    )
 
 
 def closing_concession_sentence(brief: DebateBrief) -> str:
@@ -356,7 +426,7 @@ def apply_guards(
             text, dropped = off.text, dropped + off.dropped
             guards.append("off_limits_guard")
     concession_added = False
-    if move.move == Move.closing_statement and not has_concession(text):
+    if move.move == Move.closing_statement and not concession_names_user_argument(text, brief):
         lead = closing_concession_sentence(brief)
         room = max_words - count_words(lead)
         words = text.split()

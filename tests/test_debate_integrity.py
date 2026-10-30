@@ -193,3 +193,62 @@ def test_user_off_limits_gets_redirect_even_when_the_listener_misses_it(deps):
     fine = missed.model_copy(update={"arguments": [DebateArgument(
         claim="Mandir ke bahar ki chaat sabse achhi hoti hai", warrant="kyunki taaza hai")]})
     assert decide_debate_move(ctx, [fine], [], deps.mode("debate").strategy).move != Move.redirect
+
+
+# ---------------------------------------------------------------------------
+# The closing concession names a real argument the user made (ruling 29, should-fix 7)
+# ---------------------------------------------------------------------------
+
+
+def _brief(**kw):
+    from dataclasses import replace
+
+    from test_debate_actor import brief_for
+
+    m = MOTIONS["smartphones_in_schools"]
+    kw.setdefault("user_case", tuple(m.opponent_case(Side.against)))  # the FOR side's case
+    return replace(brief_for("smartphones_in_schools"), **kw)
+
+
+def test_concession_names_the_users_own_side_argument():
+    from mockboard.modes.debate.actor import concession_text, user_made_arguments
+
+    b = _brief(user_speech=("Cyberbullying aur social media ka harm school tak aata hai.",))
+    assert user_made_arguments(b)[0].startswith("A ban protects younger students")
+    assert concession_text(b).startswith("aapke is tark mein dum hai: a ban protects")
+
+
+def test_concession_falls_back_to_the_users_own_words_then_to_the_side():
+    from mockboard.modes.debate.actor import concession_text
+
+    own = _brief(user_speech=("Bachchon ko khelne ka samay chahiye.",),
+                 user_arguments=("Bachchon ko khelne ka zyada samay milna chahiye",),
+                 user_case=())
+    assert "khelne ka zyada samay" in concession_text(own)
+    figure = _brief(user_speech=("x",), user_arguments=("40 percent bachche addicted hain sach",),
+                    user_case=())
+    assert "40" not in concession_text(figure)  # the user's uncarded figure is never repeated
+    side = _brief(user_speech=("Kuch nahi.",))
+    assert concession_text(side).startswith("aapke paksh ke is tark mein dum hai")
+
+
+def test_no_concession_praises_the_user():
+    from mockboard.modes.debate.actor import _T
+
+    for mix in _T.values():
+        for key, text in mix.items():
+            if key.startswith("concession"):
+                for praise in ("strong", "mazboot", "very good", "achhi", "great"):
+                    assert praise not in text.lower(), (key, text)
+
+
+async def test_fake_debate_closing_names_a_user_argument(deps, tmp_path):
+    from conftest import answer
+    from test_debate_session import CLASH_PLAIN, CLASH_STRONG, CLOSING, OPENING, make_session
+
+    s = make_session(deps, tmp_path)
+    await s.open()
+    outs = [await answer(s, t) for t in (OPENING, CLASH_STRONG, CLASH_PLAIN, CLOSING)]
+    closing = outs[-1].line.text
+    assert closing.startswith("Maanna padega ki aapke is tark mein dum hai: phones in class "
+                              "pull attention away from learning.")

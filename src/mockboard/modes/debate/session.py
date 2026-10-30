@@ -94,6 +94,14 @@ class DebateSetup:
         )
 
     @property
+    def user_case(self) -> list[CaseArgument]:
+        """The case file for the USER's side (curated motions only): what the closing
+        concession may name when the user actually made that argument."""
+        if self.case is not None:
+            return []
+        return self.motion.opponent_case(self.user_side.other)
+
+    @property
     def mix(self) -> str:
         # UNVERIFIED: a Devanagari ("hi") debate falls back to Hinglish templates for now.
         return LANGUAGE_MIX.get(self.language, "hi-en")
@@ -244,7 +252,17 @@ class DebateSessionHooks:
     # -- one turn -------------------------------------------------------------
 
     def brief(self, analysis: Analysis, answer: str = "") -> DebateBrief:
+        turns = self.session.state.turns
+        speech = [t.transcript for t in turns if t.transcript]
+        if answer and answer not in speech:
+            speech.append(answer)
+        args = [
+            a.claim for t in turns if t.analysis is not None for a in t.analysis.arguments
+        ] + [a.claim for a in analysis.arguments]
         return DebateBrief(
+            user_speech=tuple(speech),
+            user_arguments=tuple(dict.fromkeys(args)),
+            user_case=tuple(self.setup.user_case),
             motion=self.setup.motion.text,
             user_side=self.setup.user_side.value,
             round=self.session.state.topic,

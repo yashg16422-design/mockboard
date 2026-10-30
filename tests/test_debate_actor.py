@@ -134,16 +134,28 @@ def test_restate_check_is_soft():
 
 
 def test_closing_without_a_concession_gets_one_inside_the_cap():
-    b = brief_for("smartphones_in_schools", answered_ids=["A2"])
+    # Ruling 29: the backstop names an argument the user really made (from the user's side
+    # of the case file), never "your answer was strong".
+    m = MOTIONS["smartphones_in_schools"]
+    from dataclasses import replace
+
+    b = replace(brief_for("smartphones_in_schools", answered_ids=["A2"]),
+                user_case=tuple(m.opponent_case(Side.against)),  # the FOR side's case
+                user_speech=("Notifications aur games dhyan bhatkate hain, attention nahi "
+                             "rehta.",))
     text = " ".join(["Phones are tools and bans never teach responsibility."] * 10)
     line = apply_guards(text, mv(Move.closing_statement, "A1"), b, last_answer="x",
                         max_words=60)
     assert line.concession_added and has_concession(line.text)
-    assert line.text.startswith("Maanna padega ki 'Parents need to reach children")
-    assert len(line.text.split()) <= 60
-    ok = apply_guards("Fair point on safety. But phones are tools.",
-                      mv(Move.closing_statement), b, last_answer="x", max_words=60)
-    assert not ok.concession_added
+    assert line.text.startswith("Maanna padega ki aapke is tark mein dum hai: phones in class "
+                                "pull attention away from learning.")
+    assert "mazboot tha" not in line.text and len(line.text.split()) <= 60
+    named = apply_guards("Fair point that phones pull attention away in class. But phones are "
+                         "tools.", mv(Move.closing_statement), b, last_answer="x", max_words=60)
+    assert not named.concession_added
+    vague = apply_guards("Fair point on safety. But phones are tools.",
+                         mv(Move.closing_statement), b, last_answer="x", max_words=60)
+    assert vague.concession_added  # concedes, but names nothing the user argued
 
 
 def test_over_long_lines_are_capped_and_restate_is_logged():
