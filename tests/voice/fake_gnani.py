@@ -3,9 +3,11 @@
 No real Gnani logs exist yet (the owner's probe runs come later), so every message below is
 copied from Gnani's docs, fetched Oct 25 and re-checked Oct 30, 2026:
 
-* Prisma: https://docs.gnani.ai/api/STT/stt-websocket.md  (connected / processing /
-  transcript / error / settings_updated; 1,024-byte binary frames; close 1008 for a bad
-  header and 1001 at the 15-minute cap)
+* Prisma: https://docs.gnani.ai/api/STT/stt-websocket.md  (connected / speech_start /
+  processing / transcript / error / settings_updated; 1,024-byte binary frames; the
+  `{"type": "commit"}` control frame; close 1008 for a bad header and 1001 at the 15-minute
+  cap). What `commit` does with no utterance open is undocumented, so the fake can answer it
+  in each of the three plausible ways (`commit_noop_reply`).
 * Timbre: https://docs.gnani.ai/api/TTS/tts-websocket.md  (start / audio / complete / error)
 
 Each server listens on 127.0.0.1 on a free port and records what the client sent (headers,
@@ -41,6 +43,10 @@ def prisma_connected(sample_rate: int = 16000) -> dict[str, Any]:
         "timestamp": TS,
         "config": {"sample_rate": sample_rate, "chunk_size": 512},
     }
+
+
+def prisma_speech_start(index: int) -> dict[str, Any]:
+    return {"type": "speech_start", "timestamp": TS, "utterance_id": f"utt-{index}"}
 
 
 def prisma_processing() -> dict[str, Any]:
@@ -91,6 +97,10 @@ class PrismaConn:
     headers: dict[str, str]
     frames: list[tuple[float, int]] = field(default_factory=list)  # (monotonic, bytes)
     texts: list[dict[str, Any]] = field(default_factory=list)
+    # For each commit received: how many audio frames had arrived before it.
+    commit_after_frames: list[int] = field(default_factory=list)
+    open_frames: int = 0  # frames of the utterance still open (since the last segment end)
+    segments: int = 0
     ws: ServerConnection | None = None
     closed: asyncio.Event = field(default_factory=asyncio.Event)
 
@@ -107,7 +117,10 @@ class FakePrisma:
     """A fake Prisma streaming endpoint.
 
     By default, every `segment_frames` binary frames it sends `processing`, waits
-    `transcript_delay_s`, then sends a `transcript` naming the segment. `on_connect` can
+    `transcript_delay_s`, then sends a `transcript` naming the segment. The first frame of an
+    utterance gets a `speech_start` (unless `send_speech_start` is off). A `commit` closes the
+    open utterance at once ("committed <n>"); with nothing open it does `commit_noop_reply`:
+    "none" (nothing), "empty" (processing + an empty transcript) or "error". `on_connect` can
     refuse a connection (error + close 1008), and tests can push messages or close a socket
     at any moment through `send` / `close`."""
 
@@ -119,7 +132,13 @@ class FakePrisma:
         refuse_with_1008: bool = False,
         reply_settings_updated: bool = True,
         reject_http_status: int | None = None,
+        send_speech_start: bool = True,
+        commit_noop_reply: str = "none",
+        connected_extra: dict[str, Any] | None = None,
     ):
+        self.send_speech_start = send_speech_start
+        self.commit_noop_reply = commit_noop_reply
+        self.connected_extra = connected_extra or {}
         self.reject_http_status = reject_http_status
         self.http_rejections = 0
         self.segment_frames = segment_frames
@@ -180,18 +199,31 @@ class FakePrisma:
                 await ws.send(json.dumps(prisma_error("Invalid lang_code")))
                 await ws.close(code=1008, reason="Invalid lang_code")
                 return
-            await ws.send(json.dumps(prisma_connected()))
-            segment = 0
+            await ws.send(json.dumps({**prisma_connected(), **self.connected_extra}))
             async for msg in ws:
                 if isinstance(msg, bytes):
                     conn.frames.append((time.monotonic(), len(msg)))
-                    n = len(conn.frames)
-                    if self.segment_frames and n % self.segment_frames == 0:
-                        segment += 1
-                        self._spawn(self._segment(conn, segment))
+                    if conn.open_frames == 0 and self.send_speech_start:
+                        await ws.send(json.dumps(prisma_speech_start(conn.segments + 1)))
+                    conn.open_frames += 1
+                    if self.segment_frames and conn.open_frames >= self.segment_frames:
+                        conn.open_frames = 0
+                        conn.segments += 1
+                        self._spawn(self._segment(conn, conn.segments))
                 else:
                     obj = json.loads(msg)
                     conn.texts.append(obj)
+                    if obj.get("type") == "commit":
+                        conn.commit_after_frames.append(len(conn.frames))
+                        if conn.open_frames > 0:
+                            conn.open_frames = 0
+                            conn.segments += 1
+                            self._spawn(self._segment(conn, conn.segments, "committed"))
+                        elif self.commit_noop_reply == "empty":
+                            conn.segments += 1
+                            self._spawn(self._segment(conn, conn.segments, ""))
+                        elif self.commit_noop_reply == "error":
+                            await ws.send(json.dumps(prisma_error("No open utterance")))
                     if obj.get("type") == "update_settings" and self.reply_settings_updated:
                         bias = obj.get("bias", {})
                         await ws.send(
@@ -206,12 +238,13 @@ class FakePrisma:
         finally:
             conn.closed.set()
 
-    async def _segment(self, conn: PrismaConn, index: int) -> None:
+    async def _segment(self, conn: PrismaConn, index: int, word: str = "segment") -> None:
         assert conn.ws is not None
+        text = f"{word} {index}" if word else ""
         with contextlib.suppress(Exception):
             await conn.ws.send(json.dumps(prisma_processing()))
             await asyncio.sleep(self.transcript_delay_s)
-            await conn.ws.send(json.dumps(prisma_transcript(f"segment {index}", index)))
+            await conn.ws.send(json.dumps(prisma_transcript(text, index)))
 
     def _spawn(self, coro) -> None:
         task = asyncio.create_task(coro)

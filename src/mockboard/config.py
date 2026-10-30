@@ -32,6 +32,32 @@ class Settings(BaseSettings):
     stt_sample_rate: int = 16000
     stt_format: str = "verbatim"
     stt_max_speech_s: float = 15.0
+    # Ruling 27: Prisma model. `prisma-v2.5` is the default and the model the contest names;
+    # `prisma-v3.0` is allowed for an A/B on the owner's clips (CTO_NOTES_05 §4 suggests
+    # STT_LANG_CODE=hi-IN,en-IN with STT_FORMAT=codemix for that arm). The submission names
+    # whichever ships. The server silently ignores unknown values, so we validate here.
+    stt_model: str = Field(default="prisma-v2.5", pattern=r"^prisma-v(2\.5|3\.0)$")
+    # Prisma's own VAD (headers, fixed per connection). UNVERIFIED: these are Gnani's
+    # documented defaults, sent explicitly so the trace shows them; probes P2/P3 set them.
+    stt_vad_threshold: float | None = Field(default=0.7, ge=0, le=1)
+    stt_min_silence_ms: int | None = Field(default=500, ge=100, le=2000)
+    stt_min_speech_ms: int | None = Field(default=100, ge=50, le=2000)
+    stt_min_segment_ms: int | None = Field(default=120, ge=100, le=1000)
+    # Ruling 30 / CTO_NOTES_05 should-fix 2: the docs close a session after 60 s with no
+    # detected speech; a candidate thinking or a long board turn can hit that. 300 s is our
+    # choice (documented range 5-900). UNVERIFIED: whether board audio echo counts as speech.
+    stt_idle_timeout_s: int = Field(default=300, ge=5, le=900)
+    # Per-topic context for Prisma v3.0 (`keyterms`, `topic`); ignored on v2.5, where the
+    # docs offer only single-word boosting, which stays off unless STT_BIAS_SCORE > 0
+    # (probe rule P6: do not rely on boosting until `settings_updated` is seen).
+    stt_context_enabled: bool = True
+    stt_bias_score: float = Field(default=0.0, ge=0, le=2)
+    # Ruling 28/31: after Smart Turn ends the user's turn the voice loop sends `commit` and
+    # waits at most this long for the transcripts it closes. UNVERIFIED until probe P2.
+    stt_commit_wait_ms: int = Field(default=1500, gt=0)
+    # CTO_NOTES_05 §4.4: what `commit` does with no utterance open is undocumented; if no
+    # `processing` follows within this window, nothing was open. UNVERIFIED.
+    stt_commit_noop_ms: int = Field(default=300, gt=0)
     tts_model: str = "timbre-v2.5"
     # Ruling 8: Timbre language for the board's voice; Hinglish by default. Ruling 25: the value
     # must be one that BOTH gnani-vachana 0.7.9 (SUPPORTED_TTS_LANGUAGES in gnani/tts/client.py:
@@ -43,6 +69,40 @@ class Settings(BaseSettings):
     # with "hi-en", which only the timbre probe can send); the owner decides by ear.
     tts_language: str = "auto"
     tts_sample_rate: int = 16000
+    # The board's single Timbre voice for the local voice app (persona voice ids are still
+    # placeholders until the owner picks them by ear, CTO_NOTES_03 T4).
+    tts_voice: str = "Poorvi"
+    # Ruling 30 (CTO_NOTES_05 should-fix 5): if a Timbre request gives no audio within this
+    # time, reconnect and resend once, then show the line as text only. UNVERIFIED (T1/T2).
+    tts_first_byte_timeout_s: float = Field(default=3.0, gt=0)
+    # Ruling 30 (CTO_NOTES_05 must-fix 4): one Timbre request at a time; the next sentence
+    # waits at most this long for the previous request's `complete`. UNVERIFIED.
+    tts_request_timeout_s: float = Field(default=20.0, gt=0)
+
+    # --- Voice loop turn-taking (V3/V4; Pipecat 1.5.0 Silero + Smart Turn v3) ---
+    # Silero VAD (Pipecat's VADParams defaults; Pipecat recommends stop 0.2 s with Smart Turn).
+    voice_vad_confidence: float = Field(default=0.7, ge=0, le=1)
+    voice_vad_start_secs: float = Field(default=0.2, gt=0)
+    voice_vad_stop_secs: float = Field(default=0.2, gt=0)
+    voice_vad_min_volume: float = Field(default=0.6, ge=0, le=1)
+    # Smart Turn v3's silence fallback (Pipecat default 3 s) and Pipecat's user-turn stop
+    # timeout (default 5 s). UNVERIFIED on Hinglish: decided from the false cut-in rate (V9).
+    voice_smart_turn_stop_secs: float = Field(default=3.0, gt=0)
+    voice_user_turn_stop_timeout_s: float = Field(default=5.0, gt=0)
+    # Long turns (a debate opening or closing statement, `session.expects_long_turn`): a
+    # pause must also last this long after Smart Turn says "complete", and the silence
+    # fallbacks are longer. UNVERIFIED: our choice, CTO_NOTES_04 §7.
+    voice_long_turn_extra_pause_s: float = Field(default=1.2, ge=0)
+    voice_long_turn_smart_turn_stop_secs: float = Field(default=5.0, gt=0)
+    voice_long_turn_stop_timeout_s: float = Field(default=8.0, gt=0)
+    # Barge-in (V4): while the board is audibly speaking, the candidate's speech must last
+    # this long (after Silero's own start delay) before it counts, so coughs do not cut the
+    # board off. Before the board's first audio, resumed speech reopens the turn after the
+    # shorter threshold (ruling 31). UNVERIFIED: both are our choice until live runs.
+    voice_barge_in_min_speech_ms: int = Field(default=500, ge=0)
+    voice_resume_min_speech_ms: int = Field(default=150, ge=0)
+    # A hard stop per voice session, under Prisma's 15-minute cap (CTO_NOTES_03 V6).
+    voice_session_max_s: float = Field(default=600.0, gt=0)
 
     # --- AWS Bedrock / Nova Pro ---
     aws_region: str = "ap-southeast-2"

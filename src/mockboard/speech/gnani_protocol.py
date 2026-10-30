@@ -4,8 +4,10 @@ Moved here from `probes/gnani_ws.py` for voice chunk V2 (ruling 24), so the app'
 service (`mockboard.speech.prisma_stt`) and the day-1 probes use one tested copy. The probes
 re-export everything from this module, so `python -m probes.selftest` still exercises it.
 
-Every header name, message shape and framing rule below was copied from Gnani's docs,
-fetched on Oct 25, 2026 (the TTS language list was re-checked on Oct 30, 2026):
+Every header name, message shape and framing rule below was copied from Gnani's docs. The
+STT page was re-read on Oct 30, 2026 for ruling 27 (current header names, `model`, `keyterms`,
+`topic`, `x-idle-timeout-sec`, the `commit` control frame); the TTS pages were fetched on
+Oct 25, 2026 (the TTS language list re-checked on Oct 30):
 
 * STT (Prisma) WebSocket: https://docs.gnani.ai/api/STT/stt-websocket.md
 * TTS (Timbre) WebSocket: https://docs.gnani.ai/api/TTS/tts-websocket.md
@@ -29,11 +31,15 @@ from mockboard.config import Settings
 
 __all__ = [
     "BIAS_SCORES",
+    "COMMIT_FRAME",
     "FRAME_BYTES",
+    "IDLE_TIMEOUT_LIMITS",
     "KNOWN_STT_TYPES",
     "MAX_BIAS_WORDS",
+    "MAX_KEYTERMS",
     "SAMPLES_PER_FRAME",
     "STT_FORMATS",
+    "STT_MODELS",
     "STT_SAMPLE_RATES",
     "TIMBRE_V25_VOICES",
     "TIMBRE_V30_VOICES",
@@ -41,6 +47,7 @@ __all__ = [
     "TTS_LANGUAGES",
     "TTS_MODELS",
     "TTS_SAMPLE_RATES",
+    "V3_ONLY_FORMATS",
     "VAD_LIMITS",
     "FrameBuffer",
     "STTConfig",
@@ -58,12 +65,14 @@ __all__ = [
     "parse_tts_ws_message",
     "redact_headers",
     "strip_wav_header",
+    "update_keyterms_frame",
     "update_settings_frame",
     "validate_bias_words",
+    "validate_keyterms",
 ]
 
 # ---------------------------------------------------------------------------
-# STT (Prisma v2.5) WebSocket
+# STT (Prisma) WebSocket
 # ---------------------------------------------------------------------------
 
 # Docs: "Each binary frame is exactly 1,024 bytes (512 samples)". The `connected` message
@@ -72,9 +81,20 @@ FRAME_BYTES = 1024
 SAMPLES_PER_FRAME = FRAME_BYTES // 2  # s16le mono => 2 bytes per sample
 
 STT_SAMPLE_RATES = (8000, 16000, 44100, 48000)
-STT_FORMATS = ("verbatim", "transcribe")
+# Docs (Oct 30, 2026): `model` is `prisma-v2.5` (the default when omitted, and the model the
+# contest names) or `prisma-v3.0`. Any other value is silently ignored by the server, so we
+# refuse it here instead.
+STT_MODELS = ("prisma-v2.5", "prisma-v3.0")
+STT_FORMATS = ("verbatim", "transcribe", "codemix", "transliterate")
+V3_ONLY_FORMATS = ("codemix", "transliterate")
 BIAS_SCORES = (0.0, 0.5, 1.0, 1.5, 2.0)
 MAX_BIAS_WORDS = 100
+MAX_KEYTERMS = 200  # docs: "Up to 200 words or phrases" (Prisma v3.0)
+IDLE_TIMEOUT_LIMITS = (5, 900)  # docs: x-idle-timeout-sec, default 60, "clamped" outside
+
+# Docs: `{"type": "commit"}` "closes the open utterance immediately rather than waiting for
+# silence. Works on all models." What it does with no utterance open is not documented.
+COMMIT_FRAME = '{"type": "commit"}'
 
 # Documented VAD header ranges (all fixed per connection).
 VAD_LIMITS: dict[str, tuple[float, float]] = {
@@ -93,19 +113,34 @@ def frame_duration_s(sample_rate: int) -> float:
 
 @dataclass
 class STTConfig:
-    """Everything Prisma takes at connection time. Built from `Settings` by default."""
+    """Everything Prisma takes at connection time. Built from `Settings` by default.
+
+    Field names are ours; `build_stt_headers` maps them to Gnani's current header names
+    (`lang_code` -> `language_code`, `fmt` -> `format`, ...)."""
 
     lang_code: str = "en-IN"
     sample_rate: int = 16000
     fmt: str = "verbatim"
+    model: str = "prisma-v2.5"
     max_speech_s: float | None = 15.0
     vad_threshold: float | None = None
     min_silence_ms: int | None = None
     min_speech_ms: int | None = None
     min_segment_ms: int | None = None
+    idle_timeout_s: int | None = None
     partials: bool = False
+    # Word boosting, Prisma v2.5: single letter-only words plus a score (docs: "Requires
+    # bias_score"; an omitted score disables boosting).
     bias_list: list[str] = field(default_factory=list)
     bias_score: float | None = None
+    # Context, Prisma v3.0 only (docs): words or phrases to favour, and a free-text topic.
+    # Fixed for the connection; v3.0 keyterms change mid-session through `update_settings`.
+    keyterms: list[str] = field(default_factory=list)
+    topic: str | None = None
+
+    @property
+    def is_v3(self) -> bool:
+        return self.model == "prisma-v3.0"
 
     @classmethod
     def from_settings(cls, s: Settings, **overrides: Any) -> STTConfig:
@@ -113,7 +148,13 @@ class STTConfig:
             lang_code=s.stt_lang_code,
             sample_rate=s.stt_sample_rate,
             fmt=s.stt_format,
+            model=s.stt_model,
             max_speech_s=s.stt_max_speech_s,
+            vad_threshold=s.stt_vad_threshold,
+            min_silence_ms=s.stt_min_silence_ms,
+            min_speech_ms=s.stt_min_speech_ms,
+            min_segment_ms=s.stt_min_segment_ms,
+            idle_timeout_s=s.stt_idle_timeout_s,
             partials=s.feature_prisma_partials,
         )
         for k, v in overrides.items():
@@ -141,21 +182,47 @@ def validate_bias_words(words: list[str]) -> list[str]:
     return words
 
 
+def validate_keyterms(terms: list[str]) -> list[str]:
+    """Prisma v3.0 keyterms: up to 200 words or phrases (docs). Invalid values are ignored by
+    the server, so we clean and check here: strip, drop empties and duplicates (keeping the
+    first spelling), refuse more than 200."""
+    out: list[str] = []
+    seen: set[str] = set()
+    for term in terms:
+        t = " ".join(str(term).split())
+        if t and t.lower() not in seen:
+            seen.add(t.lower())
+            out.append(t)
+    if len(out) > MAX_KEYTERMS:
+        raise ValueError(f"{len(out)} keyterms; the documented limit is {MAX_KEYTERMS}")
+    return out
+
+
 def build_stt_headers(cfg: STTConfig, key: str) -> dict[str, str]:
     """WebSocket upgrade headers for wss://api.vachana.ai/stt/v3/stream.
 
-    Header names are written exactly as in the docs: `lang_code` uses an underscore while
-    the others use hyphens. All values are strings because they travel as HTTP headers.
+    Current names from the docs (ruling 27): `language_code` (required), `format`, `model`,
+    `bias_list`/`bias_score` (v2.5), `keyterms`/`topic` (v3.0), `x-idle-timeout-sec`, plus the
+    unchanged `x-sample-rate` and VAD headers. The docs say the older spellings (`lang_code`,
+    `x-format`, ...) are still accepted and that the newer one wins; we send only the new.
+    `x-api-request-id` is added per connection by the caller. All values are strings.
     """
     if cfg.sample_rate not in STT_SAMPLE_RATES:
         raise ValueError(f"x-sample-rate must be one of {STT_SAMPLE_RATES}")
+    if cfg.model not in STT_MODELS:
+        raise ValueError(f"model must be one of {STT_MODELS} (the server ignores others)")
     if cfg.fmt not in STT_FORMATS:
-        raise ValueError(f"x-format must be one of {STT_FORMATS}")
+        raise ValueError(f"format must be one of {STT_FORMATS}")
+    if cfg.fmt in V3_ONLY_FORMATS and not cfg.is_v3:
+        raise ValueError(f"format={cfg.fmt} needs model=prisma-v3.0 (docs)")
+    if "," in cfg.lang_code and not cfg.is_v3:
+        raise ValueError("a language_code list (e.g. 'hi-IN,en-IN') needs model=prisma-v3.0")
     h: dict[str, str] = {
         "x-api-key-id": key,
-        "lang_code": cfg.lang_code,
+        "language_code": cfg.lang_code,
         "x-sample-rate": str(cfg.sample_rate),
-        "x-format": cfg.fmt,
+        "format": cfg.fmt,
+        "model": cfg.model,
     }
     optional = {
         "x-vad-threshold": cfg.vad_threshold,
@@ -169,11 +236,28 @@ def build_stt_headers(cfg: STTConfig, key: str) -> dict[str, str]:
             continue
         _check_range(name, float(value))
         h[name] = f"{value:g}" if isinstance(value, float) else str(value)
+    if cfg.idle_timeout_s is not None:
+        lo, hi = IDLE_TIMEOUT_LIMITS
+        if not lo <= cfg.idle_timeout_s <= hi:
+            raise ValueError(f"x-idle-timeout-sec must be {lo}-{hi} (docs)")
+        h["x-idle-timeout-sec"] = str(int(cfg.idle_timeout_s))
     if cfg.bias_list:
+        if cfg.is_v3:
+            raise ValueError("on prisma-v3.0 use keyterms, not bias_list (docs)")
         validate_bias_words(cfg.bias_list)
-        h["x-bias-list"] = json.dumps(cfg.bias_list, ensure_ascii=False)
-        if cfg.bias_score is not None:
-            h["x-bias-score"] = _bias_score_str(cfg.bias_score)
+        if cfg.bias_score is None or cfg.bias_score == 0.0:
+            # Docs: bias_list "Requires bias_score"; 0.0 or omitted disables boosting.
+            raise ValueError("bias_list needs a non-zero bias_score on prisma-v2.5 (docs)")
+        h["bias_list"] = json.dumps(cfg.bias_list, ensure_ascii=False)
+        h["bias_score"] = _bias_score_str(cfg.bias_score)
+    if cfg.is_v3:
+        # Docs: keyterms, topic are "Prisma v3.0 only"; on v2.5 they are simply not sent.
+        terms = validate_keyterms(cfg.keyterms)
+        if terms:
+            h["keyterms"] = json.dumps(terms, ensure_ascii=False)
+        if cfg.topic and cfg.topic.strip():
+            # UNVERIFIED: the docs give no length limit; HTTP headers must be one line.
+            h["topic"] = " ".join(cfg.topic.split())[:500]
     if cfg.partials:
         # UNVERIFIED: `x-partials` appears once in the docs ("If `x-partials` is on, they
         # also apply to `partial_transcript` results") and is otherwise undocumented. The
@@ -181,6 +265,9 @@ def build_stt_headers(cfg: STTConfig, key: str) -> dict[str, str]:
         h["x-partials"] = "true"
     # UNVERIFIED: the docs do not say whether header names are case-sensitive. HTTP header
     # names are case-insensitive by spec, so lower-case should be safe.
+    # UNVERIFIED: non-ASCII (Devanagari) keyterms in a header; websockets sends UTF-8, but
+    # `json.dumps(ensure_ascii=False)` keeps them raw. The docs suggest `\u` escapes in a
+    # JSON array for update_settings; headers with Devanagari are untested.
     return h
 
 
@@ -195,7 +282,7 @@ def update_settings_frame(
     bias_score: float | None = None,
     substitution: dict[str, Any] | None = None,
 ) -> str:
-    """JSON text frame that changes word boosting / substitution mid-session.
+    """JSON text frame that changes word boosting / substitution mid-session (v2.5 words).
 
     Docs example: {"type": "update_settings", "bias": {"list": ["Vachana", "EMI"], "score": 1.5}}
     Omitted keys keep their current values; changes apply from the next speech segment;
@@ -215,6 +302,15 @@ def update_settings_frame(
             raise ValueError("substitution map is limited to 10 rules")
         msg["substitution"] = substitution
     return json.dumps(msg, ensure_ascii=False)
+
+
+def update_keyterms_frame(terms: list[str]) -> str:
+    """Prisma v3.0: change the keyterms mid-session. Docs: "On v3.0, keyterms are changed
+    through the `bias` key" of `update_settings`; `[]` disables them. No score on v3.0."""
+    return json.dumps(
+        {"type": "update_settings", "bias": {"list": validate_keyterms(terms)}},
+        ensure_ascii=False,
+    )
 
 
 def iter_frames(pcm: bytes) -> Iterator[bytes]:
@@ -294,9 +390,10 @@ class STTMessage:
     def is_partial(self) -> bool:
         """True for anything that looks like an interim result.
 
-        # UNVERIFIED: the docs name a `partial_transcript` result but never define it, and
-        # define no `is_final` field. Pipecat's Gnani service treats `is_final: false` as
-        # interim, so we accept either signal, plus any type containing "partial"/"interim".
+        # UNVERIFIED: the docs name a `partial_transcript` result but never define it; since
+        # Oct 30, 2026 they say `is_final` is "always `true`" on transcripts. Pipecat's Gnani
+        # service treats `is_final: false` as interim, so we accept either signal, plus any
+        # type containing "partial"/"interim".
         """
         t = self.type.lower()
         return (
@@ -307,7 +404,9 @@ class STTMessage:
         )
 
 
-KNOWN_STT_TYPES = {"connected", "processing", "transcript", "error", "settings_updated"}
+KNOWN_STT_TYPES = {
+    "connected", "speech_start", "processing", "transcript", "error", "settings_updated",
+}
 
 
 def parse_stt_message(data: str | bytes, arrived: float | None = None) -> STTMessage:
@@ -324,9 +423,9 @@ def parse_stt_message(data: str | bytes, arrived: float | None = None) -> STTMes
     return STTMessage(str(obj.get("type", "untyped")), obj, arrived)
 
 
-# UNVERIFIED: the docs do not define an end-of-audio signal (no EOF message, no empty
-# frame). The probe sends ~1.5 s of trailing silence so server VAD closes the last
-# segment, waits for the final transcript, then closes the socket normally.
+# The probe ends a clip with ~1.5 s of trailing silence so server VAD closes the last
+# segment, waits for the final transcript, then closes the socket normally. (Since Oct 30,
+# 2026 the docs also offer `COMMIT_FRAME`; the voice loop uses that at end of turn.)
 TRAILING_SILENCE_S = 1.5
 
 

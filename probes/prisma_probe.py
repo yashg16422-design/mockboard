@@ -227,13 +227,13 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--resample", action="store_true", help="convert other rates/stereo instead of rejecting"
     )
-    p.add_argument("--lang", default=None, help="lang_code header (default from settings, en-IN)")
+    p.add_argument("--lang", default=None, help="language_code header (default from settings, en-IN)")
     p.add_argument(
         "--format",
         dest="fmt",
         choices=g.STT_FORMATS,
         default=None,
-        help="x-format (default verbatim)",
+        help="format header (default verbatim; codemix/transliterate need prisma-v3.0)",
     )
     p.add_argument("--vad-threshold", type=float, default=None)
     p.add_argument("--min-silence-ms", type=int, default=None)

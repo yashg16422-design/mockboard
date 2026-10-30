@@ -66,12 +66,14 @@ def _() -> None:
     s = g.Settings(_env_file=None)
     h = g.build_stt_headers(g.STTConfig.from_settings(s), "KEY")
     assert h["x-api-key-id"] == "KEY"
-    assert h["lang_code"] == s.stt_lang_code and h["x-sample-rate"] == str(s.stt_sample_rate)
-    assert h["x-format"] == s.stt_format and float(h["x-max-speech-s"]) == s.stt_max_speech_s
+    assert h["language_code"] == s.stt_lang_code and h["x-sample-rate"] == str(s.stt_sample_rate)
+    assert h["format"] == s.stt_format and float(h["x-max-speech-s"]) == s.stt_max_speech_s
+    assert h["model"] == s.stt_model and h["x-idle-timeout-sec"] == str(s.stt_idle_timeout_s)
     assert ("x-partials" in h) == s.feature_prisma_partials
     assert g.redact_headers(h)["x-api-key-id"] == "***"
     h2 = g.build_stt_headers(g.STTConfig(), "KEY")
-    assert h2["lang_code"] == "en-IN" and h2["x-max-speech-s"] == "15" and "x-partials" not in h2
+    assert h2["language_code"] == "en-IN" and h2["x-max-speech-s"] == "15"
+    assert "x-partials" not in h2
 
 
 @check("stt headers: VAD values, partials and bias list")
@@ -91,7 +93,7 @@ def _() -> None:
     assert h["x-vad-threshold"] == "0.5" and h["x-min-silence-ms"] == "700"
     assert h["x-min-speech-ms"] == "100" and h["x-min-segment-ms"] == "120"
     assert h["x-partials"] == "true"
-    assert json.loads(h["x-bias-list"]) == ["UPSC", "Naxalism"] and h["x-bias-score"] == "1.5"
+    assert json.loads(h["bias_list"]) == ["UPSC", "Naxalism"] and h["bias_score"] == "1.5"
 
 
 @check("stt headers: out-of-range VAD and bad bias words are rejected")
@@ -170,7 +172,7 @@ async def _fake_prisma(ws) -> None:
     Emits one segment per ~0.25 s of received audio, plus a fake partial if the client
     sent x-partials, and answers update_settings with settings_updated."""
     hdr = ws.request.headers
-    assert hdr["x-api-key-id"] == "TESTKEY" and hdr["lang_code"] == "en-IN"
+    assert hdr["x-api-key-id"] == "TESTKEY" and hdr["language_code"] == "en-IN"
     partials = hdr.get("x-partials") == "true"
     await ws.send(
         json.dumps(

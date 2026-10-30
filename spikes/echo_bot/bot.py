@@ -70,7 +70,7 @@ AUDIO_BURST_GAP_S = 0.25  # an audio frame after this much quiet on a hop starts
 
 @dataclass
 class EchoConfig:
-    api_key: str = ""
+    api_key: str = field(default="", repr=False)  # never in a repr or log (CTO_NOTES_05 s-f 11)
     stt_language: str = "en-IN"
     stt_format: str = "verbatim"
     tts_voice: str = "Poorvi"
