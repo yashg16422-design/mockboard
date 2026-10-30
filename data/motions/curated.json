@@ -1,6 +1,6 @@
 {
  "description": "The 13 curated debate motions of CTO_NOTES_04 §5, each with a hand-written case file for both sides (the board argues the side the user does not pick). Arguments are qualitative: no statistics or numbers. Only motions 5 and 6 list card_topics (the existing tourism and internal_security cards, SYNTHETIC TEST CARDS until the owner replaces them with real, sourced cards; data/cards/README.md). No argument links a card (card_ids removed by ruling 29): the owner must confirm that each real card supports the argument it is attached to before any link is added back. Arguments are listed strongest first. Keywords are for the offline fake listener and the restate check only.",
- "reviewed": "Written by the debate builder on Oct 29, 2026; the orchestrator reviewed the 13 motion texts in ruling 21. The case files themselves await the owner's review.",
+ "reviewed": "Written by the debate builder on Oct 29, 2026; the orchestrator reviewed the 13 motion texts in ruling 21. The case files await the owner's review. Re-read by the debate builder on Oct 30, 2026 (ruling 29): no figures, statistics or sources, and no party, religion, caste or communal framing; four universal claims softened (motion 2 F2, motion 7 F1 and F3, motion 12 A1).",
  "motions": [
   {
    "number": 1,
@@ -145,7 +145,7 @@
      },
      {
       "id": "F2",
-      "claim": "Continuous assessment rewards understanding over rote memorisation.",
+      "claim": "Continuous assessment can reward understanding over rote memorisation.",
       "warrant": "Projects, presentations and regular tests check whether students can apply ideas, not just recall them.",
       "keywords": [
        "rote",
@@ -630,7 +630,7 @@
     "for": [
      {
       "id": "F1",
-      "claim": "A metro moves far more people in the same space.",
+      "claim": "A metro can move many more people in the same road space.",
       "warrant": "Roads fill up again as cities grow, while rail carries crowds without widening streets.",
       "keywords": [
        "capacity",
@@ -656,7 +656,7 @@
      {
       "id": "F3",
       "claim": "Public transport is cleaner and fairer.",
-      "warrant": "It cuts pollution and serves people who cannot afford a car.",
+      "warrant": "It can cut pollution, and it serves people who cannot afford a car.",
       "keywords": [
        "pollution",
        "clean",
@@ -1118,7 +1118,7 @@
     "against": [
      {
       "id": "A1",
-      "claim": "Masala chai is made in almost every home and on every street corner.",
+      "claim": "Masala chai is made in homes and at street stalls across the country.",
       "warrant": "Its reach makes it a shared ritual across regions and seasons.",
       "keywords": [
        "everywhere",
