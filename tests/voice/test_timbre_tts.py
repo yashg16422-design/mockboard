@@ -185,3 +185,77 @@ async def test_a_socket_timbre_closed_while_idle_is_replaced_before_the_next_lin
     assert [r["text"] for c in server.conns for r in c.requests] == ["Pehli line.", "Doosri line."]
     assert tts.idle_reconnects == 1
     assert not h.errors
+
+
+# --------------------------------------------------------------------------- ruling 30
+
+
+async def test_requests_are_serialised_one_at_a_time(timbre):
+    from mockboard.voice.lines import PlaybackLedger
+
+    ledger = PlaybackLedger()
+    tts = make_tts(ledger=ledger)
+    async with Harness(tts) as h:
+        await h.queue(TTSSpeakFrame("Pehla vaakya.", append_to_context=False))
+        await h.queue(TTSSpeakFrame("Doosra vaakya?", append_to_context=False))
+        await h.wait_until(lambda: len(h.collector.of_type(TTSAudioRawFrame)) >= 40, timeout=6)
+
+    conn = timbre.conns[0]
+    assert [r["text"] for r in conn.requests] == ["Pehla vaakya.", "Doosra vaakya?"]
+    # Timbre's docs: "Send one synthesis request at a time" (CTO_NOTES_05 M4).
+    assert conn.request_times[1] >= conn.finished_times[0]
+    assert tts.serialise_waits == 1
+    assert [u.text for u in ledger.units] == ["Pehla vaakya.", "Doosra vaakya?"]
+    assert all(u.done_at and not u.failed for u in ledger.units)
+    assert [round(u.audio_ms) for u in ledger.units] == [1000, 1000]  # 20 x 1,600 bytes
+
+
+async def test_a_barge_in_between_two_sentences_leaves_no_stale_audio(timbre):
+    tts = make_tts()
+    async with Harness(tts) as h:
+        await h.queue(TTSSpeakFrame("Pehla vaakya.", append_to_context=False))
+        await h.queue(TTSSpeakFrame("Doosra vaakya?", append_to_context=False))
+        await h.wait_until(lambda: len(h.collector.of_type(TTSAudioRawFrame)) >= 25, timeout=4)
+        await h.queue(InterruptionFrame())
+        await asyncio.sleep(0.5)
+        mark = len(h.collector.frames)
+        await h.queue(TTSSpeakFrame("Naya sawaal?", append_to_context=False))
+        await h.wait_until(
+            lambda: len([f for _, f in h.collector.frames[mark:]
+                         if isinstance(f, TTSAudioRawFrame)]) >= 20, timeout=5)
+
+    frames = h.collector.frames
+    cut = next(i for i, (_, f) in enumerate(frames) if isinstance(f, InterruptionFrame))
+    assert not [f for _, f in frames[cut:mark] if isinstance(f, TTSAudioRawFrame)]
+    texts = [r["text"] for c in timbre.conns for r in c.requests]
+    assert texts == ["Pehla vaakya.", "Doosra vaakya?", "Naya sawaal?"]
+    assert len([f for _, f in frames[mark:] if isinstance(f, TTSAudioRawFrame)]) == 20
+
+
+async def test_first_byte_watchdog_reopens_and_resends_once(monkeypatch):
+    async with FakeTimbre(chunks=5, chunk_gap_s=0.01, silent_requests=1) as server:
+        monkeypatch.setattr(plugin_tts, "GNANI_TTS_WS_URL", server.url)
+        tts = make_tts(first_byte_timeout_s=0.3)
+        async with Harness(tts) as h:
+            await h.queue(TTSSpeakFrame(LINE, append_to_context=False))
+            await h.wait_until(lambda: len(h.collector.of_type(TTSAudioRawFrame)) >= 5, 3)
+    assert tts.first_byte_resends == 1 and tts.first_byte_failures == 0
+    assert len(server.conns) == 2 and server.conns[1].requests[0]["text"] == LINE
+
+
+async def test_first_byte_watchdog_gives_up_and_tells_the_app(monkeypatch):
+    from mockboard.voice.lines import PlaybackLedger
+
+    async with FakeTimbre(chunks=5, chunk_gap_s=0.01, silent_requests=2) as server:
+        monkeypatch.setattr(plugin_tts, "GNANI_TTS_WS_URL", server.url)
+        ledger = PlaybackLedger()
+        tts = make_tts(first_byte_timeout_s=0.2, ledger=ledger)
+        timeouts = []
+        tts.add_event_handler("on_first_byte_timeout", lambda _t, text: timeouts.append(text))
+        async with Harness(tts) as h:
+            await h.queue(TTSSpeakFrame(LINE, append_to_context=False))
+            await h.wait_until(lambda: timeouts, timeout=3)
+            await h.queue(TTSSpeakFrame("Agla sawaal?", append_to_context=False))
+            await h.wait_until(lambda: len(h.collector.of_type(TTSAudioRawFrame)) >= 5, 3)
+    assert timeouts == [LINE] and tts.first_byte_failures == 1
+    assert ledger.units[0].failed and not ledger.units[1].failed

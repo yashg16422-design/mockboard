@@ -1,0 +1,506 @@
+"""`BrainProcessor`: the board inside the Pipecat pipeline (ADR-007, V3; barge-in V4).
+
+It sits between the user-turn processor and Timbre and talks to the brain only through the
+session API the text CLI uses:
+
+1. Every Prisma final (`TranscriptionFrame`) of the open user turn becomes
+   `session.submit_segment(text, segment_index=k)`.
+2. When Smart Turn ends the user's turn (`UserStoppedSpeakingFrame`), a turn task sends Prisma
+   a `commit` (ruling 28), waits, bounded, until every transcript that commit attributed to the
+   turn has arrived here (ruling 31: by cause, using `result["mb"]`, not a time window), then
+   calls `session.end_of_turn(deadline)` and streams `session.speak_stream()` to Timbre as one
+   `TTSSpeakFrame` per sentence. The turn task, not the stop frame's handler, does this work:
+   a SystemFrame can overtake queued transcripts (spikes/NOTES.md, surprise 2), and blocking a
+   SystemFrame handler would also block interruptions.
+3. When the line has played (`BotStoppedSpeakingFrame` after the last audio), or the
+   candidate cuts in, `session.finish_line(...)` records what was heard.
+
+Ruling 26/31 safety: transcripts never start a turn (only Silero does, `strategies.py`). A
+transcript caused by the commit of a turn whose move is already chosen (its wait timed out)
+is a late final: it joins that turn's transcript (`note_late_final`) and never interrupts the
+board. A transcript nobody's commit caused, arriving while the board has the floor and no user
+turn is open (a cough under the barge-in threshold, or echo), is dropped and counted.
+
+Barge-in (V4): a user turn that starts while the board is audible is an interruption: the turn
+task (actor and TTS feed) is cancelled, Pipecat's `InterruptionFrame` stops Timbre (our V2
+fix) and the output, and only the words actually heard are recorded (`PlaybackLedger`,
+ADR-008 §3) with `interrupted=true`. A user turn that starts before the board's first audio
+reopens the same turn instead (ruling 31).
+
+The session opener (UPSC) or the Moderator's intro (debate) plays at start; the debate's
+"The board will confer" and verdict play at the end; the report goes to the page and to
+`traces/`. UI messages go to the browser as `OutputTransportMessageUrgentFrame`s
+(`{"type": "mockboard", ...}`) over SmallWebRTC's data channel.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import contextlib
+import time
+from collections.abc import Awaitable, Callable
+from pathlib import Path
+from typing import Any
+
+from loguru import logger
+from pipecat.frames.frames import (
+    BotStartedSpeakingFrame,
+    BotStoppedSpeakingFrame,
+    CancelFrame,
+    EndFrame,
+    Frame,
+    InterimTranscriptionFrame,
+    InterruptionFrame,
+    OutputTransportMessageUrgentFrame,
+    StartFrame,
+    TranscriptionFrame,
+    TTSSpeakFrame,
+    UserStartedSpeakingFrame,
+    UserStoppedSpeakingFrame,
+    VADUserStartedSpeakingFrame,
+    VADUserStoppedSpeakingFrame,
+)
+from pipecat.processors.frame_processor import FrameDirection, FrameProcessor
+
+from mockboard.session import InterviewSession, TurnOutcome
+from mockboard.speech.prisma_stt import PrismaProcessingFrame
+from mockboard.voice.lines import PlaybackLedger, split_sentences
+from mockboard.voice.strategies import IDLE, SPEAKING, THINKING
+
+# States of the conversation, as this processor sees them.
+STARTING = "starting"  # the opener / Moderator intro
+LISTENING = "listening"  # the board has finished; waiting for the candidate
+USER = "user"  # a user turn is open
+CLOSING = "closing"  # Smart Turn ended the turn; commit and wait for its transcripts
+THINKING_S = "thinking"  # end_of_turn and the actor, no TTS yet
+BOARD = "speaking"  # speak_stream is feeding TTS, or the line is playing
+FINISHED = "finished"
+
+
+class BrainProcessor(FrameProcessor):
+    def __init__(
+        self,
+        session: InterviewSession,
+        *,
+        stt: Any = None,
+        ledger: PlaybackLedger | None = None,
+        tuner: Any = None,
+        deadline_s: float | None = None,
+        seq_wait_s: float = 0.5,
+        settle_s: float = 0.12,
+        tts_idle_cap_s: float = 9.0,
+        line_cap_s: float = 90.0,
+        orphan_close_s: float = 1.5,
+        session_max_s: float | None = None,
+        report_dir: Path | None = None,
+        on_report: Callable[[Any, str], Awaitable[None]] | None = None,
+        **kwargs,
+    ):
+        super().__init__(**kwargs)
+        self.session = session
+        self._stt = stt
+        self.ledger = ledger or PlaybackLedger()
+        self._tuner = tuner
+        settings = session.deps.settings
+        self._deadline_s = deadline_s if deadline_s is not None else (
+            settings.move_deadline_ms / 1000
+        )
+        self._seq_wait_s = seq_wait_s
+        self._settle_s = settle_s
+        self._tts_idle_cap_s = tts_idle_cap_s
+        self._line_cap_s = line_cap_s
+        self._orphan_close_s = orphan_close_s
+        self._session_max_s = session_max_s
+        self._report_dir = report_dir
+        self._on_report = on_report
+
+        self.state = STARTING
+        self._task: asyncio.Task | None = None  # the turn task (or opener / closing lines)
+        self._end_task: asyncio.Task | None = None
+        self._clock_task: asyncio.Task | None = None
+        self._orphan_task: asyncio.Task | None = None
+        self._open_commits: set[int] = set()
+        self._closed_commits: set[int] = set()
+        self._seen_seq = 0
+        self._seq_event = asyncio.Event()
+        self._pending_marks: list[tuple[str, float | None]] = []
+        self._last_vad_stop: float | None = None
+        self._pushed = 0  # TTSSpeakFrames pushed for the current line
+        self._time_up = False
+        self._ending = False
+        self.events: list[dict[str, Any]] = []
+        self.outcomes: list[TurnOutcome] = []
+        self.dropped: list[dict[str, Any]] = []
+        self.commits: list[dict[str, Any]] = []
+        self.report: Any = None
+        self.report_text = ""
+
+    # ------------------------------------------------------------------ for strategies
+
+    def board_phase(self) -> str:
+        """IDLE, THINKING or SPEAKING, for `BoardAwareStartStrategy` (V4 thresholds)."""
+        if self.state in (CLOSING, THINKING_S):
+            return THINKING
+        if self.state in (BOARD, STARTING, FINISHED):
+            return SPEAKING if self.ledger.playback_started_at is not None else THINKING
+        return IDLE
+
+    def thresholds_ms(self) -> tuple[int, int]:
+        p = self.session.turn_params()
+        return p.resume_min_speech_ms, p.barge_in_min_speech_ms
+
+    # ------------------------------------------------------------------ frames
+
+    async def process_frame(self, frame: Frame, direction: FrameDirection):
+        await super().process_frame(frame, direction)
+        if isinstance(frame, StartFrame):
+            await self.push_frame(frame, direction)
+            self._task = self.create_task(self._open_session(), "brain-open")
+            if self._session_max_s:
+                self._clock_task = self.create_task(self._clock(), "brain-clock")
+            return
+        if isinstance(frame, EndFrame | CancelFrame):
+            for task in (self._task, self._end_task, self._clock_task, self._orphan_task):
+                if task is not None:
+                    await self.cancel_task(task)
+            await self.push_frame(frame, direction)
+            return
+        if isinstance(frame, TranscriptionFrame):
+            await self._on_transcript(frame)
+            return
+        if isinstance(frame, InterimTranscriptionFrame | PrismaProcessingFrame):
+            return  # ours to read, not for TTS
+        if isinstance(frame, VADUserStoppedSpeakingFrame):
+            self._last_vad_stop = time.monotonic()
+        elif isinstance(frame, VADUserStartedSpeakingFrame):
+            self._last_vad_stop = None
+        elif isinstance(frame, UserStartedSpeakingFrame):
+            await self._on_user_started()
+        elif isinstance(frame, UserStoppedSpeakingFrame):
+            self._on_user_stopped()
+        elif isinstance(frame, BotStartedSpeakingFrame):
+            self.ledger.bot_started()
+        elif isinstance(frame, BotStoppedSpeakingFrame):
+            self.ledger.bot_stopped()
+        elif isinstance(frame, InterruptionFrame):
+            pass  # handled at UserStartedSpeakingFrame, which comes first; pass it on
+        await self.push_frame(frame, direction)
+
+    # ------------------------------------------------------------------ UI messages
+
+    async def emit(self, event: str, /, **fields: Any) -> None:
+        msg = {"type": "mockboard", "event": event, "t": round(time.monotonic(), 3), **fields}
+        self.events.append(msg)
+        await self.push_frame(OutputTransportMessageUrgentFrame(message=msg))
+
+    async def _set_state(self, state: str) -> None:
+        if state != self.state:
+            self.state = state
+            await self.emit("state", state=state)
+
+    # ------------------------------------------------------------------ transcripts
+
+    async def _on_transcript(self, frame: TranscriptionFrame) -> None:
+        mb = frame.result.get("mb") if isinstance(frame.result, dict) else None
+        seq = mb.get("seq") if isinstance(mb, dict) else None
+        cid = mb.get("commit_id") if isinstance(mb, dict) else None
+        if isinstance(seq, int):
+            self._seen_seq = max(self._seen_seq, seq)
+            self._seq_event.set()
+        text = frame.text.strip()
+        if not text or self.state == FINISHED:
+            return
+        turn = self.session.turn
+        late = cid is not None and (
+            cid in self._closed_commits
+            or (cid in self._open_commits and turn is not None and turn.ended)
+        )
+        if late:
+            # Ruling 26 safety net: caused by the commit of a turn whose move is chosen.
+            self.session.note_late_final(text, commit_id=cid)
+            await self.emit("caption", side="user", text=text, late=True)
+            return
+        if self.state in (USER, CLOSING, LISTENING) or (cid is not None
+                                                        and cid in self._open_commits):
+            await self._submit(text)
+            if self.state == LISTENING:
+                self._watch_orphan()
+            return
+        # The board has the floor, no user turn is open, and no commit of ours caused it:
+        # a cough under the barge-in threshold, or the board's own echo. Never a new turn.
+        self.dropped.append({"text_words": len(text.split()), "state": self.state,
+                             "commit_id": cid})
+        await self.emit("transcript_dropped", words=len(text.split()), state=self.state)
+
+    async def _submit(self, text: str) -> None:
+        turn = self.session.turn
+        index = turn.segments[-1].segment_index + 1 if turn and turn.segments else 0
+        self.session.submit_segment(text, segment_index=index)
+        self._flush_marks()
+        self.session.mark(f"final_transcript_{len(self.session.turn.segments) - 1}")
+        await self.emit("caption", side="user", text=text, turn=self.session.turn.turn_id)
+
+    def _mark(self, stage: str, at: float | None = None) -> None:
+        if self.session.turn is not None:
+            self.session.mark(stage, at)
+        else:
+            self._pending_marks.append((stage, at if at is not None else time.monotonic()))
+
+    def _flush_marks(self) -> None:
+        marks, self._pending_marks = self._pending_marks, []
+        for stage, at in marks:
+            self.session.mark(stage, at)
+
+    def _watch_orphan(self) -> None:
+        """A transcript arrived with no user turn open and the board silent (Silero missed the
+        start). Close that turn ourselves if no user turn follows, so nothing waits forever."""
+        if self._orphan_task is not None and not self._orphan_task.done():
+            return
+
+        async def close_later():
+            await asyncio.sleep(self._orphan_close_s)
+            if self.state == LISTENING and self.session.turn is not None:
+                self._start_turn_task()
+
+        self._orphan_task = self.create_task(close_later(), "brain-orphan")
+
+    async def _wait_seq(self, seq: int, timeout: float) -> bool:
+        deadline = time.monotonic() + timeout
+        while self._seen_seq < seq:
+            left = deadline - time.monotonic()
+            if left <= 0:
+                return False
+            self._seq_event.clear()
+            with contextlib.suppress(TimeoutError):
+                await asyncio.wait_for(self._seq_event.wait(), left)
+        return True
+
+    # ------------------------------------------------------------------ user turns
+
+    async def _on_user_started(self) -> None:
+        state = self.state
+        if state == FINISHED:
+            return
+        if self._orphan_task is not None:
+            await self.cancel_task(self._orphan_task)
+            self._orphan_task = None
+        turn = self.session.turn
+        audible = self.ledger.playback_started_at is not None
+        if state in (LISTENING, USER):
+            pass
+        elif state == CLOSING or (state == THINKING_S and (turn is None or turn.move is None)):
+            # The candidate went on before the move was chosen: same turn, keep listening.
+            await self._cancel_task()
+            await self.emit("turn_resumed")
+        elif state in (THINKING_S, BOARD) and not audible and turn is not None and turn.move:
+            # Ruling 31: resumed speech before the board's first audio reopens the turn.
+            await self._cancel_task()
+            self.session.reopen_turn()
+            self._reset_ledger()
+            await self.emit("turn_reopened", turn=turn.turn_id)
+        elif state in (THINKING_S, BOARD):
+            await self._barge_in()
+        elif state == STARTING:
+            await self._cancel_task()  # the opener was cut off; it is already recorded
+            await self.emit("line_end", interrupted=True, opener=True)
+        await self._set_state(USER)
+
+    def _on_user_stopped(self) -> None:
+        if self.state == USER:
+            self._start_turn_task()
+
+    def _start_turn_task(self) -> None:
+        self.state = CLOSING
+        self._task = self.create_task(self._run_turn(), "brain-turn")
+
+    async def _cancel_task(self) -> None:
+        task, self._task = self._task, None
+        if task is not None and task is not asyncio.current_task():
+            await self.cancel_task(task)
+
+    def _reset_ledger(self) -> PlaybackLedger:
+        """A fresh ledger for the next line (the same object: the TTS service holds it)."""
+        self.ledger.reset()
+        self._pushed = 0
+        return self.ledger
+
+    async def _run_turn(self) -> None:
+        await self.emit("state", state=CLOSING)
+        self._mark("vad_end", self._last_vad_stop)
+        if self._stt is not None and hasattr(self._stt, "commit"):
+            t0 = time.monotonic()
+            result = await self._stt.commit()
+            self._open_commits.add(result.commit_id)
+            self._mark("commit_sent", result.sent_at or t0)
+            entry = {"commit_id": result.commit_id, "reply": result.reply,
+                     "wait_ms": result.wait_ms, "last_seq": result.last_seq}
+            if result.last_seq is not None:
+                entry["all_seen"] = await self._wait_seq(result.last_seq, self._seq_wait_s)
+            self.commits.append(entry)
+        if self.session.turn is None:
+            # Silero and Smart Turn heard something, but Prisma found no words in it.
+            await self.emit("no_speech")
+            await self._listen()
+            return
+        self._flush_marks()
+        self._mark("turn_end")
+        await self._set_state(THINKING_S)
+        await self.session.end_of_turn(self._deadline_s)
+        self._closed_commits |= self._open_commits
+        self._open_commits.clear()
+        await self._speak_turn()
+
+    # ------------------------------------------------------------------ board lines
+
+    async def _speak_turn(self) -> None:
+        self._reset_ledger()
+        await self._set_state(BOARD)
+        async for sentence in self.session.speak_stream():
+            await self.emit("caption", side="board", speaker=sentence.speaker,
+                            move=sentence.move, text=sentence.text, kind=sentence.kind)
+            self._pushed += 1
+            await self.push_frame(TTSSpeakFrame(sentence.text, append_to_context=False))
+        await self._wait_played()
+        self._mark_playback()
+        out = self.session.finish_line(details=self._details())
+        await self._after_line(out, interrupted=False)
+
+    async def _barge_in(self) -> None:
+        """V4: the candidate cut in while the board was audible."""
+        heard = self.ledger.heard()
+        await self._cancel_task()
+        turn = self.session.turn
+        if turn is None or turn.move is None:
+            return
+        self._mark_playback()
+        out = self.session.finish_line(
+            heard.text, interrupted=True, spoken_estimated=heard.estimated,
+            details=self._details(heard),
+        )
+        await self._after_line(out, interrupted=True)
+
+    def _mark_playback(self) -> None:
+        if self.ledger.first_audio_at is not None:
+            self.session.mark("tts_first_byte", self.ledger.first_audio_at)
+        if self.ledger.playback_started_at is not None:
+            self.session.mark("playback_start", self.ledger.playback_started_at)
+
+    def _details(self, heard=None) -> dict[str, Any]:
+        heard = heard or self.ledger.heard()
+        return {
+            "played_ms": heard.played_ms,
+            "audio_ms": heard.audio_ms,
+            "tts_units": heard.units,
+            "commit": self.commits[-1] if self.commits else None,
+            "transcripts_dropped": len(self.dropped),
+            "stt_model": getattr(self._stt, "served_model", None),
+        }
+
+    async def _after_line(self, out: TurnOutcome, *, interrupted: bool) -> None:
+        self.outcomes.append(out)
+        voice = out.trace.get("voice", {})
+        await self.emit("line_end", interrupted=interrupted, turn=out.turn_id,
+                        heard=voice.get("board_line_spoken", ""), move=out.move.move.value)
+        if out.finished or self._time_up:
+            self._end_task = self.create_task(self._end_session(), "brain-end")
+        elif not interrupted:
+            await self._listen()
+
+    async def _listen(self) -> None:
+        if self._tuner is not None:
+            self._tuner.apply(self.session.turn_params())
+        await self._set_state(LISTENING)
+        if self._time_up:
+            self._end_task = self.create_task(self._end_session(), "brain-end")
+
+    async def _wait_played(self) -> None:
+        """Until every pushed sentence's audio has been received and played (or TTS gave
+        nothing for a while, or the line cap), then a short settle."""
+        start = time.monotonic()
+        while True:
+            now = time.monotonic()
+            led = self.ledger
+            last = led.last_activity or start
+            if (len(led.units) >= self._pushed and led.all_done and not led.speaking
+                    and now - last >= self._settle_s):
+                return
+            if not led.speaking and now - last > self._tts_idle_cap_s:
+                logger.warning("[brain] TTS gave nothing for a while; ending the line")
+                return
+            if now - start > self._line_cap_s:
+                return
+            await asyncio.sleep(0.02)
+
+    async def say(self, text: str, *, speaker: str, kind: str) -> None:
+        """A whole line that is not a turn's move (opener, confer, verdict)."""
+        self._reset_ledger()
+        for sentence in split_sentences(text):
+            await self.emit("caption", side="board", speaker=speaker, text=sentence, kind=kind)
+            self._pushed += 1
+            await self.push_frame(TTSSpeakFrame(sentence, append_to_context=False))
+        await self._wait_played()
+
+    @property
+    def chairman(self) -> str:
+        rt = self.session.deps.mode(self.session.mode)
+        return self.session.speaker_name(rt.strategy.chairman)
+
+    # ------------------------------------------------------------------ session start/end
+
+    async def _open_session(self) -> None:
+        await self.emit("session", mode=self.session.mode, session_id=self.session.session_id)
+        await self._set_state(STARTING)
+        line = await self.session.open()
+        await self.say(line.text, speaker=self.chairman, kind="opener")
+        if self.state == STARTING:
+            await self._listen()
+
+    async def _clock(self) -> None:
+        await asyncio.sleep(self._session_max_s)
+        self._time_up = True
+        await self.emit("time_up")
+        if self.state in (LISTENING, USER):
+            self._end_task = self.create_task(self._end_session(), "brain-end")
+
+    async def speech_lost(self, message: str) -> None:
+        """Prisma gave up reconnecting (ruling 30): tell the candidate and end cleanly."""
+        await self.emit("error", text="Speech recognition was lost; the session will end.",
+                        detail=message[:200])
+        if not self._ending:
+            await self._cancel_task()
+            self._end_task = self.create_task(self._end_session(), "brain-end")
+
+    async def tts_failed(self, text: str) -> None:
+        """Timbre gave no audio for a line (ruling 30): it is shown as text only."""
+        await self.emit("tts_failed", text=text)
+
+    async def _end_session(self) -> None:
+        if self._ending:
+            return
+        self._ending = True
+        await self._set_state(FINISHED)
+        confer = self.session.closing_line()
+        if confer:
+            await self.say(confer, speaker=self.chairman, kind="confer")
+        else:
+            await self.emit("preparing_report")
+        report = await self.session.finish()
+        verdict = getattr(getattr(report, "verdict", None), "text", None)
+        if verdict:
+            await self.say(verdict, speaker=self.chairman, kind="verdict")
+        from mockboard.cli import format_report  # the text CLI's report layout
+
+        self.report = report
+        self.report_text = format_report(report, self.session.deps.cards).strip()
+        path = None
+        if self._report_dir is not None:
+            self._report_dir.mkdir(parents=True, exist_ok=True)
+            path = self._report_dir / f"{self.session.session_id}.report.txt"
+            path.write_text(self.report_text + "\n", encoding="utf-8")
+            path.with_suffix(".json").write_text(report.model_dump_json(indent=2),
+                                                 encoding="utf-8")
+        await self.emit("report", text=self.report_text, path=str(path) if path else None,
+                        trace=str(self.session.recorder.path))
+        if self._on_report is not None:
+            await self._on_report(report, self.report_text)
+

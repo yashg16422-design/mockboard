@@ -284,6 +284,9 @@ class TimbreConn:
     requests: list[dict[str, Any]] = field(default_factory=list)
     closed_at: float | None = None
     chunks_sent: int = 0
+    # (monotonic arrival of each request, monotonic of its `complete`/`error`, or None)
+    request_times: list[float] = field(default_factory=list)
+    finished_times: list[float | None] = field(default_factory=list)
 
 
 class FakeTimbre:
@@ -299,7 +302,12 @@ class FakeTimbre:
         chunk_gap_s: float = 0.05,
         error_marker: str = "FAIL",
         idle_close_s: float | None = None,
+        silent_requests: int = 0,
     ):
+        # The first `silent_requests` requests (across connections) get no reply at all, like
+        # a half-open socket (ruling 30's first-byte watchdog).
+        self.silent_requests = silent_requests
+        self.requests_seen = 0
         self.idle_close_s = idle_close_s
         self.chunks = chunks
         self.chunk_bytes = chunk_bytes
@@ -332,8 +340,14 @@ class FakeTimbre:
                     return
                 req = json.loads(msg)
                 conn.requests.append(req)
+                conn.request_times.append(time.monotonic())
+                conn.finished_times.append(None)
+                self.requests_seen += 1
+                if self.requests_seen <= self.silent_requests:
+                    continue
                 if self.error_marker in req.get("text", ""):
                     await ws.send(json.dumps(timbre_error()))
+                    conn.finished_times[-1] = time.monotonic()
                     continue
                 await ws.send(json.dumps(timbre_start()))
                 pcm = b"\x01\x00" * (self.chunk_bytes // 2)
@@ -342,6 +356,7 @@ class FakeTimbre:
                     await ws.send(json.dumps(timbre_audio(i, pcm)))
                     conn.chunks_sent += 1
                 await ws.send(json.dumps(timbre_complete(self.chunks + 1)))
+                conn.finished_times[-1] = time.monotonic()
         except Exception:
             pass
         finally:

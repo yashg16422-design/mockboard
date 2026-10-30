@@ -112,6 +112,10 @@ class PlaybackLedger:
         self.playback_started_at: float | None = None
         self.last_activity: float | None = None
 
+    def reset(self) -> None:
+        """Start a new line. The same object is kept, because the TTS service holds it."""
+        self.__init__(self._clock)
+
     # -- events from the TTS service --------------------------------------------------
 
     def unit_started(self, text: str) -> None:
