@@ -252,3 +252,67 @@ async def test_fake_debate_closing_names_a_user_argument(deps, tmp_path):
     closing = outs[-1].line.text
     assert closing.startswith("Maanna padega ki aapke is tark mein dum hai: phones in class "
                               "pull attention away from learning.")
+
+
+# ---------------------------------------------------------------------------
+# Ruling 32: the user-side check also runs on the raw transcript
+# ---------------------------------------------------------------------------
+
+PARTY_SPEECH = "Yeh sab BJP ki galti hai, kyunki unhone har school mein yahi vaada kiya tha."
+
+
+def _paraphrasing_listener(base):
+    """A listener that paraphrases the party name away and never flags off-limits, as a
+    real model might."""
+    def listener(system: str, user: str) -> dict:
+        out = base(system, user)
+        text = json.dumps(out, ensure_ascii=False).replace("BJP", "a certain group")
+        out = json.loads(text)
+        if "off_limits" in out:
+            out["off_limits"] = False
+        return out
+    return listener
+
+
+async def test_paraphrased_off_limits_speech_still_gets_the_redirect(settings, cards):
+    from conftest import answer
+    from mockboard.brain.fake_responders import fake_responders
+    from mockboard.brain.llm import FakeLLMClient
+    from test_debate_session import OPENING
+
+    responders = fake_responders(cards)
+    responders["listener"] = _paraphrasing_listener(responders["listener"])
+    llm = FakeLLMClient(responders=responders)
+    deps = build_deps(settings, llm, cards=cards)
+    s = InterviewSession(
+        deps=deps, form=None, recorder=TraceRecorder(settings.trace_dir, "r32", enabled=False),
+        analyzer=TurnAnalyzer(deps), session_id="r32", mode="debate",
+        mode_options=DebateSetup(motion=MOTIONS["smartphones_in_schools"], user_side=Side.for_),
+    )
+    await s.open()
+    await answer(s, OPENING)
+    out = await answer(s, PARTY_SPEECH)
+    listener_call = llm.calls_named("listener")[-1]
+    assert "BJP" in listener_call.user  # the listener heard it ...
+    a = s.state.turns[-1].analysis
+    texts = " ".join([a.stance, *a.reasons, *(x.claim for x in a.arguments)])
+    assert "BJP" not in texts  # ... and paraphrased it away
+    assert (out.move.move, out.move.rule_id, out.move.member) == (Move.redirect, "D2",
+                                                                  "moderator")
+
+
+def test_raw_text_hook_is_debate_only():
+    from mockboard.brain.listener import to_analysis
+    from mockboard.brain.schemas import Segment
+    from mockboard.brain.tools import ListenerOutput
+    from mockboard.modes.debate.listener import ScreenedDebateListenerOutput
+
+    seg = Segment(segment_id="s0", segment_index=0, text=PARTY_SPEECH)
+    upsc = to_analysis(ListenerOutput(), turn_id="t1", turn_index=1, segment=seg)
+    assert upsc.off_limits is False  # UPSC: no hook, unchanged
+    debate = to_analysis(ScreenedDebateListenerOutput(off_limits=False), turn_id="t1",
+                         turn_index=1, segment=seg)
+    assert debate.off_limits is True
+    clean = Segment(segment_id="s0", segment_index=0, text="Mandir ke bahar chaat milti hai.")
+    assert to_analysis(ScreenedDebateListenerOutput(), turn_id="t1", turn_index=1,
+                       segment=clean).off_limits is False

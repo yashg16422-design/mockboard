@@ -5,8 +5,11 @@ from __future__ import annotations
 
 from mockboard.brain.personas import PERSONA_DIR
 from mockboard.brain.schemas import DebateDimension
-from mockboard.brain.tools import DEBATE_LISTENER_TOOL, DebateListenerOutput
-from mockboard.modes.debate.listener import debate_listener_context
+from mockboard.brain.tools import DEBATE_LISTENER_TOOL
+from mockboard.modes.debate.listener import (
+    ScreenedDebateListenerOutput,
+    debate_listener_context,
+)
 from mockboard.modes.debate.session import DebateSessionHooks, DebateSetup
 from mockboard.modes.debate.strategist import (
     DEBATE_MOVES,
@@ -57,7 +60,7 @@ DEBATE_PROFILE = register(
         rubric=DEBATE_RUBRIC,
         rounds=ROUNDS,
         word_caps=DEBATE_WORD_CAPS,
-        listener_tool=(DEBATE_LISTENER_TOOL, DebateListenerOutput),
+        listener_tool=(DEBATE_LISTENER_TOOL, ScreenedDebateListenerOutput),
         listener_context=debate_listener_context,
         session_hooks=lambda session, options: DebateSessionHooks(session, _setup(options)),
     )

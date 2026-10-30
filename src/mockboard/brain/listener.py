@@ -59,6 +59,14 @@ def _to_claim(
     )
 
 
+def _raw_text_off_limits(out: ListenerOutput, text: str) -> bool:
+    """Ruling 32: a mode's output model may screen the RAW segment text itself
+    (`off_limits_in_raw_text`), so a listener that paraphrases an off-limits word away cannot
+    hide it. The UPSC model has no such hook, so UPSC analyses are unchanged."""
+    check = getattr(out, "off_limits_in_raw_text", None)
+    return bool(check(text)) if callable(check) else False
+
+
 def to_analysis(
     out: ListenerOutput, *, turn_id: str, turn_index: int, segment: Segment
 ) -> Analysis:
@@ -79,7 +87,7 @@ def to_analysis(
             "question_to_opponent": out.question_to_opponent.strip(),
             "concedes_point": out.concedes_point,
             "point_strength": out.point_strength,
-            "off_limits": out.off_limits,
+            "off_limits": out.off_limits or _raw_text_off_limits(out, segment.text),
         }
     return Analysis(
         turn_id=turn_id,
