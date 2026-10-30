@@ -226,3 +226,13 @@ async def test_a_coughs_transcript_during_the_board_line_is_dropped(
     assert rig.brain.events_of("transcript_dropped")
     assert not rig.brain.outcomes[0].trace["voice"]["interrupted"]
     assert len(s.state.turns) == 1
+
+
+async def test_a_turn_started_mid_speech_keeps_silero_state_for_smart_turn():
+    """Regression (headless run): our start strategy fires mid-speech, the controller then
+    resets the stop strategy; it must still know Silero hears speech, or only the 5 s stop
+    timeout would end the turn."""
+    stop = PausedTurnStopStrategy(turn_analyzer=LocalSmartTurnAnalyzerV3())
+    await stop.process_frame(VADUserStartedSpeakingFrame())
+    await stop.reset()
+    assert stop._vad_user_speaking

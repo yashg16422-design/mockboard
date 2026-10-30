@@ -94,6 +94,8 @@ class BrainProcessor(FrameProcessor):
         session_max_s: float | None = None,
         report_dir: Path | None = None,
         on_report: Callable[[Any, str], Awaitable[None]] | None = None,
+        on_listen: Callable[[], Awaitable[None]] | None = None,
+        autostart: bool = True,
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -113,6 +115,10 @@ class BrainProcessor(FrameProcessor):
         self._session_max_s = session_max_s
         self._report_dir = report_dir
         self._on_report = on_report
+        self._on_listen = on_listen  # e.g. per-topic Prisma keyterms (ruling 27)
+        # False: wait for `begin()` (the server calls it when the browser has connected, so
+        # the opener's captions are not sent before the data channel exists).
+        self._autostart = autostart
 
         self.state = STARTING
         self._task: asyncio.Task | None = None  # the turn task (or opener / closing lines)
@@ -155,9 +161,8 @@ class BrainProcessor(FrameProcessor):
         await super().process_frame(frame, direction)
         if isinstance(frame, StartFrame):
             await self.push_frame(frame, direction)
-            self._task = self.create_task(self._open_session(), "brain-open")
-            if self._session_max_s:
-                self._clock_task = self.create_task(self._clock(), "brain-clock")
+            if self._autostart:
+                await self.begin()
             return
         if isinstance(frame, EndFrame | CancelFrame):
             for task in (self._task, self._end_task, self._clock_task, self._orphan_task):
@@ -412,6 +417,11 @@ class BrainProcessor(FrameProcessor):
     async def _listen(self) -> None:
         if self._tuner is not None:
             self._tuner.apply(self.session.turn_params())
+        if self._on_listen is not None:
+            try:
+                await self._on_listen()
+            except Exception as e:  # context is a nicety; never stop the interview for it
+                logger.warning(f"[brain] on_listen failed: {type(e).__name__}: {e}")
         await self._set_state(LISTENING)
         if self._time_up:
             self._end_task = self.create_task(self._end_session(), "brain-end")
@@ -450,7 +460,17 @@ class BrainProcessor(FrameProcessor):
 
     # ------------------------------------------------------------------ session start/end
 
-    async def _open_session(self) -> None:
+    async def begin(self, delay_s: float = 0.0) -> None:
+        """Start the conversation: the opener, then the candidate's first turn."""
+        if self._task is not None or self.state != STARTING:
+            return
+        self._task = self.create_task(self._open_session(delay_s), "brain-open")
+        if self._session_max_s:
+            self._clock_task = self.create_task(self._session_timer(), "brain-timer")
+
+    async def _open_session(self, delay_s: float = 0.0) -> None:
+        if delay_s:
+            await asyncio.sleep(delay_s)
         await self.emit("session", mode=self.session.mode, session_id=self.session.session_id)
         await self._set_state(STARTING)
         line = await self.session.open()
@@ -458,7 +478,7 @@ class BrainProcessor(FrameProcessor):
         if self.state == STARTING:
             await self._listen()
 
-    async def _clock(self) -> None:
+    async def _session_timer(self) -> None:
         await asyncio.sleep(self._session_max_s)
         self._time_up = True
         await self.emit("time_up")

@@ -70,3 +70,11 @@ The session API changes these imply (a `speak_stream()` that yields sentences, a
 - **Buffer everything.** This is simpler and safer, but it adds the whole generation time to every turn and uses up most of the latency budget.
 - **Count a line as spoken as soon as it is sent to Timbre, or when `TTSTextFrame` appears.** This is easy, but it overstates what the candidate heard, and in 1.5.0 `TTSTextFrame` appears before the audio has played.
 - **Treat a cut sentence as not spoken at all.** This is simple, but a board question cut after most of its words would vanish from `last_question`, and the next turn's listener would misread the answer.
+
+## Implementation notes (V3/V4, October 30, 2026)
+
+- `session.speak_stream()` and `session.finish_line()` implement sections 1 to 3; `mockboard.voice.lines.PlaybackLedger` does the heard-words estimate. The trace's `voice` block holds `board_line_generated`, `board_line_sent`, `board_line_spoken`, `interrupted`, `spoken_estimated` and, for a fact challenge, `challenge_heard`.
+- Besides the fact challenge, the debate's closing statement is buffered as well (`WHOLE_LINE_MOVES`), because its concession guard can rewrite the start of the line. A mode can add more through a `buffered_moves` attribute on its session hooks.
+- The template question appended after a stopped line comes from the mode's `template_line(move)` hook if it has one. UPSC uses its move templates. Debate has no such hook yet, so a no-model line that ends with a question is reused, and otherwise nothing is appended (a debate-side hook is a follow-up for the debate builder).
+- Timbre requests are serialised (ruling 30), so each sentence's audio is attributed to its own request exactly. Playback is measured from the output transport's `BotStartedSpeakingFrame` and `BotStoppedSpeakingFrame`.
+- Resumed speech before the board's first audio reopens the turn instead of counting as a barge-in (ruling 31, `session.reopen_turn()`).

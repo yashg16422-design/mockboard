@@ -6,7 +6,7 @@ VENV_PY := .venv/bin/python
 PYTHON ?= $(if $(wildcard $(VENV_PY)),$(VENV_PY),python3)
 export PYTHONPATH := src:.
 
-.PHONY: help venv install test lint format cli cli-fake cli-fake-hi cli-real cli-fake-debate cli-debate cli-real-debate eval eval-gate eval-motions eval-debate clean-traces
+.PHONY: help venv install test lint format cli cli-fake cli-fake-hi cli-real cli-fake-debate cli-debate cli-real-debate eval eval-gate eval-motions eval-debate clean-traces voice-install voice-fake voice-upsc voice-debate voice-summary
 
 help:
 	@echo "venv         create .venv and install everything (run this first on macOS)"
@@ -23,6 +23,11 @@ help:
 	@echo "eval-gate    run the dev eval and fail on low recall or any false correction"
 	@echo "eval-motions debate: labelled custom-motion set through the safety screen (fake)"
 	@echo "eval-debate  debate: scripted debates; fails on any invariant violation or report problem"
+	@echo "voice-install    add the pinned voice extra (Pipecat, Gnani plugin, aiortc) to .venv"
+	@echo "voice-fake       voice app on http://localhost:7860, fake model and fake speech (free)"
+	@echo "voice-upsc       voice app, UPSC board, real Prisma + Nova Pro + Timbre (costs money)"
+	@echo "voice-debate     voice app, debate: make voice-debate MOTION=1 SIDE=for (costs money)"
+	@echo "voice-summary    timings of the newest voice session (safe to paste: no text)"
 
 venv:
 	python3 -m venv .venv
@@ -82,6 +87,24 @@ eval-motions:
 # Offline by default; `$(PYTHON) -m eval.debate.runner --real` runs it on Nova (costs money).
 eval-debate:
 	$(PYTHON) -m eval.debate.runner
+
+# Voice app (docs/VOICE_QUICKSTART.md). Real runs need GNANI_API_KEY in .env and AWS_PROFILE.
+voice-install:
+	$(PYTHON) -m pip install -e '.[voice]'
+
+voice-fake:
+	$(PYTHON) -m mockboard.voice.server --mode upsc --fake-llm --fake-speech
+
+voice-upsc:
+	$(PYTHON) -m mockboard.voice.server --mode upsc
+
+MOTION ?= 1
+SIDE ?= for
+voice-debate:
+	$(PYTHON) -m mockboard.voice.server --mode debate --motion $(MOTION) --side $(SIDE)
+
+voice-summary:
+	$(PYTHON) -m mockboard.voice.summarize
 
 clean-traces:
 	rm -rf traces

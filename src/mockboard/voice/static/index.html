@@ -1,0 +1,293 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mock Board voice</title>
+<style>
+  :root {
+    --bg: #f7f6f2; --panel: #ffffff; --fg: #1c1c1a; --muted: #6a6a64; --line: #deddd5;
+    --accent: #2f5d86; --accent-fg: #ffffff; --board: #eef3f8; --you: #f4f1e8;
+    --warn: #8a5a00; --warn-bg: #fff4dc; --bad: #9b2c2c;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #151514; --panel: #1d1d1b; --fg: #ecebe5; --muted: #a09f97; --line: #34332f;
+      --accent: #86b4dc; --accent-fg: #10202e; --board: #1c2630; --you: #29261e;
+      --warn: #f0c46b; --warn-bg: #2f2716; --bad: #f19a9a;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg);
+         font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 760px; margin: 0 auto; padding: 24px 16px 48px; }
+  header { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 4px; }
+  h1 { font-size: 1.3rem; margin: 0; }
+  .badge { font-size: .8rem; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--line);
+           color: var(--muted); }
+  .badge.fake { color: var(--warn); border-color: var(--warn); }
+  p.sub { color: var(--muted); margin: 0 0 16px; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+           padding: 16px; margin-bottom: 16px; }
+  .notice { background: var(--warn-bg); color: var(--warn); border-radius: 8px; padding: 10px 12px;
+            margin-bottom: 16px; font-size: .95rem; }
+  form.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 10px 14px; }
+  label { display: flex; flex-direction: column; font-size: .85rem; color: var(--muted); gap: 4px; }
+  input, select { font: inherit; color: var(--fg); background: var(--bg); border: 1px solid var(--line);
+                  border-radius: 6px; padding: 6px 8px; }
+  .row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  button { font: inherit; padding: 9px 20px; border-radius: 8px; border: 1px solid var(--line);
+           background: transparent; color: var(--fg); cursor: pointer; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
+  button:disabled { opacity: .45; cursor: default; }
+  #status { color: var(--muted); font-variant-numeric: tabular-nums; }
+  #speaking { font-weight: 600; }
+  #meter { flex: 1; min-width: 100px; height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; }
+  #level { height: 100%; width: 0; background: var(--accent); transition: width 60ms linear; }
+  #captions { display: flex; flex-direction: column; gap: 8px; max-height: 52vh; overflow-y: auto; }
+  .cap { padding: 8px 12px; border-radius: 8px; max-width: 92%; }
+  .cap .who { font-size: .78rem; color: var(--muted); display: block; }
+  .cap.board { background: var(--board); align-self: flex-start; }
+  .cap.you { background: var(--you); align-self: flex-end; }
+  .cap.cut { opacity: .6; }
+  .cap.note { background: transparent; color: var(--muted); font-size: .85rem; align-self: center; padding: 2px; }
+  #report { white-space: pre-wrap; font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+            overflow-x: auto; margin: 0; }
+  #error { color: var(--bad); }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Mock Board</h1>
+    <span class="badge" id="mode-badge">…</span>
+    <span class="badge fake" id="fake-badge" hidden></span>
+  </header>
+  <p class="sub" id="subtitle">Loading…</p>
+
+  <div class="notice" id="headphones">
+    Please wear headphones. Without them the board can hear itself through your microphone
+    and may cut itself off. You can speak over the board to interrupt it.
+  </div>
+
+  <section class="panel" id="form-panel" hidden>
+    <strong>Application form</strong>
+    <p class="sub">No names, roll numbers, phone numbers or colleges. Only what a board would ask about.</p>
+    <form class="grid" id="form" autocomplete="off">
+      <label>Home state *<input name="home_state" required minlength="2" maxlength="60"></label>
+      <label>District<input name="district" maxlength="60"></label>
+      <label>Degree subject *<input name="degree_subject" required minlength="2" maxlength="80"></label>
+      <label>Hobbies (up to 3, comma-separated)<input name="hobbies" maxlength="120"></label>
+      <label>UPSC optional subject<input name="optional_subject" maxlength="80"></label>
+      <label>Interview language
+        <select name="interview_language">
+          <option value="hinglish">Hinglish</option>
+          <option value="english">English</option>
+          <option value="hindi">Hindi</option>
+        </select>
+      </label>
+    </form>
+  </section>
+
+  <section class="panel" id="debate-panel" hidden>
+    <strong>Motion</strong>
+    <p id="motion" style="margin:4px 0 0"></p>
+  </section>
+
+  <section class="panel">
+    <div class="row">
+      <button id="start" class="primary">Start</button>
+      <button id="stop" disabled>Stop</button>
+      <span id="status">idle</span>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <span id="speaking"></span>
+      <div id="meter" title="your microphone"><div id="level"></div></div>
+    </div>
+    <p id="error"></p>
+  </section>
+
+  <section class="panel">
+    <strong>Live captions</strong>
+    <div id="captions" aria-live="polite"></div>
+  </section>
+
+  <section class="panel" id="report-panel" hidden>
+    <strong>Report</strong> <span class="sub" id="report-path"></span>
+    <pre id="report"></pre>
+  </section>
+
+  <audio id="bot" autoplay></audio>
+</main>
+<script>
+// SmallWebRTC (pipecat-ai 1.5.0) client: one audio transceiver at index 0, a data channel
+// whose "ping" messages keep the server's connection check alive, and one non-trickle offer
+// POSTed to /api/offer. The server sends {"type":"mockboard", "event": ...} messages back on
+// the data channel: captions, state, the speaking member, and the report.
+const $ = (id) => document.getElementById(id);
+let pc = null, mic = null, pinger = null, meterCtx = null, cfg = null;
+
+const STATES = {
+  starting: "the board is opening", listening: "your turn: speak, then pause",
+  user: "listening to you", closing: "you paused: checking you are done",
+  thinking: "the board is thinking", speaking: "the board is speaking",
+  finished: "session over: preparing the report",
+};
+
+function caption(side, who, text, extra = "") {
+  const div = document.createElement("div");
+  div.className = `cap ${side} ${extra}`;
+  if (who) { const w = document.createElement("span"); w.className = "who"; w.textContent = who; div.append(w); }
+  div.append(document.createTextNode(text));
+  $("captions").append(div);
+  $("captions").scrollTop = $("captions").scrollHeight;
+}
+
+function onMessage(raw) {
+  let m; try { m = JSON.parse(raw); } catch { return; }
+  if (!m || m.type !== "mockboard") return;
+  switch (m.event) {
+    case "state":
+      $("status").textContent = STATES[m.state] || m.state;
+      if (m.state !== "speaking" && m.state !== "starting") $("speaking").textContent = "";
+      break;
+    case "caption":
+      if (m.side === "board") {
+        $("speaking").textContent = `Speaking: ${m.speaker}`;
+        caption("board", m.speaker, m.text);
+      } else {
+        caption("you", m.late ? "You (late transcript)" : "You", m.text);
+      }
+      break;
+    case "line_end":
+      if (m.interrupted) caption("note", "", "board interrupted");
+      break;
+    case "turn_reopened": caption("note", "", "you went on, so the board is still listening"); break;
+    case "no_speech": caption("note", "", "no words were recognised; please try again"); break;
+    case "tts_failed": caption("note", "", "the voice failed for one line; it is shown as text"); break;
+    case "time_up": caption("note", "", "time is up; the board is wrapping up"); break;
+    case "error": $("error").textContent = m.text; break;
+    case "report":
+      $("report-panel").hidden = false;
+      $("report").textContent = m.text;
+      $("report-path").textContent = m.path ? `saved to ${m.path}` : "";
+      $("status").textContent = "session over: report below";
+      break;
+  }
+}
+
+function startMeter(stream) {
+  meterCtx = new AudioContext();
+  const analyser = meterCtx.createAnalyser();
+  analyser.fftSize = 512;
+  meterCtx.createMediaStreamSource(stream).connect(analyser);
+  const data = new Uint8Array(analyser.fftSize);
+  (function tick() {
+    if (!meterCtx) return;
+    analyser.getByteTimeDomainData(data);
+    let peak = 0;
+    for (const v of data) peak = Math.max(peak, Math.abs(v - 128));
+    $("level").style.width = `${Math.min(100, (peak / 128) * 160)}%`;
+    requestAnimationFrame(tick);
+  })();
+}
+
+function waitForIceGathering(conn, timeoutMs = 2000) {
+  if (conn.iceGatheringState === "complete") return Promise.resolve();
+  return new Promise((resolve) => {
+    const done = () => { conn.removeEventListener("icegatheringstatechange", check); resolve(); };
+    const check = () => { if (conn.iceGatheringState === "complete") done(); };
+    conn.addEventListener("icegatheringstatechange", check);
+    setTimeout(done, timeoutMs);
+  });
+}
+
+function formData() {
+  if (cfg.mode !== "upsc") return {};
+  const f = $("form");
+  if (!f.reportValidity()) throw new Error("please fill in the required form fields");
+  const out = {};
+  for (const [k, v] of new FormData(f).entries()) if (String(v).trim()) out[k] = String(v).trim();
+  return { form: out };
+}
+
+async function start() {
+  $("error").textContent = "";
+  let data;
+  try { data = formData(); } catch (e) { $("error").textContent = e.message; return; }
+  $("start").disabled = true;
+  try {
+    $("status").textContent = "asking for the microphone…";
+    mic = await navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+    });
+    startMeter(mic);
+    pc = new RTCPeerConnection();  // localhost only: no STUN/TURN
+    pc.addTransceiver(mic.getAudioTracks()[0], { direction: "sendrecv" });
+    pc.ontrack = (e) => { $("bot").srcObject = e.streams[0] || new MediaStream([e.track]); };
+    pc.onconnectionstatechange = () => {
+      if (["failed", "closed"].includes(pc.connectionState)) stop();
+    };
+    const dc = pc.createDataChannel("messages");
+    dc.onopen = () => { pinger = setInterval(() => dc.send(`ping: ${Date.now()}`), 1000); };
+    dc.onmessage = (e) => onMessage(e.data);
+    $("status").textContent = "connecting…";
+    await pc.setLocalDescription(await pc.createOffer());
+    await waitForIceGathering(pc);
+    const res = await fetch("/api/offer", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sdp: pc.localDescription.sdp, type: pc.localDescription.type,
+                             request_data: data }),
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.problems ? body.problems.join("; ") : `server said ${res.status}`);
+    }
+    const answer = await res.json();
+    await pc.setRemoteDescription({ sdp: answer.sdp, type: answer.type });
+    $("stop").disabled = false;
+    $("form-panel").querySelectorAll("input,select").forEach((x) => (x.disabled = true));
+  } catch (err) {
+    $("error").textContent = `Could not start: ${err.message || err}`;
+    stop();
+  }
+}
+
+function stop() {
+  if (pinger) clearInterval(pinger);
+  pinger = null;
+  if (pc) pc.close();
+  pc = null;
+  if (mic) mic.getTracks().forEach((t) => t.stop());
+  mic = null;
+  if (meterCtx) meterCtx.close();
+  meterCtx = null;
+  $("level").style.width = "0";
+  $("start").disabled = false;
+  $("stop").disabled = true;
+  $("speaking").textContent = "";
+  if (!$("report-panel").hidden) return;
+  $("status").textContent = "stopped";
+}
+
+async function init() {
+  cfg = await (await fetch("/api/config")).json();
+  const upsc = cfg.mode === "upsc";
+  $("mode-badge").textContent = upsc ? "UPSC interview" : "Debate";
+  const fake = [cfg.fake_llm && "fake model", cfg.fake_speech && "fake speech"].filter(Boolean);
+  if (fake.length) { $("fake-badge").hidden = false; $("fake-badge").textContent = fake.join(" + "); }
+  $("subtitle").textContent = upsc
+    ? `A Hinglish UPSC personality test board. About ${cfg.max_minutes} minutes at most.`
+    : `Argue your side against the board. About ${cfg.max_minutes} minutes at most.`;
+  $("form-panel").hidden = !upsc;
+  $("debate-panel").hidden = upsc;
+  if (!upsc) $("motion").textContent = `#${cfg.motion_number}: ${cfg.motion} You speak ${cfg.side} it.`;
+}
+
+$("start").onclick = start;
+$("stop").onclick = () => { stop(); };
+init().catch((e) => { $("error").textContent = `Could not load the config: ${e.message}`; });
+</script>
+</body>
+</html>

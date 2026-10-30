@@ -116,8 +116,14 @@ class PausedTurnStopStrategy(TurnAnalyzerUserTurnStopStrategy):
             self._pause_task = None
 
     async def reset(self):
+        # The controller resets every stop strategy when a user turn starts. Our start
+        # strategy may fire mid-speech (after the barge-in threshold), so keep what Silero is
+        # hearing right now; otherwise Smart Turn never sees this speech end and only the
+        # user-turn stop timeout would close the turn (seen in the headless run).
+        speaking = self._vad_user_speaking
         await self._cancel_pause()
         await super().reset()
+        self._vad_user_speaking = speaking
 
     async def cleanup(self):
         await self._cancel_pause()

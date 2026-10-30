@@ -79,7 +79,7 @@ class Rig:
     """Runs the offline voice pipeline for one session."""
 
     def __init__(self, session, *, stt=None, tts_ms_per_word=60, deadline_s=5.0,
-                 report_dir=None):
+                 report_dir=None, session_max_s=None):
         self.session = session
         self.ledger = PlaybackLedger()
         self.stt = stt or FakeCommitSTT(segment_delay_s=10.0)
@@ -88,7 +88,7 @@ class Rig:
         self.collector = Collector()
         self.brain = BrainProcessor(session, stt=self.stt, ledger=self.ledger,
                                     deadline_s=deadline_s, settle_s=0.05,
-                                    report_dir=report_dir)
+                                    report_dir=report_dir, session_max_s=session_max_s)
         self.worker = PipelineWorker(
             Pipeline([PassThrough(), self.stt, self.brain, self.tts, self.playback,
                       self.collector]),
@@ -282,3 +282,12 @@ async def test_the_real_pipeline_is_assembled_with_our_turn_taking(
     assert [type(x) for x in strategies.stop] == [PausedTurnStopStrategy]
     assert strategies.stop[0].wait_for_transcript is False  # the brain commits (ruling 28)
     assert vp.brain.board_phase() == "speaking" or vp.brain.board_phase() == "thinking"
+
+
+async def test_the_session_time_cap_ends_the_interview_with_a_report(
+    settings, cards, fake_llm, form, tmp_path
+):
+    s = upsc_session(settings, cards, fake_llm, form, tmp_path)
+    async with Rig(s, session_max_s=1.0) as rig:  # regression: the timer used to collide
+        await rig.until(lambda: rig.brain.report is not None, timeout=12)  # with Pipecat's
+    assert rig.brain.events_of("time_up") and rig.brain.events_of("report")  # _clock
