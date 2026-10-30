@@ -47,6 +47,7 @@ import re
 import time
 import zlib
 from collections.abc import AsyncIterator, Callable
+from contextvars import ContextVar
 from dataclasses import dataclass, replace
 
 from mockboard.brain.cards import CardSet
@@ -144,8 +145,24 @@ def cap_words(text: str, max_words: int) -> str:
     return text.strip() if len(words) <= max_words else " ".join(words[:max_words])
 
 
+# Voice mode (V3, ADR-008): `session.speak_stream()` sets this, inside its own actor task only,
+# to a callable that receives the capped text as it streams, so complete sentences can go to
+# Timbre before the line ends. Context variables are per task, so concurrent sessions and the
+# text CLI (where it stays None) are unaffected; the guards below still see the whole line.
+ACTOR_TEXT_SINK: ContextVar[Callable[[str], None] | None] = ContextVar(
+    "actor_text_sink", default=None
+)
+
+
+def _to_sink(text: str) -> None:
+    sink = ACTOR_TEXT_SINK.get()
+    if sink is not None:
+        sink(text)
+
+
 async def stream_capped(chunks: AsyncIterator[str], max_words: int) -> AsyncIterator[str]:
-    """Pass text chunks through until `max_words` words have been emitted, then stop."""
+    """Pass text chunks through until `max_words` words have been emitted, then stop.
+    Every chunk passed on also goes to `ACTOR_TEXT_SINK` when one is set (voice mode)."""
     emitted = 0
     pending = ""
     async for chunk in chunks:
@@ -161,10 +178,12 @@ async def stream_capped(chunks: AsyncIterator[str], max_words: int) -> AsyncIter
                 emitted += 1
             out.append(part)
         if out:
+            _to_sink("".join(out))
             yield "".join(out)
         if emitted >= max_words:
             return
     if pending.strip() and emitted < max_words:
+        _to_sink(pending)
         yield pending
 
 
