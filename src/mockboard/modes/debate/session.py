@@ -31,7 +31,13 @@ from mockboard.brain.schemas import (
     OpponentArg,
     StrategyContext,
 )
-from mockboard.modes.debate.actor import DebateBrief, DebateLine, arguments_for, compose_debate_line
+from mockboard.modes.debate.actor import (
+    DebateBrief,
+    DebateLine,
+    arguments_for,
+    compose_debate_line,
+    template_question,
+)
 from mockboard.modes.debate.guards import (
     OPPONENT_OFF_LIMITS,
     FigurePolicy,
@@ -245,6 +251,11 @@ class DebateSessionHooks:
     def expects_long_turn(self) -> bool:
         st = self.session.state
         return not st.finished and st.topic in (OPENING, CLOSING)
+
+    def template_line(self, move: BoardMove) -> str | None:
+        """Ruling 33: the one sentence the voice loop appends when a streamed debate line is
+        cut short (guard stop or actor failure) and nothing said so far asks a question."""
+        return template_question(move, self.mix, self.setup.opponent_case)
 
     def confer_line(self) -> str:
         return CONFER.get(self.mix, CONFER["hi-en"])

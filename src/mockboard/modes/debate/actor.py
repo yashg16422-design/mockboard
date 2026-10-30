@@ -194,6 +194,80 @@ _T: dict[str, dict[str, str]] = {
 }
 
 
+# Ruling 33: the one sentence the voice loop appends when a streamed line is cut short and
+# nothing said so far asks a question (`session._template_question` -> hooks.template_line).
+# Figure-free and off-limits-free by construction. A closing statement ends the debate, so it
+# gets a closing line, not a question; the Moderator's final "close" gets nothing.
+_Q: dict[str, dict[str, str]] = {
+    "hi-en": {
+        "opening_statement": "Ab aap jawab dijiye: is par aap kya kehte hain?",
+        "rebut": "Iska jawab kya hai?",
+        "cross_question": "Mere is point par aapka jawab kya hai: {claim}?",
+        "cross_generic": "Mere pichhle point par aapka jawab kya hai?",
+        "cross_warrant": "Yeh baat kyun sach hai, aapka tark kya hai?",
+        "concede_point": "Lekin mere agle point par aap kya kahenge?",
+        "closing_statement": "Isliye mera paksh wahi hai.",
+        "steelman": "Ek sentence mein mere paksh ka sabse mazboot tark kya hai?",
+        "fact_challenge": "Aapka figure kahan se hai?",
+        "redirect": "Kya aap motion par wapas aa sakte hain?",
+        "reassure": "Aapka sabse mazboot point kya hai?",
+        "clarify": "Kya aap phir se bata sakte hain?",
+        "move_on": "Aapka closing statement kya hai?",
+        "interrupt": "Aapka mukhya point kya hai?",
+    },
+    "hi": {
+        "opening_statement": "अब आप जवाब दीजिए: इस पर आप क्या कहते हैं?",
+        "rebut": "इसका आपका जवाब क्या है?",
+        "cross_question": "मेरे इस तर्क पर आपका जवाब क्या है?",
+        "cross_generic": "मेरे पिछले तर्क पर आपका जवाब क्या है?",
+        "cross_warrant": "यह बात क्यों सच है, आपका तर्क क्या है?",
+        "concede_point": "लेकिन मेरे अगले तर्क पर आप क्या कहेंगे?",
+        "closing_statement": "इसलिए मेरा पक्ष वही है।",
+        "steelman": "एक वाक्य में मेरे पक्ष का सबसे मज़बूत तर्क क्या है?",
+        "fact_challenge": "आपका आँकड़ा कहाँ से है?",
+        "redirect": "क्या आप प्रस्ताव पर वापस आ सकते हैं?",
+        "reassure": "आपका सबसे मज़बूत बिंदु क्या है?",
+        "clarify": "क्या आप फिर से बता सकते हैं?",
+        "move_on": "आपका समापन वक्तव्य क्या है?",
+        "interrupt": "आपका मुख्य बिंदु क्या है?",
+    },
+    "en": {
+        "opening_statement": "Over to you: how do you answer that?",
+        "rebut": "How do you answer that?",
+        "cross_question": "What is your answer to this point: {claim}?",
+        "cross_generic": "What is your answer to my last point?",
+        "cross_warrant": "Why does that follow, what is your reason?",
+        "concede_point": "But what do you say to my next point?",
+        "closing_statement": "So I stand by my side.",
+        "steelman": "In one sentence, what is the best case for my side?",
+        "fact_challenge": "Where is your figure from?",
+        "redirect": "Could you come back to the motion?",
+        "reassure": "What is your strongest point?",
+        "clarify": "Could you say that again?",
+        "move_on": "What is your closing statement?",
+        "interrupt": "What is your main point?",
+    },
+}
+
+
+def template_question(move: BoardMove, mix: str, case: Sequence[CaseArgument] = ()) -> str | None:
+    """The debate's closing question for a cut-short line (ruling 33), in the session's
+    language mix: Hinglish, Hindi (Devanagari) or English. None when nothing should follow
+    (the Moderator closing the debate)."""
+    q = _Q.get(mix, _Q["hi-en"])
+    kind = move.move.value
+    if move.move == Move.move_on and move.target == CLOSE_TARGET:
+        return None
+    if move.move == Move.cross_question:
+        if move.target == WARRANT_TARGET:
+            return q["cross_warrant"]
+        arg = next((a for a in case if a.id == move.target), None)
+        if arg is None or "{claim}" not in q["cross_question"]:
+            return q["cross_generic"] if arg is None else q["cross_question"]
+        return q["cross_question"].format(claim=_lc(arg.claim).rstrip("."))
+    return q.get(kind, q["rebut"])
+
+
 def _t(mix: str) -> dict[str, str]:
     return _T.get(mix, _T["hi-en"])  # Hindi (Devanagari) falls back to Hinglish for now
 
