@@ -163,3 +163,10 @@ Judge scores 1-5 or "insufficient_evidence" for: mental_alertness, critical_assi
 - **Ruling 32 (gap the builder reported):** the user-side off-limits check sees only what the listener recorded, so a paraphrasing listener could hide a hit. The debate builder adds a minimal hook so the check also runs on the raw transcript text, touching `brain/listener.py` only as much as needed (the voice builder is not editing that file), with a test where the listener paraphrases away an off-limits word.
 - Voice builder committed V3 item 1 (fbe34b8: current Prisma headers, ordered `commit`); items 2–5 in progress.
 - **Ruling 32 delivered** (ddf03e2): off-limits check also runs on the raw transcript via an optional hook on the listener's output model (UPSC model has none, so UPSC is unchanged); test with a paraphrasing fake listener passes and fails when the check is disabled. Debate integrity work complete.
+
+## Round 18 — Oct 30, 2026 (V3 + V4 core accepted: the real board on voice)
+
+- **Accepted.** Orchestrator re-ran: 656 passed / 6 skipped without the voice extra; voice tests 111 passed in the voice venv; lint clean; UPSC `cli-fake` board lines byte-identical (md5 826ef55…). Started `mockboard.voice.server --mode upsc --fake-llm --fake-speech`: page served on localhost:7860 (HTTP 200). Commits fbe34b8, 0e213d6, cfd84b6, cde1330, 638e333.
+- Builder's headless WebRTC run found and fixed three bugs (opener captions sent too early, a timer name colliding with Pipecat's `_clock`, Silero state lost mid-speech) with regression tests.
+- **Ruling 33:** debate mode needs a `template_line(move)` hook so a streamed debate line cut short still ends with a proper question (builder's open note) → debate builder, small chunk.
+- Next: owner's first live voice session; its `make voice-summary` output sets `MOVE_DEADLINE_MS`, Smart Turn and barge-in thresholds (V9). Then V5 masking filler, V6 web polish, V8 EC2 deploy.
