@@ -121,3 +121,75 @@ def test_m2_card_figure_only_in_a_sentence_about_that_card(deps, sentence, ok):
         mode_options=DebateSetup(motion=MOTIONS["tourism_hill_towns"], user_side=Side.against),
     )
     assert s.guard_sentence(REBUT, sentence) is ok
+
+
+# ---------------------------------------------------------------------------
+# Off-limits backstop (ruling 29, CTO should-fix 6)
+# ---------------------------------------------------------------------------
+
+
+def test_opponent_party_religion_caste_sentences_are_dropped(deps):
+    s = InterviewSession(
+        deps=deps, form=None, recorder=TraceRecorder(deps.settings.trace_dir, "x", enabled=False),
+        analyzer=TurnAnalyzer(deps), session_id="x", mode="debate",
+        mode_options=DebateSetup(motion=MOTIONS["street_food"], user_side=Side.for_),
+    )
+    for bad in ("Yeh bilkul BJP ki soch jaisa hai.", "Har religion ka khana alag hai.",
+                "Caste ke hisaab se khana badalta hai.", "Isse communal tension badhti hai."):
+        assert not s.guard_sentence(REBUT, bad), bad
+    assert s.guard_sentence(REBUT, "Street food sasta aur taaza hota hai.")
+    redirect = BoardMove(move=Move.redirect, member="moderator", reason="D2: x", rule_id="D2")
+    # The Moderator's own redirect names parties to keep them out; it is not an opponent line.
+    assert s.guard_sentence(redirect, "Chaliye, parties aur netaon ko alag rakhte hain.")
+
+
+def test_opponent_line_loses_only_its_off_limits_sentence():
+    from mockboard.modes.debate.actor import apply_guards
+    from test_debate_actor import brief_for
+
+    line = "Yeh Congress jaisi baat hai. Lekin street food mein hygiene ek asli sawaal hai."
+    out = apply_guards(line, REBUT, brief_for("street_food"), last_answer="", max_words=45)
+    assert out.text == "Lekin street food mein hygiene ek asli sawaal hai."
+    assert "off_limits_guard" in out.guard and out.dropped_sentences
+
+
+async def test_an_opponent_that_only_says_off_limits_things_falls_back_to_the_template(
+    settings, cards
+):
+    from conftest import answer
+    from mockboard.brain.fake_responders import fake_responders
+    from mockboard.brain.llm import FakeLLMClient
+    from test_debate_session import CLASH_PLAIN, CLOSING, OPENING
+
+    responders = fake_responders(cards)
+    responders["actor"] = lambda system, user: "Yeh sab BJP aur Congress ka khel hai."
+    deps = build_deps(settings, FakeLLMClient(responders=responders), cards=cards)
+    s = InterviewSession(
+        deps=deps, form=None, recorder=TraceRecorder(settings.trace_dir, "y", enabled=False),
+        analyzer=TurnAnalyzer(deps), session_id="y", mode="debate",
+        mode_options=DebateSetup(motion=MOTIONS["smartphones_in_schools"], user_side=Side.for_),
+    )
+    await s.open()
+    for text in (OPENING, CLASH_PLAIN, CLASH_PLAIN, CLOSING):
+        if not s.state.finished:
+            out = await answer(s, text)
+            if out.move.member == "opponent":
+                assert "BJP" not in out.line.text and "Congress" not in out.line.text
+                assert out.line.text.strip()  # a template, never silence
+
+
+def test_user_off_limits_gets_redirect_even_when_the_listener_misses_it(deps):
+    from mockboard.brain.schemas import Analysis, DebateArgument
+    from mockboard.modes.debate.strategist import decide_debate_move
+    from test_debate_strategist import dctx
+
+    missed = Analysis(turn_id="t2", word_count=12, off_limits=False,
+                      arguments=[DebateArgument(claim="Yeh sab Congress ki galti hai",
+                                                warrant="kyunki unhone vaada kiya")])
+    ctx = dctx()
+    move = decide_debate_move(ctx, [missed], [], deps.mode("debate").strategy)
+    assert (move.move, move.rule_id) == (Move.redirect, "D2")
+    assert "rule backstop: partisan" in move.reason
+    fine = missed.model_copy(update={"arguments": [DebateArgument(
+        claim="Mandir ke bahar ki chaat sabse achhi hoti hai", warrant="kyunki taaza hai")]})
+    assert decide_debate_move(ctx, [fine], [], deps.mode("debate").strategy).move != Move.redirect

@@ -45,7 +45,7 @@ from mockboard.modes import get_profile
 from mockboard.modes.debate.guards import has_concession, split_sentences
 from mockboard.modes.debate.motions import Side, load_curated_motions
 from mockboard.modes.debate.session import DebateSetup, Length, OpponentStyle
-from mockboard.modes.debate.strategist import CLASH, WARRANT_TARGET
+from mockboard.modes.debate.strategist import CLASH, WARRANT_TARGET, user_text_off_limits
 from mockboard.obs.trace import TraceRecorder
 from mockboard.session import InterviewSession, split_segments
 
@@ -163,7 +163,8 @@ def concedes_strong_points(p: PlayedDebate) -> list[str]:
             bad.append(f"turn {i}: conceded {m.target}, which was not standing")
         hits = standing & set(a.rebuts)
         earlier_rule = (
-            a.garbled or a.off_limits or a.word_count == 0 or a.honest_unknown
+            a.garbled or a.off_limits or bool(user_text_off_limits(a))
+            or a.word_count == 0 or a.honest_unknown
             or p.rounds[i] != CLASH or p.last_in_round[i] or a.question_to_opponent
             or m.rule_id in ("FALLBACK", "CAP")
         )
@@ -244,11 +245,12 @@ def no_repeated_cross_question(p: PlayedDebate) -> list[str]:
 def off_limits_redirected(p: PlayedDebate) -> list[str]:
     bad = []
     for i, (a, m) in _turns(p):
-        if a.off_limits and not a.garbled and m.rule_id not in ("FALLBACK", "CAP") and (
+        off = a.off_limits or bool(user_text_off_limits(a))  # listener flag or rule backstop
+        if off and not a.garbled and m.rule_id not in ("FALLBACK", "CAP") and (
             m.move != Move.redirect or m.member != MODERATOR
         ):
             bad.append(f"turn {i}: off-limits speech got {m.move.value} from {m.member}")
-        if m.move == Move.redirect and not a.off_limits:
+        if m.move == Move.redirect and not off:
             bad.append(f"turn {i}: redirect without off-limits speech")
     return bad
 
@@ -256,7 +258,8 @@ def off_limits_redirected(p: PlayedDebate) -> list[str]:
 def honest_unknown_not_pounced_on(p: PlayedDebate) -> list[str]:
     bad = []
     for i, (a, m) in _turns(p):
-        if not a.honest_unknown or a.garbled or a.off_limits or a.word_count == 0:
+        if (not a.honest_unknown or a.garbled or a.off_limits or user_text_off_limits(a)
+                or a.word_count == 0):
             continue
         if m.move in (Move.cross_question, Move.fact_challenge):
             bad.append(f"turn {i}: honest 'I don't know' got {m.move.value}")

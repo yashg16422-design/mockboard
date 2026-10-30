@@ -49,11 +49,13 @@ from mockboard.modes.debate.guards import (
     FigurePolicy,
     has_concession,
     number_guard,
+    off_limits_guard,
     restates_user,
 )
 from mockboard.modes.debate.motions import CaseArgument
 from mockboard.modes.debate.strategist import (
     CLOSE_TARGET,
+    OPPONENT,
     WARRANT_TARGET,
     opening_args,
     pick_argument,
@@ -347,6 +349,12 @@ def apply_guards(
         return DebateLine(**_fields(guard_fact_challenge(text, claim, card, brief.mix)))
     guarded = number_guard(text, brief.allowed)
     text, guards = guarded.text, (["number_guard"] if guarded.dropped else [])
+    dropped = guarded.dropped
+    if move.member == OPPONENT:  # ruling 29: no party, religion, caste or communal talk
+        off = off_limits_guard(text)
+        if off.dropped:
+            text, dropped = off.text, dropped + off.dropped
+            guards.append("off_limits_guard")
     concession_added = False
     if move.move == Move.closing_statement and not has_concession(text):
         lead = closing_concession_sentence(brief)
@@ -362,7 +370,7 @@ def apply_guards(
     return DebateLine(
         text,
         guard="+".join(guards),
-        dropped_sentences=guarded.dropped,
+        dropped_sentences=dropped,
         concession_added=concession_added,
         restate_ok=restate,
     )

@@ -33,9 +33,11 @@ from mockboard.brain.schemas import (
 )
 from mockboard.modes.debate.actor import DebateBrief, DebateLine, arguments_for, compose_debate_line
 from mockboard.modes.debate.guards import (
+    OPPONENT_OFF_LIMITS,
     FigurePolicy,
     allowed_figures,
     cards_for_topics,
+    off_limits_category,
     sentence_allowed,
 )
 from mockboard.modes.debate.motions import CaseArgument, Motion, Side
@@ -224,9 +226,12 @@ class DebateSessionHooks:
         return LineResult(text, guard="intro_template"), move, extra
 
     def guard_sentence(self, move: BoardMove, sentence: str) -> bool:
-        """The number guard, one sentence at a time (voice mode, before TTS)."""
+        """The debate guards, one sentence at a time (voice mode, before TTS): the number
+        guard, and for the opponent the off-limits backstop (ruling 29)."""
         if move.move == Move.fact_challenge:
             return True  # the ask-never-assert guard and template own fact challenges
+        if move.member == OPPONENT and off_limits_category(sentence, OPPONENT_OFF_LIMITS):
+            return False
         return sentence_allowed(sentence, self.allowed)
 
     def expects_long_turn(self) -> bool:

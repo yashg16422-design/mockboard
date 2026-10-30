@@ -54,6 +54,7 @@ from mockboard.brain.strategist import (
     challengeable_claims,
     merge_analyses,
 )
+from mockboard.modes.debate.guards import USER_OFF_LIMITS, off_limits_category
 
 OPPONENT = "opponent"  # generic member id; the session maps it to the chosen persona
 OPENING, CLASH, CLOSING = "opening", "clash", "closing"
@@ -119,6 +120,20 @@ def fresh_argument_left(d: DebateContext) -> bool:
     return any(d.pressed_counts.get(a.id, 0) < 2 for a in d.standing)
 
 
+def user_text_off_limits(turn: Analysis) -> str | None:
+    """The first screen rule (parties, caste, communal conflict) that the user's words match,
+    as the listener recorded them (claims, arguments, reasons, stance, question), or None.
+
+    UNVERIFIED gap: a real listener may paraphrase; the raw transcript itself does not reach
+    the strategist through the mode's code (see DEBATE_BUILDER_LOG, ruling 29)."""
+    texts = [
+        turn.stance, turn.question_to_opponent, *turn.reasons,
+        *(c.text for c in turn.claims),
+        *(f"{a.claim} {a.warrant}" for a in turn.arguments),
+    ]
+    return off_limits_category(" ".join(t for t in texts if t), USER_OFF_LIMITS)
+
+
 def _budget_used(ctx: StrategyContext) -> bool:
     return ctx.turns_in_topic + 1 >= max(1, ctx.max_turns_in_topic)
 
@@ -174,9 +189,15 @@ def _decide(
             f"speech is {turn.word_count} words (> {cfg.interrupt_after_words})",
         )
 
-    # D2: parties, leaders, elections or attacks on groups: the Moderator steers back.
-    if turn.off_limits:
-        return _move(Move.redirect, moderator, "D2", "off-limits content; back to the motion")
+    # D2: parties, leaders, elections or attacks on groups: the Moderator steers back. The
+    # listener's flag, or (ruling 29) the screen's rule patterns over the user's words as the
+    # listener recorded them, so a missed flag still gets the redirect.
+    rule_hit = user_text_off_limits(turn)
+    if turn.off_limits or rule_hit:
+        why = "off-limits content; back to the motion"
+        if rule_hit and not turn.off_limits:
+            why += f" (rule backstop: {rule_hit})"
+        return _move(Move.redirect, moderator, "D2", why)
 
     # D3: silence or a long pause.
     if turn.word_count == 0:
