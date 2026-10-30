@@ -170,3 +170,4 @@ Judge scores 1-5 or "insufficient_evidence" for: mental_alertness, critical_assi
 - Builder's headless WebRTC run found and fixed three bugs (opener captions sent too early, a timer name colliding with Pipecat's `_clock`, Silero state lost mid-speech) with regression tests.
 - **Ruling 33:** debate mode needs a `template_line(move)` hook so a streamed debate line cut short still ends with a proper question (builder's open note) → debate builder, small chunk.
 - Next: owner's first live voice session; its `make voice-summary` output sets `MOVE_DEADLINE_MS`, Smart Turn and barge-in thresholds (V9). Then V5 masking filler, V6 web polish, V8 EC2 deploy.
+- **Ruling 33 delivered** (3dc4c34): debate `template_line(move)` for every debate move in Hinglish, Hindi and English, figure-free and guard-clean; tests cover lines cut short by the number guard, the off-limits guard and a mid-line actor failure. Orchestrator re-ran: tests green, lint clean.
