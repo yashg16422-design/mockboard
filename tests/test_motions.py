@@ -56,8 +56,10 @@ def test_only_motions_5_and_6_have_cards(motions):
     with_cards = {m.number: m.card_topics for m in motions.values() if m.card_topics}
     assert with_cards == {5: ["tourism"], 6: ["internal_security"]}
     for m in motions.values():
+        # Ruling 29: no argument links a card until the owner writes real cards and confirms
+        # each one supports the argument it is attached to.
         ids = [c for a in [*m.case.for_, *m.case.against] for c in a.card_ids]
-        assert bool(ids) == bool(m.card_topics), m.id
+        assert ids == [], m.id
 
 
 def test_case_file_cards_exist_and_match_the_motion_topic(motions):

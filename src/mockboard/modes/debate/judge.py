@@ -49,7 +49,7 @@ from mockboard.brain.schemas import (
     ReportLanguage,
 )
 from mockboard.brain.tools import DEBATE_JUDGE_TOOL, DebateJudgeOutput
-from mockboard.modes.debate.guards import sentence_allowed, split_sentences
+from mockboard.modes.debate.guards import FigurePolicy, sentence_allowed, split_sentences
 from mockboard.modes.debate.motions import CaseArgument
 from mockboard.modes.debate.scoreboard import compute_scoreboard
 from mockboard.modes.debate.verdict import build_verdict, takes_sides
@@ -68,7 +68,7 @@ class DebateReportState(TypedDict, total=False):
     motion: str
     user_side: str
     case: list[CaseArgument]
-    allowed: list[float]
+    allowed: FigurePolicy
     draft: DebateJudgeOutput | None
     failed: list
     revisions: int
@@ -222,7 +222,7 @@ def _eligible(turn: CandidateTurn) -> bool:
 def code_best_line(
     turns: Sequence[CandidateTurn],
     case: Sequence[CaseArgument],
-    allowed: frozenset[float],
+    allowed: FigurePolicy,
     language: ReportLanguage,
 ) -> BestLine | None:
     """A deterministic best line when the judge's pick is missing or fails a check: the
@@ -269,7 +269,7 @@ def code_best_line(
 def judge_best_line(
     draft: DebateJudgeOutput,
     turns: Sequence[CandidateTurn],
-    allowed: frozenset[float],
+    allowed: FigurePolicy,
 ) -> tuple[BestLine | None, str]:
     """The judge's best line if it passes every check, else (None, why not)."""
     cited = draft.best_line
@@ -328,7 +328,7 @@ def assemble_debate_report(
     """Keep only verified evidence; a score left without evidence becomes insufficient."""
     turns = state.get("turns", [])
     language = state.get("language", ReportLanguage.en)
-    allowed = frozenset(state.get("allowed", []))
+    allowed = state.get("allowed") or FigurePolicy()
     failed = check_citations(draft.citations(), turns)
     failed_ids = {id(e) for e in failed}
     good: dict[DebateDimension, list[Evidence]] = {}
@@ -376,7 +376,7 @@ def fallback_debate_report(
     language = state.get("language", ReportLanguage.en)
     board = scoreboard_for(state)
     best = code_best_line(
-        state.get("turns", []), state.get("case", []), frozenset(state.get("allowed", [])),
+        state.get("turns", []), state.get("case", []), state.get("allowed") or FigurePolicy(),
         language,
     )
     return DebateReport(
@@ -451,7 +451,7 @@ async def generate_debate_report(
     motion: str,
     user_side: str,
     case: Sequence[CaseArgument],
-    allowed: frozenset[float],
+    allowed: FigurePolicy,
     language: ReportLanguage | str | None = None,
     graph: Any = None,
     callbacks: Sequence[Any] = (),
@@ -476,7 +476,7 @@ async def generate_debate_report(
             "motion": motion,
             "user_side": user_side,
             "case": list(case),
-            "allowed": sorted(allowed),
+            "allowed": allowed,
             "revisions": 0,
             "failed": [],
         },

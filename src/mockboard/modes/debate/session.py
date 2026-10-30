@@ -21,6 +21,7 @@ from enum import StrEnum
 from typing import TYPE_CHECKING, Any
 
 from mockboard.brain.actor import LineResult
+from mockboard.brain.llm import FakeLLMClient
 from mockboard.brain.schemas import (
     Analysis,
     BoardMove,
@@ -31,7 +32,12 @@ from mockboard.brain.schemas import (
     StrategyContext,
 )
 from mockboard.modes.debate.actor import DebateBrief, DebateLine, arguments_for, compose_debate_line
-from mockboard.modes.debate.guards import allowed_figures, cards_for_topics, sentence_allowed
+from mockboard.modes.debate.guards import (
+    FigurePolicy,
+    allowed_figures,
+    cards_for_topics,
+    sentence_allowed,
+)
 from mockboard.modes.debate.motions import CaseArgument, Motion, Side
 from mockboard.modes.debate.strategist import (
     CLASH,
@@ -74,6 +80,10 @@ class DebateSetup:
     opponent_style: OpponentStyle = OpponentStyle.logician
     case_source: str = "curated"  # "curated", "model" or "generic_fallback: ..."
     case: Sequence[CaseArgument] | None = None  # overrides the motion's case (custom motions)
+    # Ruling 29 (CTO_NOTES_05 M1): synthetic test cards never authorise a figure in a real
+    # debate. None means "only when the session runs on the offline fake LLM"; an explicit
+    # value overrides that (tests).
+    allow_synthetic_cards: bool | None = None
 
     @property
     def opponent_case(self) -> list[CaseArgument]:
@@ -119,13 +129,23 @@ class DebateSessionHooks:
     setup: DebateSetup
     state: DebateContext = field(init=False)
     cards: list[FactCard] = field(init=False)
-    allowed: frozenset[float] = field(init=False)
+    allowed: FigurePolicy = field(init=False)
     # One row per candidate turn, the same data the trace line's `debate` block carries; the
     # scoreboard is computed from these rows (or from the trace file) by code (DB6).
     rows: list[dict[str, Any]] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         motion = self.setup.motion
+        allow_synthetic = self.setup.allow_synthetic_cards
+        if allow_synthetic is None:
+            allow_synthetic = isinstance(self.session.deps.llm, FakeLLMClient)
+        self.cards = [
+            c for c in cards_for_topics(
+                list(self.session.deps.cards.cards.values()), motion.card_topics
+            )
+            if allow_synthetic or not c.synthetic_example
+        ]
+        self.allowed = allowed_figures(self.cards, motion.text)
         self.state = DebateContext(
             motion=motion.text,
             user_side=self.setup.user_side.value,
@@ -133,12 +153,10 @@ class DebateSessionHooks:
                 OpponentArg(id=a.id, claim=a.claim, keywords=list(a.keywords))
                 for a in self.setup.opponent_case
             ],
-            card_topics=list(motion.card_topics),
+            # Only topics with a card that may be cited: with none, the opponent and the
+            # listener are told the motion has no cards, and nothing is fact-checked.
+            card_topics=[t for t in motion.card_topics if any(c.topic == t for c in self.cards)],
         )
-        self.cards = cards_for_topics(
-            list(self.session.deps.cards.cards.values()), motion.card_topics
-        )
-        self.allowed = allowed_figures(self.cards, motion.text)
 
     # -- wiring ---------------------------------------------------------------
 
@@ -220,7 +238,7 @@ class DebateSessionHooks:
 
     # -- one turn -------------------------------------------------------------
 
-    def brief(self, analysis: Analysis) -> DebateBrief:
+    def brief(self, analysis: Analysis, answer: str = "") -> DebateBrief:
         return DebateBrief(
             motion=self.setup.motion.text,
             user_side=self.setup.user_side.value,
@@ -249,7 +267,7 @@ class DebateSessionHooks:
             self.rt.kit,
             self.persona(move.member),
             move,
-            self.brief(turn.analysis or Analysis()),
+            self.brief(turn.analysis or Analysis(), answer),
             last_question=self.session.last_question,
             last_answer=answer,
             max_words=cap,

@@ -1,5 +1,5 @@
 {
- "description": "The 13 curated debate motions of CTO_NOTES_04 §5, each with a hand-written case file for both sides (the board argues the side the user does not pick). Arguments are qualitative: no statistics or numbers. Only motions 5 and 6 list card_topics, and their card_ids point at the existing tourism and internal_security cards, which are SYNTHETIC TEST CARDS until the owner replaces them with real, sourced cards (data/cards/README.md). Arguments are listed strongest first. Keywords are for the offline fake listener and the restate check only.",
+ "description": "The 13 curated debate motions of CTO_NOTES_04 §5, each with a hand-written case file for both sides (the board argues the side the user does not pick). Arguments are qualitative: no statistics or numbers. Only motions 5 and 6 list card_topics (the existing tourism and internal_security cards, SYNTHETIC TEST CARDS until the owner replaces them with real, sourced cards; data/cards/README.md). No argument links a card (card_ids removed by ruling 29): the owner must confirm that each real card supports the argument it is attached to before any link is added back. Arguments are listed strongest first. Keywords are for the offline fake listener and the restate check only.",
  "reviewed": "Written by the debate builder on Oct 29, 2026; the orchestrator reviewed the 13 motion texts in ruling 21. The case files themselves await the owner's review.",
  "motions": [
   {
@@ -440,9 +440,6 @@
        "hotels",
        "guides",
        "migration"
-      ],
-      "card_ids": [
-       "test_tourism_gdp_share"
       ]
      },
      {
@@ -456,9 +453,6 @@
        "connectivity",
        "development",
        "demand"
-      ],
-      "card_ids": [
-       "test_tourism_foreign_arrivals"
       ]
      },
      {
@@ -567,9 +561,6 @@
        "tensions",
        "neighbourhood",
        "beat"
-      ],
-      "card_ids": [
-       "test_security_incident_decline"
       ]
      },
      {
@@ -583,9 +574,6 @@
        "officers",
        "people",
        "cost"
-      ],
-      "card_ids": [
-       "test_security_budget"
       ]
      }
     ],
@@ -601,9 +589,6 @@
        "response time",
        "access",
        "door"
-      ],
-      "card_ids": [
-       "test_security_affected_districts"
       ]
      },
      {

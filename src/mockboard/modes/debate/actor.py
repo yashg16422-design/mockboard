@@ -46,6 +46,7 @@ from mockboard.brain.schemas import (
 )
 from mockboard.modes.debate.guards import (
     RESTATE_MOVES,
+    FigurePolicy,
     has_concession,
     number_guard,
     restates_user,
@@ -57,6 +58,8 @@ from mockboard.modes.debate.strategist import (
     opening_args,
     pick_argument,
 )
+
+_NO_FIGURES = FigurePolicy()
 
 # Moves whose effect on the debate must be heard even when the actor fails (see docstring).
 STATE_MOVES = frozenset(
@@ -81,7 +84,9 @@ class DebateBrief:
     case: Sequence[CaseArgument]  # the opponent's case file
     debate: DebateContext  # standing / conceded / pressed / answered, as of this turn
     cards: Sequence[FactCard] = ()  # the motion's cards (empty for most motions)
-    allowed: frozenset[float] = frozenset()  # figures the number guard allows
+    # Which figures the number guard allows, and where (ruling 29). The empty policy
+    # allows none. Frozen, so sharing one default instance is safe.
+    allowed: FigurePolicy = _NO_FIGURES
     mix: str = "hi-en"
     user_question: str = ""  # D7: the question to answer first
     user_point: str = ""  # the user's best argument this turn (for templates)

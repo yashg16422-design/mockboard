@@ -95,7 +95,8 @@ def test_word_caps_follow_the_design():
 
 def test_number_guard_drops_uncarded_figures_and_keeps_the_rest():
     allowed = allowed_figures([], MOTIONS["smartphones_in_schools"].text)
-    assert allowed == frozenset({10.0})  # "Class 10" in the motion text
+    assert allowed.motion_phrases == (("class", 10.0),)  # "Class 10", only as that phrase
+    assert allowed.cards == ()
     line = ("Class 10 tak phones band hone chahiye. Studies show 40 percent students are "
             "distracted. Teen lakh bachche roz phone laate hain. Dhyan bhatakta hai.")
     out = number_guard(line, allowed)
@@ -108,8 +109,12 @@ def test_number_guard_allows_only_the_motions_own_cards():
     cards = load_cards(s.cards_dir, s.topics)  # the data cards motions 5 and 6 cite
     b = brief_for("tourism_hill_towns", cards.cards.values())
     assert {c.topic for c in b.cards} == {"tourism"}
-    assert sentence_allowed("Exampleland test data ke hisaab se yeh 12 percent hai.", b.allowed)
-    assert sentence_allowed("Yeh 2023 ka figure hai.", b.allowed)
+    # A card figure only in a sentence about that card (ruling 29: two shared content words).
+    assert sentence_allowed("Exampleland ka tourism share of GDP 12 percent hai.", b.allowed)
+    assert sentence_allowed("Exampleland tourism share 2023 mein badha.", b.allowed)
+    assert not sentence_allowed("Exampleland test data ke hisaab se yeh 12 percent hai.",
+                                b.allowed)  # only one topic word: "test" and "data" are labels
+    assert not sentence_allowed("Yeh 2023 ka figure hai.", b.allowed)
     assert not sentence_allowed("Yeh 13 percent hai.", b.allowed)
     assert not sentence_allowed("Budget 900 crore hai.", b.allowed)  # security card, not ours
     assert not sentence_allowed("Aadhe log sehmat hain.", b.allowed)  # number word alone
