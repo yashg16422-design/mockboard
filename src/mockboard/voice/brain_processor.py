@@ -193,6 +193,9 @@ class BrainProcessor(FrameProcessor):
         self.events.append(msg)
         await self.push_frame(OutputTransportMessageUrgentFrame(message=msg))
 
+    def events_of(self, event: str) -> list[dict[str, Any]]:
+        return [e for e in self.events if e["event"] == event]
+
     async def _set_state(self, state: str) -> None:
         if state != self.state:
             self.state = state
