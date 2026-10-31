@@ -23,7 +23,6 @@ development runner calls `load_dotenv(override=True)` at import and scans for a 
 from __future__ import annotations
 
 import argparse
-import asyncio
 import json
 import sys
 import uuid
@@ -34,7 +33,7 @@ from typing import Any
 
 # FastAPI reads these annotations at runtime, so they are imported at module level.
 from fastapi import FastAPI, Request
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 from loguru import logger
 from pipecat.transports.smallwebrtc.request_handler import (
     IceCandidate,
@@ -53,6 +52,7 @@ from mockboard.config import Settings
 from mockboard.obs.trace import TraceRecorder
 from mockboard.session import InterviewSession
 from mockboard.speech.keyterms import speech_context
+from mockboard.voice.gate import PageSessions
 from mockboard.voice.lines import PlaybackLedger
 
 HERE = Path(__file__).resolve().parent
@@ -239,16 +239,25 @@ def _write_session_log(cfg: AppConfig, session, vp, stt, tts) -> None:
 def create_app(cfg: AppConfig) -> FastAPI:
     # Localhost only, so no STUN/TURN servers: host candidates are enough (V1b adds them).
     handler = SmallWebRTCRequestHandler()
-    sessions: set[asyncio.Task] = set()
+    pending_forms: dict[str, CandidateForm | None] = {}
+
+    async def start_session(connection) -> None:  # only for connections that connected
+        await run_session(connection, cfg, pending_forms.pop(connection.pc_id, None))
+
+    gate = PageSessions(start_session, connect_timeout_s=cfg.settings.voice_connect_timeout_s)
 
     @asynccontextmanager
     async def lifespan(_app):
         yield
-        for task in list(sessions):
-            task.cancel()
+        await gate.close_all()
         await handler.close()
 
     app = FastAPI(lifespan=lifespan)
+    app.state.gate = gate  # for tests
+
+    @app.get("/favicon.ico")
+    async def favicon():
+        return Response(status_code=204)  # no icon; avoids a 404 line in the log
 
     @app.get("/")
     async def index():
@@ -273,10 +282,13 @@ def create_app(cfg: AppConfig) -> FastAPI:
             {k: body.get(k) for k in ("sdp", "type", "pc_id", "restart_pc")}
         )
 
+        page_id = str(data.get("page_id") or "")[:64] or None
+
         async def on_connection(connection):
-            task = asyncio.create_task(run_session(connection, cfg, form))
-            sessions.add(task)
-            task.add_done_callback(sessions.discard)
+            # Defect D: no pipeline (and no Gnani connection) until this connection connects;
+            # a newer offer from the same page replaces it.
+            pending_forms[connection.pc_id] = form
+            await gate.offer(connection, page_id)
 
         return await handler.handle_web_request(
             request=webrtc_request, webrtc_connection_callback=on_connection

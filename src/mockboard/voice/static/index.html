@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Mock Board voice</title>
+<link rel="icon" href="data:,">
 <style>
   :root {
     --bg: #f7f6f2; --panel: #ffffff; --fg: #1c1c1a; --muted: #6a6a64; --line: #deddd5;
@@ -126,7 +127,10 @@
 // POSTed to /api/offer. The server sends {"type":"mockboard", "event": ...} messages back on
 // the data channel: captions, state, the speaking member, and the report.
 const $ = (id) => document.getElementById(id);
-let pc = null, mic = null, pinger = null, meterCtx = null, cfg = null;
+let pc = null, mic = null, pinger = null, meterCtx = null, cfg = null, connecting = false;
+// One id per page load: the server closes this page's previous connection (and its session)
+// when a new offer arrives with the same id (defect D).
+const PAGE_ID = (crypto.randomUUID && crypto.randomUUID()) || String(Math.random()).slice(2);
 
 const STATES = {
   starting: "the board is opening", listening: "your turn: speak, then pause",
@@ -213,10 +217,13 @@ function formData() {
 }
 
 async function start() {
+  if (connecting || pc) return;  // never two offers from one page at once (defect D)
   $("error").textContent = "";
   let data;
   try { data = formData(); } catch (e) { $("error").textContent = e.message; return; }
   $("start").disabled = true;
+  connecting = true;
+  data.page_id = PAGE_ID;
   try {
     $("status").textContent = "asking for the microphone…";
     mic = await navigator.mediaDevices.getUserMedia({
@@ -247,6 +254,7 @@ async function start() {
     const answer = await res.json();
     await pc.setRemoteDescription({ sdp: answer.sdp, type: answer.type });
     $("stop").disabled = false;
+    connecting = false;
     $("form-panel").querySelectorAll("input,select").forEach((x) => (x.disabled = true));
   } catch (err) {
     $("error").textContent = `Could not start: ${err.message || err}`;
@@ -255,6 +263,7 @@ async function start() {
 }
 
 function stop() {
+  connecting = false;
   if (pinger) clearInterval(pinger);
   pinger = null;
   if (pc) pc.close();

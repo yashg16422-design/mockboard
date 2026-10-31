@@ -47,6 +47,8 @@ def test_page_config_and_form_validation(settings):
     page = client.get("/")
     assert page.status_code == 200 and "Mock Board" in page.text and "headphones" in page.text
     assert client.get("/api/config").json()["mode"] == "upsc"
+    assert client.get("/favicon.ico").status_code == 204  # no 404 line in the log
+    assert 'rel="icon"' in page.text and "page_id" in page.text  # defect D: one offer/page
     bad = client.post("/api/offer", json={"sdp": "x", "type": "offer",
                                           "request_data": {"form": {"home_state": "U"}}})
     assert bad.status_code == 400 and bad.json()["error"] == "form"

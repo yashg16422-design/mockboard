@@ -103,6 +103,10 @@ class Settings(BaseSettings):
     voice_resume_min_speech_ms: int = Field(default=150, ge=0)
     # A hard stop per voice session, under Prisma's 15-minute cap (CTO_NOTES_03 V6).
     voice_session_max_s: float = Field(default=600.0, gt=0)
+    # Defect D: a WebRTC connection that is not `connected` within this time is closed and
+    # gets no session (no Prisma or Timbre connection is ever opened for it). Localhost ICE
+    # takes well under a second; our choice.
+    voice_connect_timeout_s: float = Field(default=15.0, gt=0)
 
     # --- AWS Bedrock / Nova Pro ---
     aws_region: str = "ap-southeast-2"
