@@ -21,7 +21,7 @@ from enum import StrEnum
 from typing import TYPE_CHECKING, Any
 
 from mockboard.brain.actor import LineResult
-from mockboard.brain.llm import FakeLLMClient
+from mockboard.brain.llm import is_offline_llm
 from mockboard.brain.schemas import (
     Analysis,
     BoardMove,
@@ -154,7 +154,7 @@ class DebateSessionHooks:
         motion = self.setup.motion
         allow_synthetic = self.setup.allow_synthetic_cards
         if allow_synthetic is None:
-            allow_synthetic = isinstance(self.session.deps.llm, FakeLLMClient)
+            allow_synthetic = is_offline_llm(self.session.deps.llm)
         self.cards = [
             c for c in cards_for_topics(
                 list(self.session.deps.cards.cards.values()), motion.card_topics

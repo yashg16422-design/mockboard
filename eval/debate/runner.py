@@ -41,7 +41,8 @@ def load_items(path: Path = ITEMS) -> list[dict]:
 
 async def run_items(llm: LLMClient, items: list[dict], *, real: bool) -> list[dict]:
     settings = get_settings()
-    deps = build_deps(settings, llm, cards=builtin_test_cards())
+    # Test cards on purpose, also with real Nova: d07 checks a planted figure (ruling 36).
+    deps = build_deps(settings, llm, cards=builtin_test_cards(), allow_synthetic_cards=True)
     out = []
     for item in items:
         setup = make_setup(item["motion"], item.get("side", "for"), item.get("length", "quick"),

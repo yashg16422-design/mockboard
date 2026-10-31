@@ -10,9 +10,9 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 
-from mockboard.brain.cards import CardSet, load_cards
+from mockboard.brain.cards import CardSet, load_cards, without_synthetic
 from mockboard.brain.librarian import VoteCache
-from mockboard.brain.llm import LLMClient
+from mockboard.brain.llm import LLMClient, is_offline_llm
 from mockboard.brain.numbers import Tolerance
 from mockboard.brain.personas import chairman, load_personas
 from mockboard.brain.prompts import PromptKit, build_prompt_kit, check_prefix_budget
@@ -83,14 +83,29 @@ def strategy_config(
     )
 
 
-def build_deps(settings: Settings, llm: LLMClient, cards: CardSet | None = None) -> BrainDeps:
+def build_deps(
+    settings: Settings,
+    llm: LLMClient,
+    cards: CardSet | None = None,
+    *,
+    allow_synthetic_cards: bool | None = None,
+) -> BrainDeps:
     """Load personas and cards, build the cached prompt prefix and check its size budget.
 
     `cards` overrides loading from `settings.cards_dir` (tests pass the built-in set).
+
+    Ruling 36: synthetic test cards never enter any prompt (opener, actor, listener,
+    librarian, judge) in a real run. `allow_synthetic_cards=None` keeps them only for the
+    offline fake LLM; the eval harness passes True to measure fact-checking on test data.
+    Without real cards the board runs without fact checks and the report says so.
     """
     personas = load_personas()
     if cards is None:
         cards = load_cards(settings.cards_dir, settings.topics)
+    if allow_synthetic_cards is None:
+        allow_synthetic_cards = is_offline_llm(llm)
+    if not allow_synthetic_cards:
+        cards = without_synthetic(cards)
     kit = build_prompt_kit(personas, cards, settings.prompt_versions())
     check_prefix_budget(kit.shared_prefix, settings.cache_prefix_token_budget)
     strategy = strategy_config(settings, personas, cards)

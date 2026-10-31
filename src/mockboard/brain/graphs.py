@@ -111,6 +111,11 @@ from mockboard.brain.schemas import (
 from mockboard.brain.tools import JudgeEvidence, JudgeOutput
 
 MAX_JUDGE_REVISIONS = 1
+NO_CARDS_NOTE = "no real fact cards loaded: not fact-checked"
+NO_CARDS_REPORT_NOTE = (
+    "no real fact cards were loaded, so no claim was fact-checked and no figure was "
+    "challenged (synthetic test cards are used only in offline --fake runs)"
+)
 
 
 # ---------------------------------------------------------------------------
@@ -788,6 +793,20 @@ class FactChecker:
         unverifiable, which can never be challenged."""
         tag = fact_check_tag(turn_id, segment_id)
         start = time.monotonic()
+        if not self.deps.cards.cards:  # ruling 36: no real cards, so nothing to check against
+            return FactCheckResult(
+                turn_id=turn_id,
+                segment_id=segment_id,
+                claims=[
+                    c.model_copy(update={"verdict": Verdict.unverifiable,
+                                         "verdict_note": NO_CARDS_NOTE})
+                    for c in claims
+                ],
+                fallbacks=[],
+                timings=[],
+                fact_check_ms=_ms(start, time.monotonic()),
+                trace_tag=tag,
+            )
         cfg: dict[str, Any] = {"callbacks": list(self.callbacks)} if self.callbacks else {}
         try:
             out = await self.graph.ainvoke(
@@ -896,17 +915,20 @@ async def report(state: ReportState, runtime: Runtime[BrainDeps]) -> dict[str, A
     )
     draft = state.get("draft")
     if draft is None:
-        return {"report": fallback_report(reason=state.get("error") or "no draft", **common)}
-    try:
-        rep = assemble_report(
-            draft,
-            turns=state.get("turns", []),
-            cards=deps.cards,
-            revisions=state.get("revisions", 0),
-            **common,
-        )
-    except (ValueError, LLMError) as exc:
-        rep = fallback_report(reason=f"assembly failed: {type(exc).__name__}", **common)
+        rep = fallback_report(reason=state.get("error") or "no draft", **common)
+    else:
+        try:
+            rep = assemble_report(
+                draft,
+                turns=state.get("turns", []),
+                cards=deps.cards,
+                revisions=state.get("revisions", 0),
+                **common,
+            )
+        except (ValueError, LLMError) as exc:
+            rep = fallback_report(reason=f"assembly failed: {type(exc).__name__}", **common)
+    if not deps.cards.cards:  # ruling 36: say plainly that nothing was fact-checked
+        rep = rep.model_copy(update={"notes": [*rep.notes, NO_CARDS_REPORT_NOTE]})
     return {"report": rep}
 
 

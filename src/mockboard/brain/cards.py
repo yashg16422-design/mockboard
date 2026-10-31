@@ -34,6 +34,15 @@ class CardSet:
         return all(c.synthetic_example for c in self.cards.values())
 
 
+def without_synthetic(card_set: CardSet) -> CardSet:
+    """The card set with every synthetic test card removed (ruling 36): what a real run may
+    put in a prompt. With only test cards, the result is empty and nothing is fact-checked."""
+    real = {cid: c for cid, c in card_set.cards.items() if not c.synthetic_example}
+    if len(real) == len(card_set.cards):
+        return card_set
+    return CardSet(cards=real, version=card_set_version(real.values()))
+
+
 def card_set_version(cards: Iterable[FactCard]) -> str:
     canonical = json.dumps(
         [c.model_dump(mode="json") for c in sorted(cards, key=lambda c: c.id)],

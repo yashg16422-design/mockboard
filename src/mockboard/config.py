@@ -218,7 +218,7 @@ class Settings(BaseSettings):
     # --- Prompt versions (prompts/<id>.v<N>.md) ---
     prompt_listener_version: int = 2
     prompt_librarian_version: int = 1
-    prompt_actor_version: int = 2
+    prompt_actor_version: int = 3  # ruling 36/37: open-ended, no quiz, no quoting
     prompt_judge_version: int = 1
     prompt_opener_version: int = 1
     # Debate mode (ADR-009, CTO_NOTES_04).

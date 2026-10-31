@@ -72,6 +72,11 @@ LANE_BY_CALL: dict[str, Lane] = {
 }
 
 
+def is_offline_llm(llm: object) -> bool:
+    """True for the offline fake LLM (and wrappers around it), False for Bedrock."""
+    return bool(getattr(llm, "offline", False))
+
+
 def lane_for(name: str) -> Lane:
     return LANE_BY_CALL.get(name, Lane.background)
 
@@ -822,6 +827,9 @@ class FakeLLMClient(_BaseClient):
     """
 
     model_id = "fake-llm"
+    # Ruling 36: an offline run. Synthetic test cards are allowed into prompts only when the
+    # LLM says this (wrappers that delegate attribute lookups to a fake inherit it).
+    offline = True
 
     def __init__(
         self,

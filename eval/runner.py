@@ -197,7 +197,8 @@ def build_eval_deps(settings: Settings, cards: CardSet, real: bool, sink) -> Bra
             rel=settings.numeric_rel_tolerance, abs_pp=settings.numeric_abs_tolerance_pp
         )
         llm = make_fake_llm(cards, tol, on_call=sink)
-    return build_deps(settings, llm, cards=cards)
+    # The eval measures fact-checking on the test cards, also with real Nova (ruling 36).
+    return build_deps(settings, llm, cards=cards, allow_synthetic_cards=True)
 
 
 async def main_async(args: argparse.Namespace) -> dict[str, Any]:

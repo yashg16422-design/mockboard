@@ -160,9 +160,19 @@ def _to_sink(text: str) -> None:
         sink(text)
 
 
-async def stream_capped(chunks: AsyncIterator[str], max_words: int) -> AsyncIterator[str]:
+async def stream_capped(
+    chunks: AsyncIterator[str], max_words: int, gate: SentenceGate | None = None
+) -> AsyncIterator[str]:
     """Pass text chunks through until `max_words` words have been emitted, then stop.
-    Every chunk passed on also goes to `ACTOR_TEXT_SINK` when one is set (voice mode)."""
+    Every chunk passed on also goes to `ACTOR_TEXT_SINK` when one is set (voice mode).
+
+    With a `gate` (rulings 36 and 37), text is passed on one whole sentence at a time, and
+    the line stops before the first sentence the gate refuses; that sentence never reaches
+    the sink, so in voice mode it is never spoken."""
+    if gate is not None:
+        async for sentence in _gated(stream_capped(chunks, max_words), gate):
+            yield sentence
+        return
     emitted = 0
     pending = ""
     async for chunk in chunks:
@@ -185,6 +195,116 @@ async def stream_capped(chunks: AsyncIterator[str], max_words: int) -> AsyncIter
     if pending.strip() and emitted < max_words:
         _to_sink(pending)
         yield pending
+
+
+async def _gated(words: AsyncIterator[str], gate: SentenceGate) -> AsyncIterator[str]:
+    """Re-chunk an (ungated, unsunk) word stream into whole sentences that pass the gate."""
+    token = ACTOR_TEXT_SINK.set(None)  # the inner stream must not feed the sink itself
+    try:
+        buf = ""
+        async for chunk in words:
+            buf += chunk
+            while (m := _SENTENCE_BREAK.search(buf)) is not None:
+                sentence, buf = buf[: m.end()], buf[m.end():]
+                if not gate.ok(sentence.strip()):
+                    return
+                ACTOR_TEXT_SINK.reset(token)
+                _to_sink(sentence)
+                token = ACTOR_TEXT_SINK.set(None)
+                yield sentence
+        if buf.strip() and gate.ok(buf.strip()):
+            ACTOR_TEXT_SINK.reset(token)
+            _to_sink(buf)
+            token = ACTOR_TEXT_SINK.set(None)
+            yield buf
+    finally:
+        ACTOR_TEXT_SINK.reset(token)
+
+
+# A sentence ends at . ? ! or । followed by whitespace ("12.5" is not a break).
+_SENTENCE_BREAK = re.compile(r"[.?!।](?=\s)\s*")
+
+# Ruling 36: quiz-style questions that ask the candidate for a number, share, statistic or
+# year. Word lists are our own (UNVERIFIED against real Nova lines); only questions count.
+_QUIZ = re.compile(
+    r"\bkitn[aei]\b|\bkitne\b|\bhow (?:much|many)\b|\bwhat percent|\bkis (?:saal|varsh)\b"
+    r"|\b(?:which|what) year\b"
+    r"|\b(?:share|percent(?:age)?|pratishat|figure|aankd[ae]|aankda|statistics?|gdp|number)\b"
+    r"(?:\s+\S+)?\s+kya (?:hai|hain|tha|hoga)\b"
+    r"|\bwhat (?:is|was|are|were) (?:the )?(?:share|percentage|figure|number|statistics?|"
+    r"rate|gdp)\b"
+    r"|कितन[ाीे]|किस (?:साल|वर्ष)|(?:प्रतिशत|आँकड़\S*|आंकड़\S*|हिस्सेदारी)(?:\s+\S+)?\s+क्या (?:है|था)",
+    re.IGNORECASE,
+)
+
+# Ruling 37: reporting frames that introduce the candidate's own words.
+_REPORTING = re.compile(
+    r"\baapne\b(?P<a>.{0,60}?)\b(?:kaha|bola|bataya|zikr kiya)\b"
+    r"|\baap(?:ka)? (?:keh rahe (?:hain|the)|kehna hai|kehte hain)(?: ki)?\b(?P<b>.{0,60})"
+    r"|\byou (?:said|mentioned|told us|say)\b(?P<c>.{0,60})"
+    r"|आपने(?P<d>.{0,60}?)(?:कहा|बताया)",
+    re.IGNORECASE,
+)
+_QUOTE_STOP = frozenset({
+    "the", "a", "an", "of", "in", "is", "to", "and", "that", "it", "hai", "hain", "ka", "ki",
+    "ke", "ko", "mein", "me", "se", "aur", "jo", "yeh", "ye", "woh", "bhi", "hi",
+    "है", "हैं", "का", "की", "के", "को", "में", "से", "और", "जो", "यह", "भी",
+})
+_TOKEN = re.compile(r"[a-z0-9]+|[ऀ-ॿ]+")
+MIN_COPIED_RUN = 5  # this many consecutive words copied from the answer is a quote anywhere
+
+
+def quiz_question(sentence: str) -> bool:
+    """True when a question asks the candidate for a figure, a share or a year (ruling 36)."""
+    return sentence.rstrip().endswith("?") and bool(_QUIZ.search(sentence))
+
+
+def _tokens(text: str) -> list[str]:
+    return _TOKEN.findall(text.lower())
+
+
+def _runs(a: list[str], b: list[str], n: int) -> bool:
+    grams = {tuple(b[i:i + n]) for i in range(len(b) - n + 1)}
+    return any(tuple(a[i:i + n]) in grams for i in range(len(a) - n + 1))
+
+
+def quotes_answer(sentence: str, answer: str) -> bool:
+    """True when the sentence repeats the candidate's words (ruling 37): a reporting frame
+    ("Aapne ... kaha", "you said ...") around two or more consecutive words of the answer
+    that are not all filler, or a run of `MIN_COPIED_RUN` words copied anywhere."""
+    said = _tokens(answer)
+    if not said:
+        return False
+    line = _tokens(sentence)
+    if _runs(line, said, MIN_COPIED_RUN):
+        return True
+    for m in _REPORTING.finditer(sentence):
+        inner = _tokens(next((g for g in m.groups() if g), ""))
+        for i in range(len(inner) - 1):
+            pair = inner[i:i + 2]
+            if _runs(pair, said, 2) and not all(w in _QUOTE_STOP for w in pair):
+                return True
+    return False
+
+
+@dataclass
+class SentenceGate:
+    """Checks each sentence of a streamed UPSC board line (rulings 36 and 37). `stopped` holds
+    the first refused sentence and `reason` why."""
+
+    answer: str = ""
+    check_quotes: bool = True
+    stopped: str | None = None
+    reason: str = ""
+
+    def ok(self, sentence: str) -> bool:
+        if self.stopped is not None:
+            return False
+        if quiz_question(sentence):
+            self.stopped, self.reason = sentence, "quiz_question"
+        elif self.check_quotes and quotes_answer(sentence, self.answer):
+            self.stopped, self.reason = sentence, "quotes_answer"
+        return self.stopped is None
 
 
 @dataclass(frozen=True)
@@ -366,9 +486,35 @@ FILLER_TEMPLATES: dict[Move, str] = {
         "Koi baat nahi, aaram se sochiye. Chaliye, ek aasaan sawaal se shuru karte hain."
     ),
     Move.move_on: "Theek hai, shukriya. Ab ek naye vishay par aate hain.",
-    Move.clarify: "Maaf kijiye, main theek se samajh nahi paaya. Kya aap phir se bata sakte hain?",
+    Move.clarify: "Maaf kijiye, main theek se sun nahi paaya. Kya aap phir se bata sakte hain?",
     Move.interrupt: "Ek minute, main beech mein rokta hoon. Seedhe mukhya baat par aaiye.",
 }
+
+
+# Ruling 37: the generic request to repeat, by language mix. "sun nahi paaya" (I could not
+# hear) puts the problem on the board's side, which suits speech recognition errors.
+CLARIFY_LINES: dict[str, str] = {
+    "hi-en": "Maaf kijiye, main theek se sun nahi paaya. Kya aap phir se bata sakte hain?",
+    "en": "Sorry, I could not hear that clearly. Could you say it again?",
+    "hi": "माफ़ कीजिए, मैं ठीक से सुन नहीं पाया। क्या आप फिर से बता सकते हैं?",
+}
+
+# Moves whose model lines are checked for repeating the candidate's words (ruling 37 names
+# clarify, pressure and probe; clarify is a template, and counter and steelman answer the
+# candidate's point just as closely, so they are checked too).
+QUOTE_CHECKED_MOVES = frozenset(
+    {Move.probe, Move.pressure, Move.counter, Move.steelman, Move.reassure, Move.interrupt}
+)
+
+
+def guard_question(move: BoardMove, topic: str) -> str:
+    """The fixed open-ended question that finishes a line a guard cut short."""
+    if move.move == Move.move_on and move.target and move.target != "close":
+        return (f"Ab {move.target.replace('_', ' ')} par aate hain: is kshetra mein aapko "
+                "kaunsi chunauti sabse zaroori lagti hai, aur kyun?")
+    if move.move == Move.move_on:
+        return "Kya aap kuch aur kehna chahenge?"
+    return FILLER_TEMPLATES.get(move.move, FILLER_TEMPLATES[Move.probe])
 
 
 def has_assertion(text: str) -> bool:
@@ -497,14 +643,14 @@ def line_system(kit: PromptKit, *, max_words: int, prompt_id: str = "actor") -> 
 
 def stream_line(
     llm: LLMClient, kit: PromptKit, user: str, *, max_words: int, max_tokens: int, tag_: str,
-    prompt_id: str = "actor", name: str = "actor",
+    prompt_id: str = "actor", name: str = "actor", gate: SentenceGate | None = None,
 ) -> AsyncIterator[str]:
     """The raw streamed line, capped at `max_words`. Phase 2 feeds this to Timbre."""
     system = line_system(kit, max_words=max_words, prompt_id=prompt_id)
     chunks = llm.stream_text(
         name=name, system=system, user=user, max_tokens=max_tokens, tag=tag_
     )
-    return stream_capped(chunks, max_words)
+    return stream_capped(chunks, max_words, gate)
 
 
 async def compose_line(
@@ -568,11 +714,19 @@ async def _compose_move_line(
         # Defensive: the strategist never emits this, but a challenge without a card must
         # never be spoken.
         return LineResult(FILLER_TEMPLATES[Move.probe], is_fallback=True, guard="no_card")
+    mix = language_mix(persona, form)
+    if move.move == Move.clarify:
+        # Ruling 37: ask generically, never echo the (possibly mis-heard) transcript. No model
+        # call, so nothing of the candidate's words can be read back.
+        return LineResult(CLARIFY_LINES.get(mix, CLARIFY_LINES["hi-en"]), guard="clarify_template")
+    gate = (
+        None if move.move == Move.fact_challenge
+        else SentenceGate(answer=last_answer, check_quotes=move.move in QUOTE_CHECKED_MOVES)
+    )
     user = build_actor_user(
         persona, move, topic=topic, form=form, last_question=last_question,
         last_answer=last_answer, claim=claim, card=card,
     )
-    mix = language_mix(persona, form)
 
     def fallback(error: str, guard: str, retried: bool) -> LineResult:
         played = bool(filler_played()) if filler_played is not None else False
@@ -583,14 +737,20 @@ async def _compose_move_line(
     call = await call_actor(
         llm, kit, user, max_words=max_words, max_tokens=max_tokens, turn_id=turn_id,
         on_first_token=on_first_token, first_token_budget_s=first_token_budget_s,
-        fast_throttle_retry_window_s=fast_throttle_retry_window_s,
+        fast_throttle_retry_window_s=fast_throttle_retry_window_s, gate=gate,
     )
     if call.error:
         return fallback(call.error, call.guard, call.retried)
     text, retried = call.text, call.retried
     if move.move == Move.fact_challenge and claim and card:
         return replace(guard_fact_challenge(text, claim, card, mix), retried=retried)
-    return LineResult(text, retried=retried)
+    if gate is not None and gate.stopped is not None and not text.rstrip().endswith("?"):
+        # A refused sentence cut the line before its question: finish with the move's fixed,
+        # open-ended question (voice mode appends the same one, `is_fallback` tells it to).
+        question = guard_question(move, topic)
+        return LineResult(f"{text} {question}".strip(), is_fallback=True, guard=gate.reason,
+                          fallback_kind="move_template", retried=retried)
+    return LineResult(text, retried=retried, guard=gate.reason if gate and gate.stopped else "")
 
 
 @dataclass(frozen=True)
@@ -616,6 +776,7 @@ async def call_actor(
     first_token_budget_s: float | None,
     fast_throttle_retry_window_s: float | None = None,
     prompt_id: str = "actor",
+    gate: SentenceGate | None = None,
 ) -> ActorCall:
     """One streamed actor attempt with the first-token budget (ruling 14) and the optional
     fast-throttle retry (ruling 17). Never raises for model failures; the caller chooses the
@@ -636,7 +797,7 @@ async def call_actor(
         try:
             text = await collect_line(
                 stream_line(llm, kit, user, max_words=max_words, max_tokens=max_tokens,
-                            tag_=turn_id, prompt_id=prompt_id),
+                            tag_=turn_id, prompt_id=prompt_id, gate=gate),
                 first_token_budget_s=budget,
                 on_first_token=first_token,
             )
@@ -660,6 +821,8 @@ async def call_actor(
                 error=f"{type(exc).__name__}: {exc}"[:300], guard="actor_failed", retried=retried
             )
     text = cap_words(text, max_words)
+    if not text and gate is not None and gate.stopped is not None:
+        return ActorCall(text="", guard=gate.reason, retried=retried)  # every sentence refused
     if not text:
         return ActorCall(error="empty line", guard="actor_failed", retried=retried)
     return ActorCall(text=text, retried=retried)

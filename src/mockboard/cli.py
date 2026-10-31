@@ -215,10 +215,13 @@ async def run(args: argparse.Namespace) -> int:
     print(
         f"Mock Board (text mode) | LLM: {'FAKE offline' if args.fake else settings.nova_model_id}"
         f" ({'-' if args.fake else settings.aws_region}) | cards: {origin}"
-        f" ({len(cards.cards)}, version {cards.version})"
+        f" ({len(deps.cards.cards)}, version {deps.cards.version})"
         f" | prefix ~{rt.kit.prefix_tokens_approx} tokens (approx)"
     )
-    if cards.all_synthetic:
+    if not deps.cards.cards:  # ruling 36: test cards never reach a real run's prompts
+        print("No real fact cards are loaded, so fact checks are off (synthetic test cards "
+              "are used only with --fake).")
+    elif deps.cards.all_synthetic:
         print("All fact cards are SYNTHETIC TEST CARDS. Nothing the board cites is a real fact.")
 
     use_defaults = args.fake and lines is not None
