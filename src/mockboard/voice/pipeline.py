@@ -87,6 +87,7 @@ def build_voice_pipeline(
     on_report=None,
     on_listen=None,
     autostart: bool = True,
+    mic_recorder: FrameProcessor | None = None,
 ) -> VoicePipeline:
     brain_ref: list[BrainProcessor] = []
     vad, user_turn, start, stop, tuner = build_turn_taking(settings, session, brain_ref)
@@ -98,6 +99,8 @@ def build_voice_pipeline(
     )
     brain_ref.append(brain)
     processors = [transport_input, vad, stt, user_turn, brain, tts, transport_output]
+    if mic_recorder is not None:  # ruling 35, opt-in: the candidate's audio as Prisma gets it
+        processors.insert(1, mic_recorder)
     worker = PipelineWorker(
         Pipeline(processors),
         params=PipelineParams(

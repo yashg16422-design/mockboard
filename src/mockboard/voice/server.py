@@ -78,6 +78,7 @@ class AppConfig:
     opponent: str = "logician"
     host: str = "localhost"
     port: int = 7860
+    record_audio: bool = False  # ruling 35: opt-in, saved only under the trace folder
 
     def public(self) -> dict[str, Any]:
         """What the page may show (no keys, no paths)."""
@@ -90,6 +91,7 @@ class AppConfig:
             "llm": "fake" if self.fake_llm else self.settings.nova_model_id,
             "region": None if self.fake_llm else self.settings.aws_region,
             "max_minutes": round(self.settings.voice_session_max_s / 60, 1),
+            "record_audio": self.record_audio,
         }
         if self.motion is not None:
             out.update(motion=self.motion.text, motion_number=self.motion.number, side=self.side,
@@ -175,10 +177,16 @@ async def run_session(webrtc_connection, cfg: AppConfig, form: CandidateForm | N
         if terms != last_terms[0] and await stt.set_keyterms(terms):
             last_terms[0] = terms
 
+    mic = None
+    if cfg.record_audio:
+        from mockboard.voice.recorder import MicRecorder
+
+        mic = MicRecorder(cfg.settings.trace_dir / f"{session.session_id}.mic.wav")
     vp = build_voice_pipeline(
         session=session, settings=cfg.settings, transport_input=transport.input(),
         transport_output=transport.output(), stt=stt, tts=tts, ledger=ledger,
         report_dir=cfg.settings.trace_dir, on_listen=update_context, autostart=False,
+        mic_recorder=mic,
     )
 
     @stt.event_handler("on_gave_up")
@@ -214,11 +222,14 @@ async def run_session(webrtc_connection, cfg: AppConfig, form: CandidateForm | N
     try:
         await runner.run()
     finally:
-        _write_session_log(cfg, session, vp, stt, tts)
+        if mic is not None:
+            mic.close()
+            logger.info(f"[voice] your audio ({mic.seconds:.0f} s) was saved to {mic.path}")
+        _write_session_log(cfg, session, vp, stt, tts, mic)
         logger.info(f"[voice] session {session.session_id} ended; trace {session.recorder.path}")
 
 
-def _write_session_log(cfg: AppConfig, session, vp, stt, tts) -> None:
+def _write_session_log(cfg: AppConfig, session, vp, stt, tts, mic=None) -> None:
     """Session-level facts for `mockboard.voice.summarize` (no transcript text, no keys)."""
     stats = {
         "stt_model_requested": cfg.settings.stt_model,
@@ -237,6 +248,7 @@ def _write_session_log(cfg: AppConfig, session, vp, stt, tts) -> None:
         "fake_llm": cfg.fake_llm,
         "fake_speech": cfg.fake_speech,
         "report_written": vp.brain.report is not None,
+        "mic_recording": str(mic.path) if mic is not None and mic.frames_written else None,
         "events": [{k: v for k, v in e.items() if k != "text" and k != "heard"}
                    for e in vp.brain.events if e["event"] != "caption"],
     }
@@ -357,6 +369,9 @@ def parse_args(argv: list[str] | None = None) -> AppConfig:
     p.add_argument("--host", default="localhost")
     p.add_argument("--port", type=int, default=7860)
     p.add_argument("--trace-dir", help="override TRACE_DIR (default traces)")
+    p.add_argument("--record-audio", action="store_true",
+                   help="save YOUR microphone audio to traces/<session>.mic.wav on this computer "
+                        "(off by default; for `python -m mockboard.voice.stt_ab`)")
     a = p.parse_args(argv)
     settings = Settings()
     if a.trace_dir:
@@ -364,7 +379,8 @@ def parse_args(argv: list[str] | None = None) -> AppConfig:
     cfg = AppConfig(mode=MODES[a.mode], settings=settings, fake_llm=a.fake_llm,
                     fake_speech=a.fake_speech, voice=a.voice or settings.tts_voice,
                     max_turns=a.max_turns, length=a.length, language=a.language,
-                    opponent=a.opponent, host=a.host, port=a.port)
+                    opponent=a.opponent, host=a.host, port=a.port,
+                    record_audio=a.record_audio)
     if cfg.mode == "debate":
         from mockboard.modes.debate.motions import find_motion, load_curated_motions
 

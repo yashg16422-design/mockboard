@@ -6,7 +6,7 @@ VENV_PY := .venv/bin/python
 PYTHON ?= $(if $(wildcard $(VENV_PY)),$(VENV_PY),python3)
 export PYTHONPATH := src:.
 
-.PHONY: help venv install test lint format cli cli-fake cli-fake-hi cli-real cli-fake-debate cli-debate cli-real-debate eval eval-gate eval-motions eval-debate clean-traces voice-install voice-fake voice-upsc voice-debate voice-summary
+.PHONY: help venv install test lint format cli cli-fake cli-fake-hi cli-real cli-fake-debate cli-debate cli-real-debate eval eval-gate eval-motions eval-debate clean-traces voice-install voice-fake voice-upsc voice-debate voice-summary voice-record stt-ab
 
 help:
 	@echo "venv         create .venv and install everything (run this first on macOS)"
@@ -28,6 +28,8 @@ help:
 	@echo "voice-upsc       voice app, UPSC board, real Prisma + Nova Pro + Timbre (costs money)"
 	@echo "voice-debate     voice app, debate: make voice-debate MOTION=1 SIDE=for (costs money)"
 	@echo "voice-summary    timings of the newest voice session (safe to paste: no text)"
+	@echo "voice-record     voice-upsc that also saves YOUR mic audio to traces/<session>.mic.wav"
+	@echo "stt-ab           replay a recording through 3 Prisma settings: make stt-ab WAV=traces/x.mic.wav"
 
 venv:
 	python3 -m venv .venv
@@ -105,6 +107,15 @@ voice-debate:
 
 voice-summary:
 	$(PYTHON) -m mockboard.voice.summarize
+
+# Ruling 35: opt-in recording of the candidate's own microphone (never the board), saved only
+# under traces/, then an offline A/B of Prisma settings on it (costs Gnani credits per arm).
+voice-record:
+	$(PYTHON) -m mockboard.voice.server --mode upsc --record-audio
+
+WAV ?=
+stt-ab:
+	$(PYTHON) -m mockboard.voice.stt_ab $(WAV)
 
 clean-traces:
 	rm -rf traces

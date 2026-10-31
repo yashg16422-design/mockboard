@@ -72,6 +72,12 @@
     and may cut itself off. You can speak over the board to interrupt it.
   </div>
 
+  <div class="notice" id="recording" hidden>
+    Recording is on: your microphone audio (not the board's voice) is saved on this computer
+    in the traces folder, so you can compare transcription settings later. It is never
+    uploaded. Restart the app without <code>--record-audio</code> to turn it off.
+  </div>
+
   <section class="panel" id="form-panel" hidden>
     <strong>Application form</strong>
     <p class="sub">No names, roll numbers, phone numbers or colleges. Only what a board would ask about.</p>
@@ -297,6 +303,7 @@ async function init() {
     ? `A Hinglish UPSC personality test board. About ${cfg.max_minutes} minutes at most.`
     : `Argue your side against the board. About ${cfg.max_minutes} minutes at most.`;
   $("form-panel").hidden = !upsc;
+  $("recording").hidden = !cfg.record_audio;
   $("debate-panel").hidden = upsc;
   if (!upsc) $("motion").textContent = `#${cfg.motion_number}: ${cfg.motion} You speak ${cfg.side} it.`;
 }
