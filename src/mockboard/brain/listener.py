@@ -9,12 +9,14 @@ from __future__ import annotations
 import re
 
 from mockboard.brain.llm import LLMClient, ToolSpec
-from mockboard.brain.numbers import parse_number_phrase
+from mockboard.brain.numbers import nfc, parse_number_phrase
 from mockboard.brain.prompts import PromptKit, tag
 from mockboard.brain.schemas import Analysis, Claim, ClaimKind, DebateArgument, Segment
 from mockboard.brain.tools import LISTENER_TOOL, ListenerClaim, ListenerOutput
 
-_WORD = re.compile(r"\w+", re.UNICODE)
+# Devanagari vowel signs are not `\w` in Python, so the script's block is listed too:
+# "मुझे नहीं पता" is three words, not seven fragments.
+_WORD = re.compile(r"[\w\u0900-\u097f]+", re.UNICODE)
 
 
 def word_count(text: str) -> int:
@@ -59,6 +61,38 @@ def _to_claim(
     )
 
 
+# Ruling 37: honest "I don't know" markers, read from the RAW segment text in both scripts,
+# so a garbled or mis-labelled transcript of an honest answer still gets reassure or move_on
+# (R3/R3b, debate D4), never pressure. Our own lists; UNVERIFIED against real Prisma output.
+_UNKNOWN_STRONG = re.compile(
+    r"\b(?:pata nahi[n]?|nahi[n]? pata|maloom nahi[n]?|malum nahi[n]?|nahi[n]? maloom|"
+    r"yaad nahi[n]?|nahi[n]? yaad|(?:koi )?idea nahi[n]?|i (?:do not|don'?t) know|"
+    r"not sure|no idea)\b"
+    r"|पता नहीं|पता नही|नहीं पता|नही पता|मालूम नहीं|नहीं मालूम|याद नहीं|आइडिया नहीं",
+    re.IGNORECASE,
+)
+# "baad mein" ("later") is a deflection only in a short segment, or next to "I will tell /
+# think / see". "badh mein" is the form Prisma wrote in the owner's run (Defect H).
+_UNKNOWN_LATER = re.compile(r"\b(?:baad|badh|bad) me(?:in|n)?\b|बाद में", re.IGNORECASE)
+_LATER_VERB = re.compile(
+    r"\b(?:baad|badh|bad) me(?:in|n)?\s+(?:\S+\s+)?(?:bata|soch|dekh)\w*"
+    r"|बाद में\s+(?:\S+\s+)?(?:बता|सोच|देख)",
+    re.IGNORECASE,
+)
+SHORT_SEGMENT_WORDS = 8
+
+
+def honest_unknown_marker(text: str) -> bool:
+    """True when the raw transcript says honestly that the speaker does not know (or will
+    answer later), in Latin or Devanagari script."""
+    text = nfc(text)
+    if _UNKNOWN_STRONG.search(text):
+        return True
+    if _UNKNOWN_LATER.search(text):
+        return word_count(text) <= SHORT_SEGMENT_WORDS or bool(_LATER_VERB.search(text))
+    return False
+
+
 def _raw_text_off_limits(out: ListenerOutput, text: str) -> bool:
     """Ruling 32: a mode's output model may screen the RAW segment text itself
     (`off_limits_in_raw_text`), so a listener that paraphrases an off-limits word away cannot
@@ -89,6 +123,7 @@ def to_analysis(
             "point_strength": out.point_strength,
             "off_limits": out.off_limits or _raw_text_off_limits(out, segment.text),
         }
+    honest = out.honest_unknown or honest_unknown_marker(segment.text)
     return Analysis(
         turn_id=turn_id,
         segment_id=segment.segment_id,
@@ -96,9 +131,11 @@ def to_analysis(
         reasons=[r for r in out.reasons if r.strip()],
         claims=claims,
         balance=out.balance,
-        honest_unknown=out.honest_unknown,
+        honest_unknown=honest,
         concedes_error=out.concedes_error,
-        garbled=out.garbled,
+        # Ruling 37: an honest "I don't know" in a garbled transcript is still honest; it
+        # gets reassure or move_on, not a request to repeat or pressure.
+        garbled=out.garbled and not honest,
         word_count=word_count(segment.text),
         **debate,
     )

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import math
 import re
+import unicodedata
 from dataclasses import dataclass
 from enum import StrEnum
 
@@ -65,12 +66,43 @@ NUMBER_WORDS: dict[str, float] = {
 FRACTION_WORDS: dict[str, float] = {"dedh": 1.5, "dhai": 2.5, "dhaai": 2.5, "aadha": 0.5}
 MODIFIER_WORDS: dict[str, float] = {"saade": 0.5, "sadhe": 0.5, "sava": 0.25, "paune": -0.25}
 
+
+# ---------------------------------------------------------------------------
+# Devanagari (Round 20: Prisma may be switched to hi-IN, which writes Devanagari)
+# ---------------------------------------------------------------------------
+
+_DEVANAGARI_DIGITS = str.maketrans("०१२३४५६७८९", "0123456789")
+
+
+def nfc(text: str) -> str:
+    """NFC-normalise, so a nukta letter typed as one code point or two compares equal."""
+    return unicodedata.normalize("NFC", text)
+
+
+def to_ascii_digits(text: str) -> str:
+    """Devanagari digits to ASCII ("१५" -> "15"); everything else unchanged."""
+    return text.translate(_DEVANAGARI_DIGITS)
+
+
+SCALE_WORDS.update({nfc(k): v for k, v in {
+    "सौ": 1e2, "हज़ार": 1e3, "हजार": 1e3, "लाख": 1e5, "करोड़": 1e7, "करोड": 1e7,
+    "अरब": 1e9, "खरब": 1e11,
+}.items()})
+NUMBER_WORDS.update({nfc(k): v for k, v in {
+    "शून्य": 0, "एक": 1, "तीन": 3, "चार": 4, "पांच": 5, "पाँच": 5, "छह": 6, "सात": 7,
+    "आठ": 8, "नौ": 9, "दस": 10, "बीस": 20, "पच्चीस": 25, "तीस": 30, "चालीस": 40,
+    "पचास": 50, "सत्तर": 70, "अस्सी": 80,
+}.items()})  # "दो" (2) is left out like "do": too common as a verb form ("दो बातें", "दे दो")
+FRACTION_WORDS.update({nfc(k): v for k, v in {"डेढ़": 1.5, "ढाई": 2.5, "आधा": 0.5}.items()})
+MODIFIER_WORDS.update({nfc(k): v for k, v in {"साढ़े": 0.5, "सवा": 0.25, "पौने": -0.25}.items()})
+
 PERCENT_WORDS = {"%", "percent", "per cent", "pct", "pratishat", "prateeshat", "fisdi",
                  "feesdi", "pratishat.", "फीसदी", "प्रतिशत"}
 PP_WORDS = {"pp", "percentage point", "percentage points", "percent point", "percent points"}
-INR_WORDS = {"rs", "rs.", "inr", "rupee", "rupees", "rupaye", "rupay", "₹"}
+INR_WORDS = {"rs", "rs.", "inr", "rupee", "rupees", "rupaye", "rupay", "₹", "रुपये", "रुपए",
+             "रुपया"}
 USD_WORDS = {"usd", "$", "dollar", "dollars", "us$"}
-YEAR_WORDS = {"year", "years", "saal", "varsh", "ad", "ce"}
+YEAR_WORDS = {"year", "years", "saal", "varsh", "ad", "ce", "साल", "वर्ष"}
 
 
 class CanonicalUnit(StrEnum):
@@ -107,12 +139,13 @@ def canonical_unit(unit: str | None) -> tuple[float, str]:
     """
     if unit is None or not unit.strip():
         return 1.0, CanonicalUnit.count.value
-    text = unit.strip().lower()
+    text = nfc(unit.strip().lower())
     # Multi-word phrases first.
     for phrase in sorted(PP_WORDS, key=len, reverse=True):
         if phrase in text:
             return 1.0, CanonicalUnit.percentage_points.value
-    if text in PERCENT_WORDS or text.endswith("%") or "percent" in text or "pratishat" in text:
+    if (text in PERCENT_WORDS or text.endswith("%") or "percent" in text or "pratishat" in text
+            or "प्रतिशत" in text or "फ़ीसदी" in text or "फीसदी" in text):
         return 1.0, CanonicalUnit.percent.value
     scale = 1.0
     rest: list[str] = []
@@ -155,11 +188,14 @@ def parse_number_phrase(text: str) -> float | None:
     """Parse a short Hinglish/English number phrase into an absolute value.
 
     Handles digits with Indian or Western grouping ("1,23,456"), scale words
-    ("2.5 crore", "dedh lakh"), and Hindi fractional modifiers ("saade teen crore" = 3.5e7).
+    ("2.5 crore", "dedh lakh"), and Hindi fractional modifiers ("saade teen crore" = 3.5e7),
+    in Latin or Devanagari script ("१५ लाख", "डेढ़ करोड़").
     Returns None if no number is recognised. Percent signs are ignored here; units are
     handled by `canonical_unit`.
     """
-    tokens = re.findall(r"[\w.,]+", text.lower().replace("%", " "))
+    text = nfc(to_ascii_digits(text))
+    # Devanagari vowel signs are not `\w` in Python, so the script's block is listed too.
+    tokens = re.findall(r"[\w.,\u0900-\u097f]+", text.lower().replace("%", " "))
     tokens = [t.strip(".,") if not _NUM_RE.match(t) else t for t in tokens]
     total = 0.0
     current: float | None = None

@@ -14,8 +14,16 @@ from collections.abc import Callable
 from typing import Any
 
 from mockboard.brain.cards import CardSet
+from mockboard.brain.listener import honest_unknown_marker
 from mockboard.brain.llm import FakeLLMClient
-from mockboard.brain.numbers import NumericResult, Tolerance, canonical_unit, numeric_check
+from mockboard.brain.numbers import (
+    NumericResult,
+    Tolerance,
+    canonical_unit,
+    nfc,
+    numeric_check,
+    to_ascii_digits,
+)
 from mockboard.brain.schemas import ClaimKind, Dimension, FactCard, Move
 from mockboard.brain.spoken import challenge_sentence
 
@@ -56,7 +64,7 @@ _STOP = {
 _YEAR = re.compile(r"\b(19\d{2}|20\d{2})\b")
 _NUM_UNIT = re.compile(
     r"(\d+(?:[.,]\d+)?)\s*(%|percent|per cent|pratishat|lakh|lac|crore|karod|hazaar|thousand"
-    r"|million|billion)?",
+    r"|million|billion|प्रतिशत|लाख|करोड़|करोड|हज़ार|हजार)?",
     re.IGNORECASE,
 )
 _BALANCE_MARKERS = (
@@ -69,6 +77,11 @@ _BALANCE_MARKERS = (
     "par saath hi",
     "at the same time",
     "both",
+    "लेकिन",
+    "परंतु",
+    "मगर",
+    "दूसरी तरफ",
+    "दूसरी ओर",
 )
 _UNKNOWN_MARKERS = (
     "pata nahi",
@@ -84,7 +97,10 @@ _CONCEDE = re.compile(
     r"|\bi stand corrected\b|\bmeri galti\b",
     re.IGNORECASE,
 )
-_GARBLED = re.compile(r"^(?:[^\w\s]|\b\w\b|\s)+$")
+# Garbled: only punctuation and single characters. A Devanagari word with vowel signs is a
+# word, not a run of single letters, so the script's block counts as word characters.
+_GARBLED = re.compile(r"^(?:[^\w\s\u0900-\u097f]|(?<![\w\u0900-\u097f])[\w\u0900-\u097f]"
+                      r"(?![\w\u0900-\u097f])|\s)+$")
 
 
 def _tag(text: str, name: str) -> str:
@@ -102,7 +118,7 @@ def _sentences(text: str) -> list[str]:
 
 def _noun_unit(sentence: str) -> str | None:
     low = sentence.lower()
-    if any(w in low for w in ("tourist", "arrival", "visitor", "paryatak")):
+    if any(w in low for w in ("tourist", "arrival", "visitor", "paryatak", "पर्यटक")):
         return "visitors"
     if "district" in low or "zile" in low:
         return "districts"
@@ -129,7 +145,7 @@ def extract_claims(text: str) -> list[dict[str, Any]]:
                 continue  # a bare year; handled below
             if not word and value < 10:
                 continue  # small bare numbers ("2 reasons") are not claims
-            if word in ("%", "percent", "per cent", "pratishat"):
+            if word in ("%", "percent", "per cent", "pratishat", "प्रतिशत"):
                 unit = "percent"
             else:
                 scale, _ = canonical_unit(word or None)
@@ -162,7 +178,7 @@ def extract_claims(text: str) -> list[dict[str, Any]]:
 
 
 def listener_responder(system: str, user: str) -> dict[str, Any]:
-    speech = _tag(user, "candidate_speech")
+    speech = to_ascii_digits(nfc(_tag(user, "candidate_speech")))
     low = speech.lower()
     garbled = bool(speech.strip()) and bool(_GARBLED.match(speech))
     reasons = [s for s in _sentences(speech) if len(s.split()) >= 4][:4]
@@ -173,7 +189,7 @@ def listener_responder(system: str, user: str) -> dict[str, Any]:
         "reasons": [] if garbled else reasons,
         "claims": [] if garbled else extract_claims(speech),
         "balance": balance,
-        "honest_unknown": any(m in low for m in _UNKNOWN_MARKERS),
+        "honest_unknown": any(m in low for m in _UNKNOWN_MARKERS) or honest_unknown_marker(speech),
         "concedes_error": bool(_CONCEDE.search(speech)),
         "garbled": garbled,
     }

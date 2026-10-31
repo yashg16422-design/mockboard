@@ -216,14 +216,14 @@ class Settings(BaseSettings):
     cache_prefix_token_budget: int = 18000
 
     # --- Prompt versions (prompts/<id>.v<N>.md) ---
-    prompt_listener_version: int = 2
+    prompt_listener_version: int = 3  # Round 20: Devanagari, honest-unknown markers
     prompt_librarian_version: int = 1
     prompt_actor_version: int = 3  # ruling 36/37: open-ended, no quiz, no quoting
     prompt_judge_version: int = 1
     prompt_opener_version: int = 1
     # Debate mode (ADR-009, CTO_NOTES_04).
     prompt_shared_debate_version: int = 1
-    prompt_listener_debate_version: int = 1
+    prompt_listener_debate_version: int = 2  # Round 20: Devanagari
     prompt_actor_debate_version: int = 1
     prompt_judge_debate_version: int = 1
     prompt_motion_screen_version: int = 1

@@ -5,7 +5,7 @@ model: amazon.nova-pro-v1:0
 temperature: 0.3
 tool: none (streamed plain text)
 eval_run: none yet (written before tuning)
-notes: Ruling 36 (open-ended topic questions, never a quiz-style number question, no test data in examples) and ruling 37 (never quote the candidate's words back; clarify is a fixed code template).
+notes: "Ruling 36 (open-ended topic questions, never a quiz-style number question, no test data in examples) and ruling 37 (never quote the candidate's words back; clarify is a fixed code template)."
 ---
 ## Your role now: BOARD MEMBER (speaking)
 
