@@ -171,3 +171,11 @@ Judge scores 1-5 or "insufficient_evidence" for: mental_alertness, critical_assi
 - **Ruling 33:** debate mode needs a `template_line(move)` hook so a streamed debate line cut short still ends with a proper question (builder's open note) → debate builder, small chunk.
 - Next: owner's first live voice session; its `make voice-summary` output sets `MOVE_DEADLINE_MS`, Smart Turn and barge-in thresholds (V9). Then V5 masking filler, V6 web polish, V8 EC2 deploy.
 - **Ruling 33 delivered** (3dc4c34): debate `template_line(move)` for every debate move in Hinglish, Hindi and English, figure-free and guard-clean; tests cover lines cut short by the number guard, the off-limits guard and a mid-line actor failure. Orchestrator re-ran: tests green, lint clean.
+
+## Round 19 — Oct 31, 2026 (owner's first run of the voice app: free mode on his Mac)
+
+- Owner ran `make voice-fake` on macOS (Python 3.14, Chrome, localhost). Orchestrator read the server log and the traces in his folder through the linked device. Pipeline, WebRTC on localhost without STUN, Silero, Smart Turn v3, BrainProcessor, the commit path and captions all worked: three turns, commit→move ready in under 10 ms in fake mode, no fallbacks. The beeps are the fake TTS; the "You" captions are the fake STT's scripted lines.
+- **Defect D (ghost session):** two peer connections were created (the first offer at 20:44:03 never connected and timed out ~80 s later), and a full pipeline was started for it. In real mode that would open a Prisma stream (billed while streaming) and Timbre for a session nobody uses. Fix: build the pipeline and open Gnani connections only after the WebRTC connection reaches `connected`; a new offer from the same page closes the previous connection and pipeline; the Start button is disabled while connecting.
+- **Defect E (native library clash):** macOS warns that `av` and `cv2` both bundle `libavdevice` ("may cause spurious casting failures and mysterious crashes"). Find which dependency pulls OpenCV; drop it if unused by our path, or document a safe pin.
+- **Defect F (Stop gives no report):** pressing Stop ended the session with no report. On Stop, if at least one user turn happened, run the judge and show/save the report.
+- Minor: favicon 404.
