@@ -411,8 +411,12 @@ def build_echo_pipeline(
 async def run_echo_bot(webrtc_connection, cfg: EchoConfig) -> None:
     """Run one browser session until the browser disconnects. Called by server.py."""
     from pipecat.transports.base_transport import TransportParams
-    from pipecat.transports.smallwebrtc.transport import SmallWebRTCTransport
     from pipecat.workers.runner import WorkerRunner
+
+    from mockboard.voice.cv2_shim import ensure_cv2
+
+    ensure_cv2()  # the voice extra no longer installs OpenCV (defect E)
+    from pipecat.transports.smallwebrtc.transport import SmallWebRTCTransport
 
     stamp = time.strftime("%Y%m%d-%H%M%S")
     log = JsonlLog(cfg.log_dir / f"echo_{stamp}.jsonl")

@@ -16,7 +16,7 @@ pytest==9.1.1
 pytest-asyncio==1.4.0
 ruff==0.17.2
 # Phase 2 voice loop: NOT in this file. Install it with `pip install -e '.[voice]'`; the `voice`
-# extra in pyproject.toml pins pipecat-ai[runner,silero,webrtc]==1.5.0, pipecat-gnani==0.5.12,
+# extra in pyproject.toml pins pipecat-ai[runner,silero]==1.5.0 (no OpenCV, defect E), pipecat-gnani==0.5.12,
 # gnani-vachana==0.7.9 (0.8.2 breaks `import pipecat_gnani`) and aiortc==1.15.0 (Oct 29, 2026).
 # websockets is pinned to 15.0.1 so the voice extra installs here too (ruling 18).
 # Probes extra (numpy, scipy): see requirements-probes.txt.

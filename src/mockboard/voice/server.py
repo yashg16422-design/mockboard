@@ -151,10 +151,13 @@ def make_speech(cfg: AppConfig, session: InterviewSession, ledger: PlaybackLedge
 async def run_session(webrtc_connection, cfg: AppConfig, form: CandidateForm | None) -> None:
     """One browser connection, until it disconnects or the session ends."""
     from pipecat.transports.base_transport import TransportParams
-    from pipecat.transports.smallwebrtc.transport import SmallWebRTCTransport
     from pipecat.workers.runner import WorkerRunner
 
+    from mockboard.voice.cv2_shim import ensure_cv2
     from mockboard.voice.pipeline import build_voice_pipeline
+
+    ensure_cv2()  # before the transport's module-level `import cv2` (defect E)
+    from pipecat.transports.smallwebrtc.transport import SmallWebRTCTransport
 
     session = make_session(cfg, form)
     ledger = PlaybackLedger()
