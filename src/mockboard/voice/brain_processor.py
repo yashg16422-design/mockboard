@@ -497,19 +497,79 @@ class BrainProcessor(FrameProcessor):
         """Timbre gave no audio for a line (ruling 30): it is shown as text only."""
         await self.emit("tts_failed", text=text)
 
-    async def _end_session(self) -> None:
+    # ------------------------------------------------------------------ stop (defect F)
+
+    async def request_stop(self) -> None:
+        """The page's Stop button (defect F, Round 19): end now. The turn in progress is
+        closed as heard so far; if the candidate answered at least once, the judge runs and
+        the report is shown and saved. Nothing more is spoken."""
+        if self._ending:
+            return
+        await self.emit("stopping")
+        await self._close_open_turn()
+        if not self.session.state.turns:
+            self._ending = True
+            await self._set_state(FINISHED)
+            await self.emit("ended", reason="no_answers",
+                            text="You stopped before answering, so there is no report.")
+            return
+        self._end_task = self.create_task(self._end_session(speak=False), "brain-end")
+
+    async def finish_without_page(self, timeout_s: float = 180.0) -> None:
+        """The browser went away (tab closed, network gone): keep what was said, and if the
+        candidate answered at least once, run the judge and save the report under traces/."""
+        if self.report is not None:
+            return
+        end = self._end_task
+        if end is not None and not end.done():
+            with contextlib.suppress(Exception):
+                await asyncio.wait_for(asyncio.shield(end), timeout_s)
+            return
+        if self._ending:
+            return
+        await self._close_open_turn()
+        if self.session.state.turns:
+            with contextlib.suppress(TimeoutError):
+                await asyncio.wait_for(self._end_session(speak=False), timeout_s)
+
+    async def _close_open_turn(self) -> None:
+        """Close the turn in progress honestly: a board line being played or generated is
+        recorded as heard so far (interrupted); an answer whose move was not chosen yet is
+        kept (the judge sees it) with nothing said by the board."""
+        for task in (self._orphan_task,):
+            if task is not None:
+                await self.cancel_task(task)
+        turn = self.session.turn
+        if turn is not None and turn.move is not None:
+            heard = self.ledger.heard()
+            await self._cancel_task()
+            self._mark_playback()
+            details = {**self._details(heard), "stopped": True}
+            out = self.session.finish_line(heard.text, interrupted=True,
+                                           spoken_estimated=heard.estimated, details=details)
+            self.outcomes.append(out)
+            return
+        await self._cancel_task()
+        turn = self.session.turn
+        if turn is not None and turn.segments:
+            await self.session.end_of_turn(self._deadline_s)
+            out = self.session.finish_line("", interrupted=True,
+                                           details={"stopped": True, "board_silent": True})
+            self.outcomes.append(out)
+
+    async def _end_session(self, *, speak: bool = True) -> None:
         if self._ending:
             return
         self._ending = True
         await self._set_state(FINISHED)
-        confer = self.session.closing_line()
+        confer = self.session.closing_line() if speak else None
         if confer:
             await self.say(confer, speaker=self.chairman, kind="confer")
         else:
             await self.emit("preparing_report")
         report = await self.session.finish()
         verdict = getattr(getattr(report, "verdict", None), "text", None)
-        if verdict:
+        if verdict and speak:
             await self.say(verdict, speaker=self.chairman, kind="verdict")
         from mockboard.cli import format_report  # the text CLI's report layout
 

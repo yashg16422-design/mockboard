@@ -4,8 +4,10 @@ The shim itself needs no Pipecat; the transport import is checked only with the 
 from __future__ import annotations
 
 import importlib.util
+import os
 import subprocess
 import sys
+from pathlib import Path
 
 import pytest
 
@@ -32,9 +34,14 @@ print("ok", installed)
 """
 
 
+SRC = Path(__file__).resolve().parents[2] / "src"
+
+
 def _run(*args: str) -> str:
+    # The child must find this checkout's package even when pytest's pythonpath is not set.
+    path = os.pathsep.join(p for p in (str(SRC), os.environ.get("PYTHONPATH", "")) if p)
     out = subprocess.run([sys.executable, "-c", SCRIPT, *args], capture_output=True, text=True,
-                         timeout=120)
+                         timeout=120, env={**os.environ, "PYTHONPATH": path})
     assert out.returncode == 0, out.stderr[-2000:]
     return out.stdout.strip().splitlines()[-1]
 
@@ -51,7 +58,6 @@ def test_the_smallwebrtc_transport_imports_with_the_stand_in():
 
 def test_the_voice_extra_does_not_pull_opencv():
     import tomllib
-    from pathlib import Path
 
     pyproject = tomllib.loads((Path(__file__).parents[2] / "pyproject.toml").read_text())
     voice = pyproject["project"]["optional-dependencies"]["voice"]

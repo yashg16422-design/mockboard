@@ -291,3 +291,67 @@ async def test_the_session_time_cap_ends_the_interview_with_a_report(
     async with Rig(s, session_max_s=1.0) as rig:  # regression: the timer used to collide
         await rig.until(lambda: rig.brain.report is not None, timeout=12)  # with Pipecat's
     assert rig.brain.events_of("time_up") and rig.brain.events_of("report")  # _clock
+
+
+# --------------------------------------------------------------------------- defect F
+
+
+async def test_stop_while_the_board_speaks_gives_a_report_with_the_heard_words(
+    settings, cards, fake_llm, form, tmp_path
+):
+    s = upsc_session(settings, cards, fake_llm, form, tmp_path)
+    async with Rig(s, report_dir=tmp_path / "reports") as rig:
+        await rig.until(lambda: rig.brain.state == LISTENING)
+        rig.tts.ms_per_word = 250
+        await rig.speak()
+        await rig.until(lambda: rig.brain.state == "speaking"
+                        and rig.ledger.playback_started_at is not None)
+        await asyncio.sleep(0.3)
+        await rig.brain.request_stop()
+        await rig.until(lambda: rig.brain.report is not None, timeout=15)
+    v = rig.brain.outcomes[0].trace["voice"]
+    assert v["interrupted"] and v["stopped"]
+    assert rig.events("stopping") and rig.events("report")
+    assert (tmp_path / "reports" / "vs.report.txt").exists()
+    assert rig.events("caption")[-1].get("kind") != "verdict"  # nothing more was spoken
+
+
+async def test_stop_mid_answer_keeps_the_answer_for_the_judge(
+    settings, cards, fake_llm, form, tmp_path
+):
+    s = upsc_session(settings, cards, fake_llm, form, tmp_path)
+    async with Rig(s, report_dir=tmp_path / "reports") as rig:
+        await rig.until(lambda: rig.brain.state == LISTENING)
+        await rig.speak()  # first answer, normal turn
+        await rig.until(lambda: rig.brain.outcomes and rig.brain.state == LISTENING)
+        await rig.worker.queue_frame(VADUserStartedSpeakingFrame())
+        await rig.worker.queue_frame(UserStartedSpeakingFrame())
+        await asyncio.sleep(0.2)
+        await rig.worker.queue_frame(VADUserStoppedSpeakingFrame())  # Prisma closes it
+        await rig.until(lambda: s.turn is not None and s.turn.segments, timeout=12)
+        await rig.brain.request_stop()
+        await rig.until(lambda: rig.brain.report is not None, timeout=15)
+    assert len(s.state.turns) == 2
+    last = rig.brain.outcomes[-1].trace["voice"]
+    assert last["board_silent"] and last["board_line_spoken"] == ""
+
+
+async def test_stop_before_any_answer_ends_without_a_report(
+    settings, cards, fake_llm, form, tmp_path
+):
+    s = upsc_session(settings, cards, fake_llm, form, tmp_path)
+    async with Rig(s) as rig:
+        await rig.until(lambda: rig.brain.state == LISTENING)
+        await rig.brain.request_stop()
+        await rig.until(lambda: rig.events("ended"))
+    assert rig.brain.report is None and rig.events("ended")[0]["reason"] == "no_answers"
+
+
+async def test_a_closed_tab_still_saves_the_report(settings, cards, fake_llm, form, tmp_path):
+    s = upsc_session(settings, cards, fake_llm, form, tmp_path)
+    async with Rig(s, report_dir=tmp_path / "reports") as rig:
+        await rig.until(lambda: rig.brain.state == LISTENING)
+        await rig.speak()
+        await rig.until(lambda: rig.brain.outcomes and rig.brain.state == LISTENING)
+        await rig.brain.finish_without_page()
+    assert rig.brain.report is not None and (tmp_path / "reports" / "vs.report.json").exists()

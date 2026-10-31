@@ -128,6 +128,7 @@
 // the data channel: captions, state, the speaking member, and the report.
 const $ = (id) => document.getElementById(id);
 let pc = null, mic = null, pinger = null, meterCtx = null, cfg = null, connecting = false;
+let dc = null, stopWaiter = null;
 // One id per page load: the server closes this page's previous connection (and its session)
 // when a new offer arrives with the same id (defect D).
 const PAGE_ID = (crypto.randomUUID && crypto.randomUUID()) || String(Math.random()).slice(2);
@@ -172,11 +173,17 @@ function onMessage(raw) {
     case "tts_failed": caption("note", "", "the voice failed for one line; it is shown as text"); break;
     case "time_up": caption("note", "", "time is up; the board is wrapping up"); break;
     case "error": $("error").textContent = m.text; break;
+    case "stopping": $("status").textContent = "stopping: the board is preparing your report…"; break;
+    case "ended":
+      $("status").textContent = m.text || "session over";
+      if (stopWaiter) stopWaiter();
+      break;
     case "report":
       $("report-panel").hidden = false;
       $("report").textContent = m.text;
       $("report-path").textContent = m.path ? `saved to ${m.path}` : "";
       $("status").textContent = "session over: report below";
+      if (stopWaiter) stopWaiter();
       break;
   }
 }
@@ -236,7 +243,7 @@ async function start() {
     pc.onconnectionstatechange = () => {
       if (["failed", "closed"].includes(pc.connectionState)) stop();
     };
-    const dc = pc.createDataChannel("messages");
+    dc = pc.createDataChannel("messages");
     dc.onopen = () => { pinger = setInterval(() => dc.send(`ping: ${Date.now()}`), 1000); };
     dc.onmessage = (e) => onMessage(e.data);
     $("status").textContent = "connecting…";
@@ -276,7 +283,7 @@ function stop() {
   $("start").disabled = false;
   $("stop").disabled = true;
   $("speaking").textContent = "";
-  if (!$("report-panel").hidden) return;
+  if (!$("report-panel").hidden || /session over|no report/.test($("status").textContent)) return;
   $("status").textContent = "stopped";
 }
 
@@ -295,7 +302,22 @@ async function init() {
 }
 
 $("start").onclick = start;
-$("stop").onclick = () => { stop(); };
+// Stop (defect F): ask the server to end the session and wait for the report before closing
+// the connection, so the judge's report still reaches the page. Closing first lost it.
+async function requestStop() {
+  $("stop").disabled = true;
+  if (!dc || dc.readyState !== "open") { stop(); return; }
+  if (mic) mic.getAudioTracks().forEach((t) => (t.enabled = false));  // stop listening now
+  $("status").textContent = "stopping: the board is preparing your report…";
+  dc.send(JSON.stringify({ type: "mockboard", event: "stop" }));
+  await new Promise((resolve) => {
+    stopWaiter = resolve;
+    setTimeout(resolve, 180000);  // the judge can take a while; never hang forever
+  });
+  stopWaiter = null;
+  stop();
+}
+$("stop").onclick = () => { requestStop(); };
 init().catch((e) => { $("error").textContent = `Could not load the config: ${e.message}`; });
 </script>
 </body>

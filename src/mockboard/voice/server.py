@@ -194,8 +194,18 @@ async def run_session(webrtc_connection, cfg: AppConfig, form: CandidateForm | N
         # The data channel opens around now; a short grace keeps the opener's captions.
         await vp.brain.begin(delay_s=0.5)
 
+    @transport.event_handler("on_app_message")
+    async def _page_message(_transport, message, _sender):
+        if isinstance(message, dict) and message.get("type") == "mockboard" and (
+                message.get("event") == "stop"):
+            await vp.brain.request_stop()  # defect F: Stop gives a report
+
     @transport.event_handler("on_client_disconnected")
     async def _disconnected(_transport, _client):
+        try:  # defect F: a closed tab still saves the report if there was an answer
+            await vp.brain.finish_without_page()
+        except Exception as e:
+            logger.warning(f"[voice] report after disconnect failed: {type(e).__name__}: {e}")
         await vp.worker.cancel()
 
     logger.info(f"[voice] session {session.session_id} ({cfg.mode}) started")
