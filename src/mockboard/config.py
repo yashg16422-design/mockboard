@@ -40,7 +40,10 @@ class Settings(BaseSettings):
     # Prisma's own VAD (headers, fixed per connection). UNVERIFIED: these are Gnani's
     # documented defaults, sent explicitly so the trace shows them; probes P2/P3 set them.
     stt_vad_threshold: float | None = Field(default=0.7, ge=0, le=1)
-    stt_min_silence_ms: int | None = Field(default=500, ge=100, le=2000)
+    # Ruling 34: 300 ms (Gnani's default is 500) so Prisma closes a segment sooner after the
+    # candidate stops; the first real run measured finals ~1.3 s after speech end at 500.
+    # UNVERIFIED at 300: measure (summary's `final_wait_ms`).
+    stt_min_silence_ms: int | None = Field(default=300, ge=100, le=2000)
     stt_min_speech_ms: int | None = Field(default=100, ge=50, le=2000)
     stt_min_segment_ms: int | None = Field(default=120, ge=100, le=1000)
     # Ruling 30 / CTO_NOTES_05 should-fix 2: the docs close a session after 60 s with no
@@ -55,6 +58,10 @@ class Settings(BaseSettings):
     # Ruling 28/31: after Smart Turn ends the user's turn the voice loop sends `commit` and
     # waits at most this long for the transcripts it closes. UNVERIFIED until probe P2.
     stt_commit_wait_ms: int = Field(default=1500, gt=0)
+    # Ruling 34 (supersedes relying on commit): after the turn stops, wait at most this long
+    # for Prisma's own final for the speech still in flight. Measured in the first real run:
+    # every commit replied "none" and finals came 1.28-1.76 s after speech end. Start 1.8 s.
+    stt_final_wait_ms: int = Field(default=1800, gt=0)
     # CTO_NOTES_05 §4.4: what `commit` does with no utterance open is undocumented; if no
     # `processing` follows within this window, nothing was open. UNVERIFIED.
     stt_commit_noop_ms: int = Field(default=300, gt=0)

@@ -6,8 +6,12 @@ session API the text CLI uses:
 1. Every Prisma final (`TranscriptionFrame`) of the open user turn becomes
    `session.submit_segment(text, segment_index=k)`.
 2. When Smart Turn ends the user's turn (`UserStoppedSpeakingFrame`), a turn task sends Prisma
-   a `commit` (ruling 28), waits, bounded, until every transcript that commit attributed to the
-   turn has arrived here (ruling 31: by cause, using `result["mb"]`, not a time window), then
+   a `commit` (kept, but never relied on) and waits, bounded by `final_wait_s` (ruling 34), for
+   Prisma's own final for the speech still in flight: until no segment is pending, no utterance
+   is open, and every stretch of speech Silero heard has been transcribed. The first real run
+   showed why: every commit replied "none" in ~80 ms and the finals came ~1.3 s after the
+   candidate stopped. A commit that did close an utterance also waits for its tagged
+   transcripts (ruling 31, `result["mb"]`). Then
    calls `session.end_of_turn(deadline)` and streams `session.speak_stream()` to Timbre as one
    `TTSSpeakFrame` per sentence. The turn task, not the stop frame's handler, does this work:
    a SystemFrame can overtake queued transcripts (spikes/NOTES.md, surprise 2), and blocking a
@@ -86,7 +90,7 @@ class BrainProcessor(FrameProcessor):
         ledger: PlaybackLedger | None = None,
         tuner: Any = None,
         deadline_s: float | None = None,
-        seq_wait_s: float = 0.5,
+        final_wait_s: float | None = None,
         settle_s: float = 0.12,
         tts_idle_cap_s: float = 9.0,
         line_cap_s: float = 90.0,
@@ -107,7 +111,13 @@ class BrainProcessor(FrameProcessor):
         self._deadline_s = deadline_s if deadline_s is not None else (
             settings.move_deadline_ms / 1000
         )
-        self._seq_wait_s = seq_wait_s
+        self._final_wait_s = final_wait_s if final_wait_s is not None else (
+            settings.stt_final_wait_ms / 1000
+        )
+        # Ruling 34: has Silero heard speech that no final has covered yet?
+        self._vad_speaking = False
+        self._speech_unfinalised = False
+        self._await_late_final = False  # the wait ran out with speech still in flight
         self._settle_s = settle_s
         self._tts_idle_cap_s = tts_idle_cap_s
         self._line_cap_s = line_cap_s
@@ -177,8 +187,12 @@ class BrainProcessor(FrameProcessor):
             return  # ours to read, not for TTS
         if isinstance(frame, VADUserStoppedSpeakingFrame):
             self._last_vad_stop = time.monotonic()
+            self._vad_speaking = False
         elif isinstance(frame, VADUserStartedSpeakingFrame):
             self._last_vad_stop = None
+            self._vad_speaking = True
+            self._speech_unfinalised = True
+            self._await_late_final = False  # new speech: a new turn's words from here on
         elif isinstance(frame, UserStartedSpeakingFrame):
             await self._on_user_started()
         elif isinstance(frame, UserStoppedSpeakingFrame):
@@ -214,7 +228,9 @@ class BrainProcessor(FrameProcessor):
         cid = mb.get("commit_id") if isinstance(mb, dict) else None
         if isinstance(seq, int):
             self._seen_seq = max(self._seen_seq, seq)
-            self._seq_event.set()
+        # A final covers the speech before it; speech still going on stays unfinalised.
+        self._speech_unfinalised = self._vad_speaking
+        self._seq_event.set()
         text = frame.text.strip()
         if not text or self.state == FINISHED:
             return
@@ -223,6 +239,12 @@ class BrainProcessor(FrameProcessor):
             cid in self._closed_commits
             or (cid in self._open_commits and turn is not None and turn.ended)
         )
+        if not late and cid is None and self._await_late_final and turn is not None and (
+                turn.ended and not self._vad_speaking):
+            # Ruling 34: the final for this turn's last speech, after the wait ran out. It joins
+            # the turn it belongs to and never starts a turn or interrupts the board.
+            late = True
+            self._await_late_final = False
         if late:
             # Ruling 26 safety net: caused by the commit of a turn whose move is chosen.
             self.session.note_late_final(text, commit_id=cid)
@@ -271,17 +293,6 @@ class BrainProcessor(FrameProcessor):
                 self._start_turn_task()
 
         self._orphan_task = self.create_task(close_later(), "brain-orphan")
-
-    async def _wait_seq(self, seq: int, timeout: float) -> bool:
-        deadline = time.monotonic() + timeout
-        while self._seen_seq < seq:
-            left = deadline - time.monotonic()
-            if left <= 0:
-                return False
-            self._seq_event.clear()
-            with contextlib.suppress(TimeoutError):
-                await asyncio.wait_for(self._seq_event.wait(), left)
-        return True
 
     # ------------------------------------------------------------------ user turns
 
@@ -332,19 +343,50 @@ class BrainProcessor(FrameProcessor):
         self._pushed = 0
         return self.ledger
 
+    def _settled(self, commit_task: asyncio.Task | None) -> bool:
+        """Ruling 34: every word of the closed turn has arrived (or nothing is in flight)."""
+        if self._speech_unfinalised:
+            return False
+        stt = self._stt
+        if stt is not None and getattr(stt, "pending_segments", 0):
+            return False
+        if stt is not None and getattr(stt, "utterance_open", None) is True:
+            return False
+        if commit_task is not None and commit_task.done() and not commit_task.cancelled():
+            result = commit_task.result()
+            if result.last_seq is not None and self._seen_seq < result.last_seq:
+                return False
+        return True
+
     async def _run_turn(self) -> None:
         await self.emit("state", state=CLOSING)
         self._mark("vad_end", self._last_vad_stop)
+        t0 = time.monotonic()
+        commit_task = None
         if self._stt is not None and hasattr(self._stt, "commit"):
-            t0 = time.monotonic()
-            result = await self._stt.commit()
-            self._open_commits.add(result.commit_id)
-            self._mark("commit_sent", result.sent_at or t0)
-            entry = {"commit_id": result.commit_id, "reply": result.reply,
-                     "wait_ms": result.wait_ms, "last_seq": result.last_seq}
-            if result.last_seq is not None:
-                entry["all_seen"] = await self._wait_seq(result.last_seq, self._seq_wait_s)
-            self.commits.append(entry)
+            # Kept (harmless, and it closes an open utterance at once when Prisma honours it),
+            # but never waited on: its "none" reply means "pending", not "empty" (ruling 34).
+            commit_task = asyncio.ensure_future(self._stt.commit())
+            self._mark("commit_sent", t0)
+        deadline = t0 + self._final_wait_s
+        while not self._settled(commit_task) and time.monotonic() < deadline:
+            self._seq_event.clear()
+            with contextlib.suppress(TimeoutError):
+                await asyncio.wait_for(self._seq_event.wait(), 0.02)
+        settled = self._settled(commit_task)
+        self._await_late_final = not settled
+        entry: dict[str, Any] = {"final_wait_ms": round((time.monotonic() - t0) * 1000, 1),
+                                 "settled": settled}
+        if commit_task is not None:
+            if commit_task.done() and not commit_task.cancelled():
+                r = commit_task.result()
+                self._open_commits.add(r.commit_id)
+                entry.update(commit_id=r.commit_id, reply=r.reply, wait_ms=r.wait_ms,
+                             last_seq=r.last_seq)
+            else:
+                entry["reply"] = "pending"
+                commit_task.add_done_callback(self._late_commit(entry))
+        self.commits.append(entry)
         if self.session.turn is None:
             # Silero and Smart Turn heard something, but Prisma found no words in it.
             await self.emit("no_speech")
@@ -359,6 +401,15 @@ class BrainProcessor(FrameProcessor):
         await self._speak_turn()
 
     # ------------------------------------------------------------------ board lines
+
+    def _late_commit(self, entry: dict[str, Any]):
+        def done(task: asyncio.Task) -> None:
+            if task.cancelled() or task.exception() is not None:
+                return
+            r = task.result()
+            self._closed_commits.add(r.commit_id)  # its transcripts are late finals
+            entry.update(commit_id=r.commit_id, reply=r.reply, wait_ms=r.wait_ms)
+        return done
 
     async def _speak_turn(self) -> None:
         self._reset_ledger()

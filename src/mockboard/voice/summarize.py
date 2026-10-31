@@ -65,7 +65,8 @@ def summarize(rows: list[dict]) -> list[str]:
     out += ["", "per turn (ms; '-' = stage not reached):", head]
     collected: dict[str, list[float]] = {lbl: [] for lbl, _, _ in SPANS}
     flags_total = {"interrupted": 0, "reopened": 0, "late_finals": 0, "deadline_fallbacks": 0,
-                   "actor_fallbacks": 0, "commit_timeouts": 0}
+                   "actor_fallbacks": 0, "commit_timeouts": 0, "final_wait_ran_out": 0}
+    final_waits: list[float] = []
     for r in turns:
         st, v = r.get("stages_ms", {}), r.get("voice", {})
         cells = []
@@ -93,8 +94,12 @@ def summarize(rows: list[dict]) -> list[str]:
             flags_total["actor_fallbacks"] += 1
         commit = v.get("commit") or {}
         if commit:
-            flags.append(f"commit {commit.get('reply')} {commit.get('wait_ms')} ms")
+            flags.append(f"commit {commit.get('reply')}; waited {commit.get('final_wait_ms')} ms "
+                         f"for finals ({'all in' if commit.get('settled') else 'ran out'})")
             flags_total["commit_timeouts"] += commit.get("reply") in ("timeout", "not_sent")
+            flags_total["final_wait_ran_out"] += commit.get("settled") is False
+            if commit.get("final_wait_ms") is not None:
+                final_waits.append(commit["final_wait_ms"])
         if v.get("guard_stopped"):
             flags.append("guard stopped a sentence")
         out.append(f"{r['turn_id']:<5}{r.get('move', '?'):<17}" + "".join(cells))
@@ -105,6 +110,9 @@ def summarize(rows: list[dict]) -> list[str]:
         if values:
             out.append(f"{lbl:<22}{len(values):>4}{pct(values, 50):>9}{pct(values, 95):>9}"
                        f"{max(values):>9}")
+    if final_waits:  # ruling 34: tune STT_FINAL_WAIT_MS from this
+        out.append(f"{'final wait (stop->finals)':<22}{len(final_waits):>4}"
+                   f"{pct(final_waits, 50):>9}{pct(final_waits, 95):>9}{max(final_waits):>9}")
     out += ["", "counts: " + ", ".join(f"{k}={v}" for k, v in flags_total.items())]
     if sess:
         stt = sess.get("stt_stats", {})

@@ -114,6 +114,7 @@ async def test_summary_prints_timings_without_any_text(settings, cards, fake_llm
     assert summarize.main([str(path)]) == 0
     out = capsys.readouterr().out
     assert "STOP->FIRST AUDIO" in out and "p95" in out and "commit transcript" in out
+    assert "final wait" in out and "all in" in out
     said = rig.brain.outcomes[0].trace["voice"]["board_line_spoken"]
     assert said.split()[0] not in out.split()  # no board text
     assert "Kanpur" not in out  # no candidate text

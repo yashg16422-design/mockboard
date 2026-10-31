@@ -161,7 +161,7 @@ async def test_a_turn_runs_in_order_with_every_mark_and_ends_with_a_report(
     assert times == sorted(times), dict(zip(ORDER, times, strict=True))
     v = first["voice"]
     assert not v["interrupted"] and v["board_line_spoken"] == v["board_line_sent"]
-    assert v["commit"]["reply"] == "transcript" and v["commit"]["all_seen"]
+    assert v["commit"]["reply"] == "transcript" and v["commit"]["settled"]
     assert v["played_ms"] > 0 and v["tts_units"]
     # Each sentence went to TTS as its own request, in order (ADR-008 §1-2).
     said = [e["text"] for e in rig.events("caption") if e["side"] == "board"]
@@ -355,3 +355,70 @@ async def test_a_closed_tab_still_saves_the_report(settings, cards, fake_llm, fo
         await rig.until(lambda: rig.brain.outcomes and rig.brain.state == LISTENING)
         await rig.brain.finish_without_page()
     assert rig.brain.report is not None and (tmp_path / "reports" / "vs.report.json").exists()
+
+
+
+# --------------------------------------------------------------------------- ruling 34
+
+
+class NoneCommitSTT(FakeCommitSTT):
+    """The first real run (Round 20, trace voice-32a441f916): every commit replied "none" in
+    ~80 ms without closing anything, and Prisma's own VAD sent the final ~1.3 s after the
+    candidate stopped. This replays that event order."""
+
+    async def commit(self, *, wait_s=None, noop_s=None):
+        self._commits += 1
+        queued = time.monotonic()
+        await asyncio.sleep(0.08)
+        return CommitResult(self._commits, "none", [], None, 0, None, queued, queued,
+                            time.monotonic())
+
+
+async def test_a_none_commit_waits_for_the_final_that_comes_1_3_s_later(
+    settings, cards, fake_llm, form, tmp_path
+):
+    s = upsc_session(settings, cards, fake_llm, form, tmp_path)
+    stt = NoneCommitSTT(segment_delay_s=1.3)
+    async with Rig(s, stt=stt) as rig:
+        rig.brain._final_wait_s = 1.8
+        await rig.until(lambda: rig.brain.state == LISTENING)
+        await rig.speak()
+        await rig.until(lambda: rig.brain.outcomes, timeout=10)
+    assert not rig.events("no_speech") and not rig.events("transcript_dropped")
+    assert len(s.state.turns) == 1 and s.state.turns[0].segments
+    commit = rig.brain.outcomes[0].trace["voice"]["commit"]
+    assert commit["reply"] == "none" and commit["settled"]
+    assert 1200 <= commit["final_wait_ms"] < 1800  # ended when the final came, not at the cap
+    users = [e for e in rig.events("caption") if e["side"] == "user"]
+    assert len(users) == 1 and not users[0].get("late")
+
+
+async def test_a_final_slower_than_the_budget_joins_its_turn_late(
+    settings, cards, fake_llm, form, tmp_path
+):
+    s = upsc_session(settings, cards, fake_llm, form, tmp_path)
+    stt = NoneCommitSTT(segment_delay_s=0.9)
+    async with Rig(s, stt=stt, tts_ms_per_word=200) as rig:
+        rig.brain._final_wait_s = 0.4
+        await rig.until(lambda: rig.brain.state == LISTENING)
+        await rig.speak()  # the first answer's final comes after the wait: no words yet
+        await rig.until(lambda: rig.events("no_speech"))
+        await rig.until(lambda: rig.brain.outcomes, timeout=10)  # it then opens the turn
+        await rig.until(lambda: rig.brain.state == LISTENING)
+        # Second answer: Prisma had already sent part of it; the rest is late.
+        await rig.worker.queue_frame(VADUserStartedSpeakingFrame())
+        await rig.worker.queue_frame(UserStartedSpeakingFrame())
+        await asyncio.sleep(0.2)
+        await rig.worker.queue_frame(VADUserStoppedSpeakingFrame())
+        await asyncio.sleep(1.0)  # its first segment's final arrives (0.9 s)
+        await rig.worker.queue_frame(VADUserStartedSpeakingFrame())
+        await asyncio.sleep(0.2)
+        await rig.worker.queue_frame(VADUserStoppedSpeakingFrame())
+        await rig.worker.queue_frame(UserStoppedSpeakingFrame())
+        await rig.until(lambda: len(rig.brain.outcomes) == 2, timeout=10)
+        await asyncio.sleep(1.0)
+    second = rig.brain.outcomes[1].trace["voice"]
+    assert not second["commit"]["settled"]
+    assert not rig.events("transcript_dropped")  # the late final was not thrown away
+    assert any(e.get("late") for e in rig.events("caption") if e["side"] == "user")
+    assert len(s.state.turns) == 2 and len(s.state.turns[1].segments) == 2
