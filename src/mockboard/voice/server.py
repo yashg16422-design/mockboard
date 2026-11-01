@@ -56,6 +56,7 @@ from mockboard.voice.gate import PageSessions
 from mockboard.voice.lines import PlaybackLedger
 
 HERE = Path(__file__).resolve().parent
+_STATIC = (HERE / "static").resolve()
 MODES = {"upsc": "upsc_interview", "debate": "debate"}
 FORM_FIELDS = ("home_state", "district", "degree_subject", "hobbies", "optional_subject",
                "interview_language")
@@ -98,6 +99,16 @@ class AppConfig:
             out.update(motion=self.motion.text, motion_number=self.motion.number, side=self.side,
                        length=self.length, language=self.language, opponent=self.opponent)
         return out
+
+
+def _static_path(asset: str) -> Path | None:
+    """A file that sits directly in voice/static. No subpaths, no lab page."""
+    if not asset or asset == "lab.html" or asset.startswith(".") or "/" in asset or "\\" in asset:
+        return None
+    path = (_STATIC / asset).resolve()
+    if path.parent != _STATIC or not path.is_file():
+        return None
+    return path
 
 
 def parse_form(data: dict[str, Any] | None, *, allow_default: bool) -> CandidateForm:
@@ -290,6 +301,14 @@ def create_app(cfg: AppConfig) -> FastAPI:
     @app.get("/")
     async def index():
         return FileResponse(HERE / "static" / "index.html")
+
+    @app.get("/static/{asset:path}")
+    async def static_files(asset: str):
+        # access: static-file mounting (css and js for the page; lab.html stays on the lab app)
+        path = _static_path(asset)
+        if path is None:
+            return Response(status_code=404)
+        return FileResponse(path)
 
     @app.get("/api/config")
     async def config():

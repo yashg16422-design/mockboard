@@ -3,72 +3,29 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Mock Board voice</title>
+<title>Mock Board</title>
 <link rel="icon" href="data:,">
-<style>
-  :root {
-    --bg: #f7f6f2; --panel: #ffffff; --fg: #1c1c1a; --muted: #6a6a64; --line: #deddd5;
-    --accent: #2f5d86; --accent-fg: #ffffff; --board: #eef3f8; --you: #f4f1e8;
-    --warn: #8a5a00; --warn-bg: #fff4dc; --bad: #9b2c2c;
-  }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --bg: #151514; --panel: #1d1d1b; --fg: #ecebe5; --muted: #a09f97; --line: #34332f;
-      --accent: #86b4dc; --accent-fg: #10202e; --board: #1c2630; --you: #29261e;
-      --warn: #f0c46b; --warn-bg: #2f2716; --bad: #f19a9a;
-    }
-  }
-  * { box-sizing: border-box; }
-  body { margin: 0; background: var(--bg); color: var(--fg);
-         font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
-  main { max-width: 760px; margin: 0 auto; padding: 24px 16px 48px; }
-  header { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 4px; }
-  h1 { font-size: 1.3rem; margin: 0; }
-  .badge { font-size: .8rem; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--line);
-           color: var(--muted); }
-  .badge.fake { color: var(--warn); border-color: var(--warn); }
-  p.sub { color: var(--muted); margin: 0 0 16px; }
-  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
-           padding: 16px; margin-bottom: 16px; }
-  .notice { background: var(--warn-bg); color: var(--warn); border-radius: 8px; padding: 10px 12px;
-            margin-bottom: 16px; font-size: .95rem; }
-  form.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 10px 14px; }
-  label { display: flex; flex-direction: column; font-size: .85rem; color: var(--muted); gap: 4px; }
-  input, select { font: inherit; color: var(--fg); background: var(--bg); border: 1px solid var(--line);
-                  border-radius: 6px; padding: 6px 8px; }
-  .row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
-  button { font: inherit; padding: 9px 20px; border-radius: 8px; border: 1px solid var(--line);
-           background: transparent; color: var(--fg); cursor: pointer; }
-  button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
-  button:disabled { opacity: .45; cursor: default; }
-  #status { color: var(--muted); font-variant-numeric: tabular-nums; }
-  #speaking { font-weight: 600; }
-  #meter { flex: 1; min-width: 100px; height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; }
-  #level { height: 100%; width: 0; background: var(--accent); transition: width 60ms linear; }
-  #captions { display: flex; flex-direction: column; gap: 8px; max-height: 52vh; overflow-y: auto; }
-  .cap { padding: 8px 12px; border-radius: 8px; max-width: 92%; }
-  .cap .who { font-size: .78rem; color: var(--muted); display: block; }
-  .cap.board { background: var(--board); align-self: flex-start; }
-  .cap.you { background: var(--you); align-self: flex-end; }
-  .cap.cut { opacity: .6; }
-  .cap.note { background: transparent; color: var(--muted); font-size: .85rem; align-self: center; padding: 2px; }
-  #report { white-space: pre-wrap; font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
-            overflow-x: auto; margin: 0; }
-  #error { color: var(--bad); }
-  [hidden] { display: none !important; }
-</style>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,560&family=IBM+Plex+Mono:wght@400;500&family=Inter:wght@400;500;600&family=Noto+Sans+Devanagari:wght@400;500;600&family=Noto+Serif+Devanagari:wght@500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/tokens.css">
+<link rel="stylesheet" href="/static/site.css">
 </head>
 <body>
-<main>
-  <header>
-    <h1>Mock Board</h1>
+<a class="skip" href="#content">Skip to content</a>
+<header class="top">
+  <a class="mark" href="/">Mock Board</a>
+  <p class="kicker" id="section-kicker">01 / Practice</p>
+  <p class="badges">
     <span class="badge" id="mode-badge">…</span>
-    <span class="badge fake" id="fake-badge" hidden></span>
-  </header>
-  <p class="sub" id="subtitle">Loading…</p>
+    <span class="badge demo" id="fake-badge" hidden>Demo mode</span>
+  </p>
+</header>
+<main id="content">
+  <p class="lede" id="subtitle">Loading…</p>
 
   <div class="notice" id="headphones">
-    Please wear headphones. Without them the board can hear itself through your microphone
+    <strong>Headphones.</strong> Without them the board can hear itself through your microphone
     and may cut itself off. You can speak over the board to interrupt it.
   </div>
 
@@ -78,16 +35,26 @@
     uploaded. Restart the app without <code>--record-audio</code> to turn it off.
   </div>
 
-  <section class="panel" id="form-panel" hidden>
-    <strong>Application form</strong>
-    <p class="sub">No names, roll numbers, phone numbers or colleges. Only what a board would ask about.</p>
-    <form class="grid" id="form" autocomplete="off">
-      <label>Home state *<input name="home_state" required minlength="2" maxlength="60"></label>
-      <label>District<input name="district" maxlength="60"></label>
-      <label>Degree subject *<input name="degree_subject" required minlength="2" maxlength="80"></label>
-      <label>Hobbies (up to 3, comma-separated)<input name="hobbies" maxlength="120"></label>
-      <label>UPSC optional subject<input name="optional_subject" maxlength="80"></label>
-      <label>Interview language
+  <section id="form-panel" hidden>
+    <h2>Application form</h2>
+    <p class="quiet">No names, roll numbers, phone numbers, email addresses or colleges. Only what a board would ask about.</p>
+    <form class="column" id="form" autocomplete="off">
+      <label class="field">Home state
+        <input name="home_state" required minlength="2" maxlength="60" autocomplete="off">
+      </label>
+      <label class="field">District
+        <input name="district" maxlength="60" autocomplete="off">
+      </label>
+      <label class="field">Degree subject
+        <input name="degree_subject" required minlength="2" maxlength="80" autocomplete="off">
+      </label>
+      <label class="field">Hobbies, up to 3, comma-separated
+        <input name="hobbies" maxlength="120" autocomplete="off">
+      </label>
+      <label class="field">Optional subject
+        <input name="optional_subject" maxlength="80" autocomplete="off">
+      </label>
+      <label class="field">Interview language
         <select name="interview_language">
           <option value="hinglish">Hinglish</option>
           <option value="english">English</option>
@@ -97,46 +64,51 @@
     </form>
   </section>
 
-  <section class="panel" id="debate-panel" hidden>
-    <strong>Motion</strong>
-    <p id="motion" style="margin:4px 0 0"></p>
+  <section id="debate-panel" hidden>
+    <p class="kicker">Motion</p>
+    <p class="debate-motion" id="motion"></p>
   </section>
 
-  <section class="panel">
-    <div class="row">
-      <button id="start" class="primary">Start</button>
-      <button id="stop" disabled>Stop</button>
-      <span id="status">idle</span>
+  <div class="actions">
+    <button id="start" class="primary" type="button">Start</button>
+    <button id="stop" class="ghost" type="button" disabled>End interview</button>
+  </div>
+  <p class="meta">
+    <span id="status">idle</span>
+    <span id="speaking"></span>
+  </p>
+  <div class="voice" id="meter" title="your microphone"><span class="voice-bar" id="level"></span></div>
+  <p class="problem" id="error" role="status"></p>
+
+  <section>
+    <p class="kicker">Live captions</p>
+    <div class="captions" id="captions" aria-live="polite"></div>
+  </section>
+
+  <section id="report-panel" hidden>
+    <h2>Report</h2>
+    <p class="report-path" id="report-path"></p>
+    <div class="report-sheet">
+      <pre class="report-text" id="report"></pre>
     </div>
-    <div class="row" style="margin-top:10px">
-      <span id="speaking"></span>
-      <div id="meter" title="your microphone"><div id="level"></div></div>
-    </div>
-    <p id="error"></p>
-  </section>
-
-  <section class="panel">
-    <strong>Live captions</strong>
-    <div id="captions" aria-live="polite"></div>
-  </section>
-
-  <section class="panel" id="report-panel" hidden>
-    <strong>Report</strong> <span class="sub" id="report-path"></span>
-    <pre id="report"></pre>
   </section>
 
   <audio id="bot" autoplay></audio>
 </main>
+<footer class="site-foot">
+  <p>A practice tool for the UPSC Personality Test. Not affiliated with the Union Public Service Commission.</p>
+  <p class="models">Speech to text, Gnani Prisma. Text to speech, Gnani Timbre. The board, Amazon Nova Pro.</p>
+</footer>
 <script>
 // SmallWebRTC (pipecat-ai 1.5.0) client: one audio transceiver at index 0, a data channel
 // whose "ping" messages keep the server's connection check alive, and one non-trickle offer
 // POSTed to /api/offer. The server sends {"type":"mockboard", "event": ...} messages back on
 // the data channel: captions, state, the speaking member, and the report.
+// page_id is one id per page load. The server closes this page's previous connection (and its
+// session) when a new offer arrives with the same page_id (defect D).
 const $ = (id) => document.getElementById(id);
 let pc = null, mic = null, pinger = null, meterCtx = null, cfg = null, connecting = false;
 let dc = null, stopWaiter = null;
-// One id per page load: the server closes this page's previous connection (and its session)
-// when a new offer arrives with the same id (defect D).
 const PAGE_ID = (crypto.randomUUID && crypto.randomUUID()) || String(Math.random()).slice(2);
 
 const STATES = {
@@ -298,7 +270,11 @@ async function init() {
   const upsc = cfg.mode === "upsc";
   $("mode-badge").textContent = upsc ? "UPSC interview" : "Debate";
   const fake = [cfg.fake_llm && "fake model", cfg.fake_speech && "fake speech"].filter(Boolean);
-  if (fake.length) { $("fake-badge").hidden = false; $("fake-badge").textContent = fake.join(" + "); }
+  if (fake.length) {
+    $("fake-badge").hidden = false;
+    $("fake-badge").textContent = "Demo mode";
+    $("fake-badge").title = fake.join(", ");
+  }
   $("subtitle").textContent = upsc
     ? `A Hinglish UPSC personality test board. About ${cfg.max_minutes} minutes at most.`
     : `Argue your side against the board. About ${cfg.max_minutes} minutes at most.`;
