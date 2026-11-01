@@ -265,3 +265,9 @@ Orchestrator read trace voice-32a441f916 and the server log from the owner's Mac
 - **Rejected** P1.2 (5d43ca6 to d47a2cf) on F4 only; review in `docs/CTO_NOTES_11.md`. All other claims were confirmed by the CTO: 1194 tests, lint, md5s, F1 to F3, dev `end` 21/21. All five judgement calls are accepted; `end_en_modal` accepting `here|now` holds only with `pending_end` (Ruling 52).
 - **Ruling 58:** F4: `cheez` in `change_other_topic` moves to a strong pattern requiring an imperative, using the exact code in CTO_NOTES_11 section 3, plus one test pinning `change_kuch_baat` in `_MUST_CLOSE`. The CTO has specified and trialled the fix, so no further CTO round is needed. The orchestrator confirms the diff matches and re-runs the checks. The freeze of Ruling 57 starts after F4.
 
+## Round 31 — Nov 1, 2026 (P1 closed; detector frozen)
+
+- **Accepted** F4 (bd44810), and with it P1.2. The orchestrator compared the diff with CTO_NOTES_11 section 3 and re-ran it: `make test` 1203 passed, `make lint` exit 0, UPSC and form-file md5 826ef550..., debate f2a23f33.... No separate CTO round, per Ruling 58. The detector is frozen until P12 (Ruling 57). Known cost, accepted: "kisi aur cheez par chalte hain" returns none.
+- Standing synthetic figures: 28/33 on the orchestrator's holdout before P1.2's changes; recall on real speech is not measured.
+- Next: P2, P3, then P0.2 before P4.
+
