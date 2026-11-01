@@ -18,7 +18,7 @@ style: >-
 filler_lines:
   - "Hmm, theek hai."
   - "Achha, samajh gaya."
-  - "Chaliye, aage badhte hain."
+  - "Ji, achha."
 # Ruling 14: said instead of the actor's line when the actor call fails or is too slow.
 fallback_lines:
   - "Ek pal. Aap apni baat jaari rakhiye, hum sun rahe hain."

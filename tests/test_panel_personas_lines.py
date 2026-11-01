@@ -7,13 +7,14 @@ import re
 import pytest
 
 from mockboard.brain.actor import PLACE_FACT_PATTERNS
-from mockboard.brain.agenda import SEGMENT_MEMBERS
+from mockboard.brain.agenda import _SEEDS, _WORK_SEEDS, SEGMENT_MEMBERS, SITUATIONS
 from mockboard.brain.panel_lines import (
     ALL_LINE_TABLES,
     CAP_CLOSE_LINES,
     CLOSE_LINES,
     END_CONFIRM_LINES,
     HANDOFF_LINES,
+    REPEAT_PREFIX_LINES,
     RITUAL_LINES,
     handoff_line,
     line_for,
@@ -30,6 +31,15 @@ from mockboard.voice.lines import split_sentences
 
 PANEL = load_personas(PERSONA_DIR / "panel")
 ALL_LINES = [(mix, line) for table in ALL_LINE_TABLES for mix, line in table.items()]
+SPOKEN_TEXT = [
+    *(line for _, line in ALL_LINES),
+    *(text for mixes in _SEEDS.values() for seeds in mixes.values()
+      for seed in seeds for text in (seed.template, seed.generic)),
+    *_WORK_SEEDS.values(),
+    *(text for situation in SITUATIONS for text in situation.values()),
+    *(line for p in PANEL.values() for line in (*p.fallback_lines, *p.filler_lines)),
+]  # fmt: skip
+INFORMAL = re.compile(r"\b(?:tum|tu|tera|tumhara|tumhe)\b|\bतुम|\bतेरा")
 
 
 def test_panel_is_a_chairperson_and_four_members():
@@ -115,14 +125,35 @@ def test_no_line_claims_a_duration_or_a_number(mix, line):
         assert word not in low
 
 
-@pytest.mark.parametrize(("mix", "line"), ALL_LINES)
-def test_formal_register_only(mix, line):
-    assert not re.search(r"\b(?:tum|tu|tera|tumhara|tumhe)\b|\bतुम|\bतेरा", line.lower())
+@pytest.mark.parametrize("line", SPOKEN_TEXT)
+def test_formal_register_only(line):
+    """Fixed lines, every seed, situations and persona lines (CTO_NOTES_12 S10)."""
+    assert not INFORMAL.search(line.lower())
+
+
+def test_register_check_reads_the_seeds():
+    assert any("Maan lijiye" in line for line in SPOKEN_TEXT)
+    assert INFORMAL.search("tum kaise ho")
+    assert INFORMAL.search("तुम कैसे हो")
 
 
 @pytest.mark.parametrize(("mix", "line"), ALL_LINES)
 def test_no_gendered_first_person_verb(mix, line):
     assert not re.search(r"\b\w+(?:ta|ti) hoon\b|ता हूँ|ती हूँ", line.lower())
+
+
+def test_repeat_prefix_is_a_whole_courteous_line():
+    assert REPEAT_PREFIX_LINES == {
+        "hi-en": "Zaroor, sawal phir se suniye.",
+        "en": "Certainly. Here is the question again.",
+        "hi": "ज़रूर, प्रश्न फिर से सुनिए।",
+    }
+
+
+@pytest.mark.parametrize("persona", PANEL.values(), ids=lambda p: p.id)
+def test_no_filler_promises_a_move(persona):
+    """CTO_NOTES_12 S7: a filler plays before the line, and that line may be a probe."""
+    assert not any("aage badh" in line.lower() for line in persona.filler_lines)
 
 
 def test_handoff_names_the_member():

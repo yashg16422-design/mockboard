@@ -35,9 +35,9 @@ SKIP_ACK_LINES: dict[str, str] = {
 }
 # Said before the last question, verbatim.
 REPEAT_PREFIX_LINES: dict[str, str] = {
-    "hi-en": "Zaroor, sawal phir se.",
-    "en": "Certainly, the question again.",
-    "hi": "ज़रूर, प्रश्न फिर से।",
+    "hi-en": "Zaroor, sawal phir se suniye.",
+    "en": "Certainly. Here is the question again.",
+    "hi": "ज़रूर, प्रश्न फिर से सुनिए।",
 }
 # Ruling 52: one spoken confirmation before an `end` request closes the interview. The hi-en
 # wording is the ruling's brief, verbatim.
