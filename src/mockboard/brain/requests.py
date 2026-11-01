@@ -109,6 +109,7 @@ _VARIANTS: dict[str, tuple[str, ...]] = {
     "bataiye": ("bataye", "batayiye", "bataie", "batayie", "batao", "बताइए", "बताइये", "बताएं",
                 "बताएँ", "बताओ"),
     "puchiye": ("poochiye", "puchhiye", "pucchiye", "puchie", "puchho", "पूछिए", "पूछिये", "पूछो"),
+    "puch": ("pooch", "पूछ"),
     "puchna": ("poochna", "puchhna", "पूछना"),
     "kahiye": ("कहिए", "कहिये"),
     "dohraiye": ("dohraye", "dohrayiye", "दोहराइए", "दोहराइये"),
@@ -343,7 +344,9 @@ _CHHOD = (
     r"|chhod lete hain|chhod sakte hain|chhodna chahta hoon|chhodna chahunga|chhodna chahungi"
     r"|rehne dijiye|jaane dijiye)"
 )
-_ASK_VERB = r"(?:puchiye|lijiye|le lijiye|bataiye|kijiye|dijiye|boliye|chahiye)"
+_ASK_VERB = (
+    r"(?:puchiye|puch lijiye|lijiye|le lijiye|bataiye|bata dijiye|kijiye|dijiye|boliye|chahiye)"
+)
 _OTHER = rf"(?:kisi {_AUR}|kisi dusra|koi {_AUR}|koi dusra|dusra)"
 _SAY_AGAIN = r"(?:repeat|say (?:that|it)(?: again| once more| one more time)|say again)"
 _IMPERATIVE = r"(?:kijiye|kar dijiye|kar sakte hain|karein|karo|karte hain|kar dete hain)"
@@ -411,9 +414,9 @@ _PATTERNS: tuple[tuple[str, RequestKind, str], ...] = (
      rf"(?:{_OTHER}|kuch {_AUR}|kuch dusra) (?:\S+ ){{0,4}}?{_BAAT_VERB}"),
     ("change_other_topic", RequestKind.CHANGE_TOPIC,
      rf"(?<!mera )(?<!meri )(?<!hamara ){_OTHER} (?:topic|sawal|cheez)"
-     rf"(?: par| ke bare mein)?(?: {_ASK_VERB}| chalte hain| chaliye)?" + _END),
+     rf"(?: par| ke bare mein| ka sawal)?(?: {_ASK_VERB}| chalte hain| chaliye)?" + _END),
     ("change_kuch_aur", RequestKind.CHANGE_TOPIC,
-     rf"(?:kuch {_AUR}|kuch bhi|kuch dusra) {_ASK_VERB}" + _END),
+     rf"(?:kuch {_AUR}|kuch bhi|kuch dusra)(?: sawal)? {_ASK_VERB}" + _END),
     ("change_alawa_tail", RequestKind.CHANGE_TOPIC,
      rf"alawa (?:\S+ )?(?:kisi {_AUR}|koi {_AUR}|kuch {_AUR}|kuch bhi|koi bhi|dusra"
      rf"|something else|some other topic|anything else)(?: topic| sawal| cheez)?"
@@ -489,7 +492,9 @@ _PATTERNS: tuple[tuple[str, RequestKind, str], ...] = (
     ("repeat_hi", RequestKind.REPEAT,
      rf"(?:phir se|dobara|ek baar aur|ek baar phir|ek aur baar)(?: \S+)? {_AGAIN_VERB}"),
     ("repeat_hi_sawal", RequestKind.REPEAT,
-     rf"sawal (?:(?:phir se|dobara|ek baar aur)(?: \S+)? )?(?:{_AGAIN_VERB}|repeat {_IMPERATIVE})"),
+     r"(?<!agla )(?<!next )(?<!aur )(?<!dusra )"
+     rf"sawal (?:(?:phir se|dobara|ek baar aur)(?: \S+)? {_AGAIN_VERB}|dohraiye"
+     rf"|repeat {_IMPERATIVE})"),
     ("repeat_hi_verb", RequestKind.REPEAT, _START + rf"repeat {_IMPERATIVE}" + _END),
     ("repeat_hi_unheard", RequestKind.REPEAT,
      r"(?:sunai nahi (?:diya|di)|suna nahi|nahi suna|awaz nahi aaya)" + _END),

@@ -375,3 +375,8 @@
 {"id": "d225", "text": "देश आगे बढ़ते हैं", "expect": "none", "lang": "devanagari", "split": "dev", "synthetic": true}
 {"id": "d226", "text": "aage chalte hain aur phir dekhte hain ki kya hota hai", "expect": "none", "lang": "hinglish", "split": "dev", "synthetic": true}
 {"id": "d227", "text": "padhai se hi samaj badalta hai aur kisan ko sahi daam milta hai tab jaakar desh mazboot hota hai aur shehar bhi tarakki karte hain aur isi tarah gaon ke bachche aage badhte hain", "expect": "none", "lang": "hinglish", "split": "dev", "synthetic": true}
+{"id": "d228", "text": "agla sawal puch lijiye", "expect": "skip", "lang": "hinglish", "split": "dev", "synthetic": true}
+{"id": "d229", "text": "agla sawal bata dijiye", "expect": "skip", "lang": "hinglish", "split": "dev", "synthetic": true}
+{"id": "d230", "text": "next sawal puch lijiye", "expect": "skip", "lang": "hinglish", "split": "dev", "synthetic": true}
+{"id": "d231", "text": "kuch aur sawal puchiye", "expect": "change_topic", "lang": "hinglish", "split": "dev", "synthetic": true}
+{"id": "d232", "text": "kisi aur topic ka sawal puchiye", "expect": "change_topic", "lang": "hinglish", "split": "dev", "synthetic": true}

@@ -476,3 +476,37 @@ def test_aage_requests_still_fire(text):
     hit = detect_request(text)
     assert hit is not None
     assert hit.pattern_id == "change_aage"
+
+
+# ---------------------------------------------------------------------------
+# P1.1: "next question" asked in Hindi is not "repeat" (M4)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "text, kind",
+    [
+        ("agla sawal puch lijiye", "skip"),
+        ("agla sawal pooch lijiye", "skip"),
+        ("agla sawal bata dijiye", "skip"),
+        ("next sawal puch lijiye", "skip"),
+        ("kuch aur sawal puchiye", "change_topic"),
+        ("kisi aur topic ka sawal puchiye", "change_topic"),
+    ],
+)
+def test_asking_for_another_question_is_never_repeat(text, kind):
+    assert _got(text) == kind
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "sawal phir se boliye",
+        "sawal dobara puchiye",
+        "sawal ek baar aur bataiye",
+        "sawal dohraiye",
+        "sawal repeat kijiye",
+    ],
+)
+def test_true_repeat_of_the_question_still_fires(text):
+    assert _got(text) == "repeat"
