@@ -13,12 +13,16 @@ from pathlib import Path
 import pytest
 
 from mockboard.brain.requests import (
+    _COMPILED,
     _THIRD_PERSON,
+    _WEAK_CHANGE,
     END_MAX_WORDS,
     SHORT_ANSWER_WORDS,
     TAIL_WORDS,
+    ChangeStrength,
     RequestHit,
     RequestKind,
+    _priority,
     detect_request,
 )
 
@@ -510,3 +514,78 @@ def test_asking_for_another_question_is_never_repeat(text, kind):
 )
 def test_true_repeat_of_the_question_still_fires(text):
     assert _got(text) == "repeat"
+
+
+# ---------------------------------------------------------------------------
+# P1.1: priority and pattern strength (M5, Rulings 50 and 53)
+# ---------------------------------------------------------------------------
+
+WEAK_LINES = [
+    ("aage badhiye", "change_aage"),
+    ("sir corruption ko chhodiye", "change_x_chhod"),
+    ("can we move on", "change_en_modal"),
+    ("lets move on", "change_en_move"),
+    ("can we move ahead", "change_en_ahead"),
+    ("move on", "change_en_move_bare"),
+]
+
+
+@pytest.mark.parametrize(
+    "text, kind",
+    [
+        ("is sawal ko chhodiye kisi aur topic pe baat karte hain", "change_topic"),
+        ("sawal chhodiye, tourism ke alawa kuch aur puchiye", "change_topic"),
+        ("can we move on, next question please", "skip"),
+        ("aage badhiye, next question please", "skip"),
+        ("samajh nahi aaya, phir se boliye", "repeat"),
+        ("can we move on, please repeat", "change_topic"),
+        ("kuch aur puchiye, I want to end the interview", "end"),
+    ],
+)
+def test_priority_order(text, kind):
+    assert _got(text) == kind
+
+
+def test_rank_order_is_the_ruling():
+    ranks = [_priority(pid, kind) for pid, kind, _pattern in _COMPILED]
+    assert ranks == sorted(ranks)
+    assert sorted(set(ranks)) == [0, 1, 2, 3, 4, 5]
+
+
+@pytest.mark.parametrize("text, pattern_id", WEAK_LINES)
+def test_weak_patterns_say_so(text, pattern_id):
+    hit = detect_request(text)
+    assert hit is not None
+    assert hit.pattern_id == pattern_id
+    assert hit.strength is ChangeStrength.WEAK
+
+
+def test_every_weak_pattern_has_a_line():
+    assert {pattern_id for _text, pattern_id in WEAK_LINES} == _WEAK_CHANGE
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "tourism ke alawa kisi aur topic pe baat karte hain",
+        "kisi aur topic pe baat karte hain",
+        "yeh topic chhodiye",
+        "can we change the topic",
+        "let's talk about something else",
+        "something else",
+    ],
+)
+def test_explicit_topic_words_are_strong(text):
+    hit = detect_request(text)
+    assert hit is not None
+    assert hit.strength is ChangeStrength.STRONG
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["next question please", "please repeat", "what do you mean", "I want to end the interview"],
+)
+def test_strength_is_only_for_change_topic(text):
+    hit = detect_request(text)
+    assert hit is not None
+    assert hit.strength is None

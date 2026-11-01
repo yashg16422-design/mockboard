@@ -31,11 +31,19 @@ class RequestKind(StrEnum):
     END = "end"
 
 
+class ChangeStrength(StrEnum):
+    """How sure a change_topic hit is. A healthy listener may veto a weak one (Ruling 53)."""
+
+    STRONG = "strong"  # says "topic", "something else", "ke alawa" or the like
+    WEAK = "weak"  # a move-along phrase that can also close an ordinary sentence
+
+
 @dataclass(frozen=True)
 class RequestHit:
     kind: RequestKind
     avoid_terms: tuple[str, ...]  # topics the candidate refused, as spoken; change_topic only
     pattern_id: str
+    strength: ChangeStrength | None = None  # change_topic only
 
 
 # A hit counts if the answer is at most SHORT_ANSWER_WORDS, or starts in the last TAIL_WORDS.
@@ -543,16 +551,30 @@ _PATTERNS: tuple[tuple[str, RequestKind, str], ...] = (
      r"aap kya (?:puchna chahta hain|keh rahe hain|kehna chahta hain)" + _END),
 )
 
-_COMPILED: tuple[tuple[str, RequestKind, re.Pattern[str]], ...] = tuple(
-    (pid, kind, re.compile(rf"(?<!\S)(?:{pattern})(?!\S)")) for pid, kind, pattern in _PATTERNS
-)
-
 # Move-along phrases that name no topic and can close an ordinary sentence. Every other
 # change_topic pattern carries an explicit topic-change word and counts as strong.
 _WEAK_CHANGE: frozenset[str] = frozenset({
     "change_aage", "change_x_chhod", "change_en_modal", "change_en_move", "change_en_ahead",
     "change_en_move_bare",
 })
+
+
+def _priority(pattern_id: str, kind: RequestKind) -> int:
+    """Ruling 50: end > strong change > skip > weak change > repeat > clarify."""
+    if kind is RequestKind.CHANGE_TOPIC:
+        return 3 if pattern_id in _WEAK_CHANGE else 1
+    return {
+        RequestKind.END: 0,
+        RequestKind.SKIP: 2,
+        RequestKind.REPEAT: 4,
+        RequestKind.CLARIFY_QUESTION: 5,
+    }[kind]
+
+
+_COMPILED: tuple[tuple[str, RequestKind, re.Pattern[str]], ...] = tuple(
+    (pid, kind, re.compile(rf"(?<!\S)(?:{pattern})(?!\S)"))
+    for pid, kind, pattern in sorted(_PATTERNS, key=lambda row: _priority(row[0], row[1]))
+)
 
 # Polite openers contain "if" or "agar", and must not read as a conditional.
 _POLITE = re.compile(
@@ -735,9 +757,9 @@ def _position_ok(start: int, total: int) -> bool:
 def detect_request(text: str) -> RequestHit | None:
     """Return the candidate's request in a turn's raw transcript, or None if there is none.
 
-    Kinds are tried in the order of _PATTERNS: end, skip, change_topic, repeat, clarify. An
-    `end` needs END_MAX_WORDS or fewer. Within a kind, the first pattern with an acceptable
-    match wins.
+    Patterns are tried in the order of _priority: end, strong change_topic, skip, weak
+    change_topic, repeat, clarify. An `end` needs END_MAX_WORDS or fewer. Within a rank, the
+    first pattern with an acceptable match wins.
     """
     tokens = _tokenise(text)
     total = len(tokens.canon)
@@ -758,6 +780,8 @@ def detect_request(text: str) -> RequestHit | None:
                 continue
             if pattern_id == "change_aage" and not _aage_is_a_request(tokens, start, end):
                 continue
-            avoid = _avoid_terms(tokens) if kind is RequestKind.CHANGE_TOPIC else ()
-            return RequestHit(kind, avoid, pattern_id)
+            if kind is not RequestKind.CHANGE_TOPIC:
+                return RequestHit(kind, (), pattern_id)
+            strength = ChangeStrength.STRONG if strong_change else ChangeStrength.WEAK
+            return RequestHit(kind, _avoid_terms(tokens), pattern_id, strength)
     return None

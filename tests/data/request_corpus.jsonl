@@ -380,3 +380,6 @@
 {"id": "d230", "text": "next sawal puch lijiye", "expect": "skip", "lang": "hinglish", "split": "dev", "synthetic": true}
 {"id": "d231", "text": "kuch aur sawal puchiye", "expect": "change_topic", "lang": "hinglish", "split": "dev", "synthetic": true}
 {"id": "d232", "text": "kisi aur topic ka sawal puchiye", "expect": "change_topic", "lang": "hinglish", "split": "dev", "synthetic": true}
+{"id": "d233", "text": "is sawal ko chhodiye kisi aur topic pe baat karte hain", "expect": "change_topic", "lang": "hinglish", "split": "dev", "synthetic": true}
+{"id": "d234", "text": "sawal chhodiye, tourism ke alawa kuch aur puchiye", "expect": "change_topic", "lang": "hinglish", "split": "dev", "synthetic": true, "avoid": ["tourism"]}
+{"id": "d235", "text": "can we move on, next question please", "expect": "skip", "lang": "english", "split": "dev", "synthetic": true}
