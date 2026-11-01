@@ -383,7 +383,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help=argparse.SUPPRESS,  # panel only: the test-user cap; the agenda spends it (Ruling 49)
     )
     p.add_argument("--language", choices=["en", "hi"], help="report language (default: settings)")
-    p.add_argument("--max-turns", type=int, default=9, help="hard cap on candidate turns")
+    p.add_argument(
+        "--max-turns",
+        type=int,
+        default=None,
+        help="hard cap on candidate turns (default 9; a panel session sets its own cap from its "
+        "agenda and refuses this flag)",
+    )
     p.add_argument(
         "--think-s",
         type=float,
@@ -408,6 +414,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         p.error("--panel is for the UPSC interview; debate has no panel")
     if args.panel and not args.fake:
         p.error("--panel runs on the fake LLM only until the cutover (P7): add --fake")
+    if args.panel and args.max_turns is not None:
+        p.error("--max-turns does not apply to --panel: the agenda sets the turn cap "
+                "(use --max-answers to shorten it)")
+    if args.max_turns is None:
+        args.max_turns = 9
     if args.max_answers is not None and not args.panel:
         p.error("--max-answers is a panel setting: add --panel")
     if args.max_answers is not None and args.max_answers < 5:

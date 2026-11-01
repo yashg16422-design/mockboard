@@ -210,3 +210,27 @@ def test_answers_only_example_gives_the_same_board_lines_as_the_form_script(caps
     board = "".join(line + "\n" for line in out.splitlines() if line.startswith("["))
     assert rc == 0
     assert hashlib.md5(board.encode("utf-8")).hexdigest() == "826ef550999cc34d9018806dce1b665e"
+
+
+# --- Ruling 73 item 5: the panel's turn cap is its agenda, so --max-turns must not pretend ------
+
+
+def test_panel_refuses_an_explicit_max_turns(capsys):
+    with pytest.raises(SystemExit):
+        cli.parse_args(["--fake", "--panel", "--max-turns", "4"])
+    err = capsys.readouterr().err
+    assert "--max-turns" in err and "--max-answers" in err
+
+
+def test_max_turns_still_works_without_the_panel_and_defaults_to_nine():
+    assert cli.parse_args(["--fake"]).max_turns == 9
+    assert cli.parse_args(["--fake", "--max-turns", "4"]).max_turns == 4
+    assert cli.parse_args(["--fake", "--panel"]).max_turns == 9  # unused: the agenda decides
+
+
+def test_max_turns_help_states_the_default_and_keeps_the_panel_hidden(capsys):
+    with pytest.raises(SystemExit):
+        cli.parse_args(["--help"])
+    help_text = " ".join(capsys.readouterr().out.split())
+    assert "--max-turns" in help_text and "default 9" in help_text
+    assert "--panel" not in help_text  # test_the_help_text_does_not_advertise_the_panel
