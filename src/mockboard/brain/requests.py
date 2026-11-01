@@ -361,6 +361,7 @@ _IMPERATIVE = r"(?:kijiye|kar dijiye|kar sakte hain|karein|karo|karte hain|kar d
 _AGAIN_VERB = (
     r"(?:boliye|bolo|bataiye|puchiye|kahiye|dohraiye|bol dijiye|bata dijiye|puch lijiye)"
 )
+_TOPIC_NOUN = r"(?:topic|sawal|cheez|area|field|matter|mudda|mudde|domain)"
 _REWORD = r"(?:rephrase|clarify|simplify|explain|elaborate|put)"
 _NOT_DID = r"(?:did not|didnt|dont|do not|could not|couldnt|cant|cannot)"
 _NOT_GOT = r"(?:aaya|aa raha|aa rahi|paya|payi)"
@@ -419,7 +420,8 @@ _PATTERNS: tuple[tuple[str, RequestKind, str], ...] = (
 
     # change_topic
     ("change_other_baat", RequestKind.CHANGE_TOPIC,
-     rf"(?:{_OTHER}|kuch {_AUR}|kuch dusra) (?:\S+ ){{0,4}}?{_BAAT_VERB}"),
+     rf"(?:{_OTHER}|kuch {_AUR}|kuch dusra) (?:{_TOPIC_NOUN}(?: par| ke bare mein)? )?{_BAAT_VERB}"
+     r"(?!(?: \S+)? ki(?!\S))"),  # "...baat karte hain ki gaon mein" is a sentence, not a request
     ("change_other_topic", RequestKind.CHANGE_TOPIC,
      rf"(?<!mera )(?<!meri )(?<!hamara ){_OTHER} (?:topic|sawal|cheez)"
      rf"(?: par| ke bare mein| ka sawal)?(?: {_ASK_VERB}| chalte hain| chaliye)?" + _END),
@@ -445,7 +447,8 @@ _PATTERNS: tuple[tuple[str, RequestKind, str], ...] = (
     ("change_agla_topic", RequestKind.CHANGE_TOPIC,
      _START + rf"(?:next|agla|dusra) topic(?: par)?(?: {_ASK_VERB}| chalte hain| chaliye)?"
      + _END),
-    ("change_en_modal", RequestKind.CHANGE_TOPIC, rf"{_MODAL} move (?:on|one)(?: from \S+)?"),
+    ("change_en_modal", RequestKind.CHANGE_TOPIC,
+     rf"{_MODAL} move (?:on|one)(?: from \S+| to(?: \S+){{1,3}})?"),
     ("change_en_move", RequestKind.CHANGE_TOPIC,
      r"(?:lets|let us|i want to|i would like to|id like to|please|i would prefer to)"
      r"(?: please| now)? move (?:on|one)"
@@ -465,7 +468,8 @@ _PATTERNS: tuple[tuple[str, RequestKind, str], ...] = (
      rf"|something other|anything else|anything other"
      rf"|(?:some other|another|a different|other) (?:topic|sawal|area|areas|cheez))"),
     ("change_en_change", RequestKind.CHANGE_TOPIC,
-     rf"(?:{_ASK}|we can) (?:change|switch|skip|leave|drop)(?: the| this| our)? topic"),
+     rf"(?:{_ASK}|we can) (?:change|switch|skip|leave|drop)(?: the| this| our)? topic"
+     r"(?: to(?: \S+){1,3})?(?: now)?"),
     ("change_en_instead", RequestKind.CHANGE_TOPIC,
      rf"(?:instead of|other than|apart from|besides) (?:\S+ ){{1,3}}?{_ASK}"
      r" (?:talk about|speak about|discuss|switch to|move to|go to)"),
@@ -612,6 +616,8 @@ _BEFORE_WINDOW = 6
 # "aage badhte hain" also closes sentences about anyone at all, so a declarative needs one of
 # these (or a clause break, or the turn start) on its left. Imperatives need nothing.
 _AAGE_LEFT = frozenset({*_FILLERS, "chaliye", "nahi"})
+# These stop mid-sentence too, so the phrase must close its clause. A regex cannot see breaks.
+_MUST_CLOSE = frozenset({"change_aage", "change_en_modal", "change_en_change"})
 _OWNER_WORDS = frozenset({"ka", "ki", "ke", "hum"})
 _DESCRIBES_A_PLACE = frozenset({
     "yahan", "company", "campus", "office", "placements", "parliament", "sansad", "assembly",
@@ -736,8 +742,6 @@ def _ends_clause(tokens: _Tokens, end: int) -> bool:
 
 
 def _aage_is_a_request(tokens: _Tokens, start: int, end: int) -> bool:
-    if not _ends_clause(tokens, end):
-        return False
     if tokens.canon[end - 1] != "hain":  # imperative
         return True
     return start == 0 or tokens.breaks[start] or tokens.canon[start - 1] in _AAGE_LEFT
@@ -777,6 +781,8 @@ def detect_request(text: str) -> RequestHit | None:
             ):
                 continue
             if pattern_id == "end_hi" and _end_describes_something(tokens, start):
+                continue
+            if pattern_id in _MUST_CLOSE and not _ends_clause(tokens, end):
                 continue
             if pattern_id == "change_aage" and not _aage_is_a_request(tokens, start, end):
                 continue

@@ -383,3 +383,10 @@
 {"id": "d233", "text": "is sawal ko chhodiye kisi aur topic pe baat karte hain", "expect": "change_topic", "lang": "hinglish", "split": "dev", "synthetic": true}
 {"id": "d234", "text": "sawal chhodiye, tourism ke alawa kuch aur puchiye", "expect": "change_topic", "lang": "hinglish", "split": "dev", "synthetic": true, "avoid": ["tourism"]}
 {"id": "d235", "text": "can we move on, next question please", "expect": "skip", "lang": "english", "split": "dev", "synthetic": true}
+{"id": "d236", "text": "can we move on from coal by 2050", "expect": "none", "lang": "english", "split": "dev", "synthetic": true}
+{"id": "d237", "text": "can we move on from the colonial mindset", "expect": "none", "lang": "english", "split": "dev", "synthetic": true}
+{"id": "d238", "text": "we can change the topic of the debate in parliament", "expect": "none", "lang": "english", "split": "dev", "synthetic": true}
+{"id": "d239", "text": "kuch aur baat karte hain kisanon ki", "expect": "none", "lang": "hinglish", "split": "dev", "synthetic": true}
+{"id": "d240", "text": "kisi aur tarah ki baat karte hain sir", "expect": "none", "lang": "hinglish", "split": "dev", "synthetic": true}
+{"id": "d241", "text": "dusri baat karte hain ki gaon mein paani nahi hai", "expect": "none", "lang": "hinglish", "split": "dev", "synthetic": true}
+{"id": "d242", "text": "koi aur upay par baat karte hain", "expect": "none", "lang": "hinglish", "split": "dev", "synthetic": true}

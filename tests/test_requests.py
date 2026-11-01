@@ -7,6 +7,7 @@ Run `pytest -s tests/test_requests.py -k corpus` to print the table.
 from __future__ import annotations
 
 import json
+import time
 from collections import Counter
 from pathlib import Path
 
@@ -589,3 +590,56 @@ def test_strength_is_only_for_change_topic(text):
     hit = detect_request(text)
     assert hit is not None
     assert hit.strength is None
+
+
+# ---------------------------------------------------------------------------
+# P1.1: section 6 should-fixes, and the latency guard (section 7)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "can we move on from coal by 2050",
+        "can we move on from the colonial mindset",
+        "we can change the topic of the debate in parliament",
+        f"{FILLER * 3}so can we move on from coal by 2050",
+        "kuch aur baat karte hain kisanon ki",
+        "kisi aur tarah ki baat karte hain sir",
+        "dusri baat karte hain ki gaon mein paani nahi hai",
+        "दूसरी बात करते हैं कि गांव में पानी नहीं है",
+        "koi aur upay par baat karte hain",
+    ],
+)
+def test_section_six_answers_are_not_requests(text):
+    assert _got(text) == NONE
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "can we move on from this",
+        "can we move on from tourism",
+        "can we move on to agriculture please",
+        "can we move on, I have nothing to add",
+        "can we change the topic please",
+        "can we change the topic, I know little about it",
+        "kisi aur topic pe baat karte hain",
+        "kisi aur vishay par baat karte hain sir",
+        "kisi aur cheez ke bare mein baat karte hain",
+        "kuch aur baat karte hain",
+        "dusri baat karte hain",
+    ],
+)
+def test_section_six_requests_still_fire(text):
+    assert _got(text) == "change_topic"
+
+
+@pytest.mark.parametrize(
+    "token", ["sir", "ko", "kisi aur", "please", "topic", "can we", "ko chhod"]
+)
+def test_long_repetition_stays_fast(token):
+    text = " ".join([token] * 5000)
+    started = time.perf_counter()
+    detect_request(text)
+    assert time.perf_counter() - started < 0.1
