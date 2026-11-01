@@ -19,6 +19,8 @@ const STATES = {
   finished: "The session is over. Preparing the report.",
 };
 
+const WAITING = "Connected. Waiting for the board.";
+
 const ROOM_NOTE = {
   permission: "The microphone is needed. Allow it in the browser, then press Start speaking again.",
   connecting: "Connecting.",
@@ -189,9 +191,16 @@ function onMessage(raw) {
       if (m.state === "listening" || m.state === "user") setNote("");
       break;
     case "caption":
+      if (!clockStarted) startClock();
       if (m.side === "board") {
         markSpeaker(m.speaker);
         caption("board", m.speaker, m.text, "", m.segment);
+        // The opener sends captions without a speaking state. Replace only the
+        // line this page wrote, so a later state event still wins.
+        const status = $("status").textContent;
+        if (status === WAITING || status === "Connecting.") {
+          $("status").textContent = STATES.speaking;
+        }
       } else {
         setVoice("you");
         caption("you", m.late ? "You, late transcript" : "You", m.text, "", m.segment);
@@ -496,6 +505,7 @@ async function start() {
     };
     dc = pc.createDataChannel("messages");
     dc.onopen = () => {
+      startClock();
       pinger = setInterval(() => {
         if (dc && dc.readyState === "open") dc.send("ping: " + Date.now());
       }, 1000);
@@ -523,11 +533,13 @@ async function start() {
       throw new Error("The room did not open (" + res.status + ").");
     }
     const answer = await res.json();
+    // Set this before the answer is applied. Captions and state can arrive
+    // during setRemoteDescription, and a write afterwards would replace them.
+    $("status").textContent = WAITING;
+    setNote("");
     await pc.setRemoteDescription({ sdp: answer.sdp, type: answer.type });
     $("stop").disabled = false;
     connecting = false;
-    $("status").textContent = "Connected. Waiting for the board.";
-    setNote("");
     $("form").querySelectorAll("input, select, textarea").forEach((el) => { el.disabled = true; });
   } catch (err) {
     const denied = err && (err.name === "NotAllowedError" || err.name === "SecurityError"
