@@ -324,3 +324,10 @@ Orchestrator read trace voice-32a441f916 and the server log from the owner's Mac
 - `NEW_INSTRUCT.md` at the repo root holds the plan, rules, open choices and production checklist. The next agent starts there, on `panel-phase`. Keep the separate builder and reviewer roles.
 - Last verified state: `34dc9e6`, 1957 tests, lint clean, both md5s unchanged. Only docs changed after it.
 
+
+## Round 40 — Nov 1, 2026 (Milestone A accepted: P0.2 + P4)
+
+- **Accepted** 0e90ed9, 3e31ce7, 0a6c930, d1992a1. Orchestrator re-ran: `make test` 2174 passed (exit 0), `make lint` clean, UPSC and debate md5s unchanged (tests assert them), `cli --fake --panel --script examples/fake_panel.txt` read by hand: topic change acknowledged, tourism never returns, hand-offs spoken, proper close. Reviewer ACCEPT with no must-fixes.
+- Not verified: `actor.v4` and `opener.v2` have never run on Nova; alias spellings are best effort; Python 3.12 not run.
+- **Ruling 73:** reviewer should-fixes move into the next chunks, not a separate round. (1) Refusal terms cover the topic being discussed, not the whole form list (P6, agenda). (2) Test that a "Kanpur Nagar" alias bans a bare "Kanpur" (P6). (3) Two or three variants per fixed line in `panel_lines.py`, so no line repeats back to back (P5). (4) `actor.v5`: "Namaste" only at the first hand-off (P5). (5) `--max-turns` under `--panel` is ignored: say so in `--help` or reject it (P5). (6) `voice/server.py` handler close must call `session.close()` (P7).
+- Next: Milestone B (P5 + P6), then C (P7).
