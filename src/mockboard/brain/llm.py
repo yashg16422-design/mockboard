@@ -904,7 +904,7 @@ class FakeLLMClient(_BaseClient):
     ) -> AsyncIterator[str]:
         stats = CallStats(name=name, model_id=self.model_id, tag=tag, attempts=1)
         sys_text = system_text(system)
-        self.calls.append(FakeCall(name, sys_text, user, tag))
+        self.calls.append(FakeCall(name, sys_text, user, tag, max_tokens))
         try:
             reply = self._next(name, sys_text, user)
             words = str(reply).split()
