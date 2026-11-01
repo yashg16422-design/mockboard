@@ -79,7 +79,7 @@ class Rig:
     """Runs the offline voice pipeline for one session."""
 
     def __init__(self, session, *, stt=None, tts_ms_per_word=60, deadline_s=5.0,
-                 report_dir=None, session_max_s=None):
+                 report_dir=None, session_max_s=None, tts_request_unit=None):
         self.session = session
         self.ledger = PlaybackLedger()
         self.stt = stt or FakeCommitSTT(segment_delay_s=10.0)
@@ -88,7 +88,8 @@ class Rig:
         self.collector = Collector()
         self.brain = BrainProcessor(session, stt=self.stt, ledger=self.ledger,
                                     deadline_s=deadline_s, settle_s=0.05,
-                                    report_dir=report_dir, session_max_s=session_max_s)
+                                    report_dir=report_dir, session_max_s=session_max_s,
+                                    tts_request_unit=tts_request_unit)
         self.worker = PipelineWorker(
             Pipeline([PassThrough(), self.stt, self.brain, self.tts, self.playback,
                       self.collector]),
@@ -422,3 +423,29 @@ async def test_a_final_slower_than_the_budget_joins_its_turn_late(
     assert not rig.events("transcript_dropped")  # the late final was not thrown away
     assert any(e.get("late") for e in rig.events("caption") if e["side"] == "user")
     assert len(s.state.turns) == 2 and len(s.state.turns[1].segments) == 2
+
+
+@pytest.mark.parametrize("unit", ["line", "first_rest"])
+async def test_ruling_38_whole_line_requests(unit, settings, cards, fake_llm, form, tmp_path):
+    s = upsc_session(settings, cards, fake_llm, form, tmp_path, max_turns=2)
+    async with Rig(s, tts_request_unit=unit) as rig:
+        await rig.until(lambda: rig.brain.state == LISTENING)
+        await rig.speak()
+        await rig.until(lambda: len(rig.brain.outcomes) == 1)
+    said = [e["text"] for e in rig.events("caption") if e["side"] == "board"]
+    opener = s.state.board_lines[0].text
+    line = rig.brain.outcomes[0].trace["voice"]
+    n_opener = len([c for c in said if c in opener])
+    assert n_opener >= 2  # the opener has several sentences, captioned one by one
+    if unit == "line":  # one request for the opener and one for the turn's line
+        assert rig.tts.texts == [" ".join(said[:n_opener]), " ".join(said[n_opener:])]
+    else:  # the first sentence alone, then the rest of each line
+        assert rig.tts.texts[:2] == [said[0], " ".join(said[1:n_opener])]
+        assert rig.tts.texts[2] == said[n_opener]
+    assert not line["interrupted"] and line["board_line_spoken"] == line["board_line_sent"]
+
+
+def test_an_unknown_request_unit_is_refused(settings, cards, fake_llm, form, tmp_path):
+    s = upsc_session(settings, cards, fake_llm, form, tmp_path)
+    with pytest.raises(ValueError, match="tts_request_unit"):
+        BrainProcessor(s, tts_request_unit="word")

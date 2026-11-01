@@ -259,3 +259,30 @@ async def test_first_byte_watchdog_gives_up_and_tells_the_app(monkeypatch):
             await h.wait_until(lambda: len(h.collector.of_type(TTSAudioRawFrame)) >= 5, 3)
     assert timeouts == [LINE] and tts.first_byte_failures == 1
     assert ledger.units[0].failed and not ledger.units[1].failed
+
+
+async def test_timbre_v3_is_sent_past_the_old_sdk_with_its_language(timbre):
+    # Ruling 38: tts-websocket.md lists timbre-v3.0 with `language`; gnani-vachana 0.7.9
+    # refuses the model, so the request body is ours.
+    tts = TimbreTTSService(api_key=KEY, voice="Yashraj", model="timbre-v3.0", language="hi-IN",
+                           sample_rate=24000)
+    async with Harness(tts) as h:
+        await h.queue(TTSSpeakFrame(LINE, append_to_context=False))
+        await h.wait_until(lambda: len(h.collector.of_type(TTSAudioRawFrame)) >= 20, timeout=5)
+    req = timbre.conns[0].requests[0]
+    assert (req["model"], req["voice"], req["language"]) == ("timbre-v3.0", "Yashraj", "hi-IN")
+    assert req["audio_config"]["sample_rate"] == 24000
+    assert req["audio_config"]["container"] == "raw"
+    assert all(f.sample_rate == 24000 for f in h.collector.of_type(TTSAudioRawFrame))
+
+
+def test_voice_and_model_must_match_the_published_catalog():
+    with pytest.raises(ValueError, match=r"not a Timbre v3\.0 voice"):
+        TimbreTTSService(api_key=KEY, voice="Poorvi", model="timbre-v3.0")
+    with pytest.raises(ValueError, match=r"not a Timbre v2\.5 voice"):
+        TimbreTTSService(api_key=KEY, voice="Yashraj", model="timbre-v2.5")
+    with pytest.raises(ValueError, match="TTS_MODEL must be one of"):
+        TimbreTTSService(api_key=KEY, voice="Poorvi", model="timbre-v2.0")
+    s = Settings(_env_file=None, gnani_api_key=KEY, tts_model="timbre-v3.0", tts_voice="Avinash")
+    tts = TimbreTTSService.from_settings(s, voice=s.tts_voice)
+    assert (tts.model, tts.voice, tts.language) == ("timbre-v3.0", "Avinash", "auto")

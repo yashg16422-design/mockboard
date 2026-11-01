@@ -87,6 +87,7 @@ class AppConfig:
             "fake_llm": self.fake_llm,
             "fake_speech": self.fake_speech,
             "voice": self.voice,
+            "tts_model": self.settings.tts_model,
             "stt_model": self.settings.stt_model,
             "llm": "fake" if self.fake_llm else self.settings.nova_model_id,
             "region": None if self.fake_llm else self.settings.aws_region,
@@ -146,7 +147,8 @@ def make_speech(cfg: AppConfig, session: InterviewSession, ledger: PlaybackLedge
         s, keyterms=keyterms or None, topic=topic,
         service_kwargs={"request_id_prefix": session.session_id},
     )
-    tts = TimbreTTSService.from_settings(s, voice=cfg.voice, sample_rate=16000, ledger=ledger)
+    tts = TimbreTTSService.from_settings(s, voice=cfg.voice, sample_rate=s.tts_sample_rate,
+                                         ledger=ledger)
     return stt, tts
 
 
@@ -237,6 +239,10 @@ def _write_session_log(cfg: AppConfig, session, vp, stt, tts, mic=None) -> None:
         "stt_stats": dict(getattr(stt, "stats", {}) or {}),
         "stt_gave_up": bool(getattr(stt, "gave_up", None)),
         "tts_voice": cfg.voice,
+        "tts_model": cfg.settings.tts_model,
+        "tts_language": cfg.settings.tts_language,
+        "tts_sample_rate": cfg.settings.tts_sample_rate,
+        "tts_request_unit": cfg.settings.tts_request_unit,
         "tts": {k: getattr(tts, k, None) for k in (
             "interruptions", "audio_dropped_after_interruption", "idle_reconnects",
             "serialise_waits", "serialise_timeouts", "first_byte_resends",

@@ -125,6 +125,19 @@ def test_ledger_counts_whole_units_and_estimates_the_cut_one():
     assert led.heard().played_ms == 1500  # nothing plays while stopped
 
 
+def test_a_cut_unit_still_streaming_is_measured_against_its_estimated_length():
+    # Ruling 38: one request per whole line means the cut unit usually has more audio to
+    # come; its share is played time over an estimate of the whole (400 ms a word).
+    t = [0.0]
+    led = PlaybackLedger(clock=lambda: t[0])
+    led.unit_started("Ek do teen chaar paanch chhe saat aath nau das.")  # 10 words, ~4 s
+    led.audio(32000, 16000)  # only 1 s received so far
+    led.bot_started()
+    t[0] = 0.8  # 800 ms played: about 2 of 10 words, not 8 of 10
+    heard = led.heard()
+    assert heard.text == "Ek do" and heard.estimated
+
+
 # --------------------------------------------------------------------------- speak_stream
 
 

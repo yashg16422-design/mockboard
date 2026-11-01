@@ -61,6 +61,9 @@ def summarize(rows: list[dict]) -> list[str]:
             f"  fake_llm={sess.get('fake_llm')} fake_speech={sess.get('fake_speech')}"
             f"  voice={sess.get('tts_voice')}"
         )
+        if sess.get("tts_model"):  # ruling 38 settings (sessions from Oct 31 on)
+            out.append(f"tts model={sess.get('tts_model')} language={sess.get('tts_language')}"
+                       f" rate={sess.get('tts_sample_rate')} unit={sess.get('tts_request_unit')}")
     head = f"{'turn':<5}{'move':<17}" + "".join(f"{lbl:>20}" for lbl, _, _ in SPANS)
     out += ["", "per turn (ms; '-' = stage not reached):", head]
     collected: dict[str, list[float]] = {lbl: [] for lbl, _, _ in SPANS}

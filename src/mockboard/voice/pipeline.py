@@ -105,7 +105,7 @@ def build_voice_pipeline(
         Pipeline(processors),
         params=PipelineParams(
             audio_in_sample_rate=SAMPLE_RATE,
-            audio_out_sample_rate=SAMPLE_RATE,
+            audio_out_sample_rate=settings.tts_sample_rate,  # ruling 38: TTS_SAMPLE_RATE
             enable_metrics=True,
         ),
         observers=observers or [],

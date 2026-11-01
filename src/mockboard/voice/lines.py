@@ -14,6 +14,9 @@ from dataclasses import dataclass, field
 # construction: the character after the stop must be whitespace.
 _BOUNDARY = re.compile(r"[.?!।]+(?=\s)")
 _WORD = re.compile(r"\S+")
+# Speaking time per word, for a cut unit whose audio has not all arrived. About 150 words a
+# minute. UNVERIFIED for Timbre's Hinglish (no word timestamps; the trace marks it estimated).
+EST_MS_PER_WORD = 400.0
 
 
 def split_sentences(text: str) -> list[str]:
@@ -189,7 +192,12 @@ class PlaybackLedger:
                 parts.append(u.text)
                 share = 1.0
             elif u.audio_ms > 0 and start < played:
-                share = (played - start) / u.audio_ms
+                # A unit still streaming has more audio to come, so its share of the words is
+                # measured against an estimate of its full length (ruling 38: one request per
+                # whole line makes this the common case).
+                total = u.audio_ms if u.done_at is not None else max(
+                    u.audio_ms, word_count(u.text) * EST_MS_PER_WORD)
+                share = min(1.0, (played - start) / total)
                 words = first_words(u.text, math.floor(share * word_count(u.text)))
                 if words:
                     parts.append(words)

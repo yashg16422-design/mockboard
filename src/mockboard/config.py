@@ -65,6 +65,8 @@ class Settings(BaseSettings):
     # CTO_NOTES_05 §4.4: what `commit` does with no utterance open is undocumented; if no
     # `processing` follows within this window, nothing was open. UNVERIFIED.
     stt_commit_noop_ms: int = Field(default=300, gt=0)
+    # Ruling 38: "timbre-v2.5" or "timbre-v3.0" (both in tts-websocket.md, read Oct 31, 2026).
+    # Voices are not shared between models: TTS_VOICE must come from the model's catalog.
     tts_model: str = "timbre-v2.5"
     # Ruling 8: Timbre language for the board's voice; Hinglish by default. Ruling 25: the value
     # must be one that BOTH gnani-vachana 0.7.9 (SUPPORTED_TTS_LANGUAGES in gnani/tts/client.py:
@@ -75,7 +77,15 @@ class Settings(BaseSettings):
     # UNVERIFIED: how "auto" voices Latin-script Hinglish compared with "hi-IN"/"en-IN" (and
     # with "hi-en", which only the timbre probe can send); the owner decides by ear.
     tts_language: str = "auto"
+    # Ruling 38: Timbre's output rate and the pipeline's output rate (Timbre offers 8000,
+    # 16000, 22050, 24000, 44100, 48000; the voice lab compares 16 and 24 kHz).
     tts_sample_rate: int = 16000
+    # Ruling 38: how the board's lines go to Timbre. "sentence": one request per sentence as
+    # the actor streams it (lowest latency, prosody resets at each sentence); "line": one
+    # request per whole guarded line (waits for the actor to finish the line); "first_rest":
+    # the first sentence alone, then the rest of the line as one request. The owner picks by
+    # ear in the voice lab (`make voice-lab`). UNVERIFIED: whole-line prosody and latency.
+    tts_request_unit: str = "sentence"
     # The board's single Timbre voice for the local voice app (persona voice ids are still
     # placeholders until the owner picks them by ear, CTO_NOTES_03 T4).
     tts_voice: str = "Poorvi"
@@ -276,6 +286,20 @@ class Settings(BaseSettings):
                 f"the largest lane's worker count ({most}), or lane threads queue for sockets"
             )
         return self
+
+    @field_validator("tts_sample_rate")
+    @classmethod
+    def _timbre_rate(cls, v: int) -> int:
+        if v not in (8000, 16000, 22050, 24000, 44100, 48000):  # tts-websocket.md
+            raise ValueError("TTS_SAMPLE_RATE must be 8000, 16000, 22050, 24000, 44100 or 48000")
+        return v
+
+    @field_validator("tts_request_unit")
+    @classmethod
+    def _tts_unit(cls, v: str) -> str:
+        if v not in ("sentence", "line", "first_rest"):
+            raise ValueError("TTS_REQUEST_UNIT must be sentence, line or first_rest")
+        return v
 
     @field_validator("fact_challenge_min_delay_turns")
     @classmethod

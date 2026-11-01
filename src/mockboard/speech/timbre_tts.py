@@ -31,8 +31,22 @@ Five things are ours:
    request, its audio bytes and its end are reported, so the voice loop knows which words
    the candidate heard after a barge-in (ADR-008 §3).
 
+6. **Timbre v3.0** (ruling 38). Gnani's docs (tts-websocket.md, tts-sse.md and
+   available-voices.md, read Oct 31, 2026) list `model: "timbre-v3.0"`, "Expressive
+   text-to-speech": 13 voices, every one speaking all 10 languages, with `language` and inline
+   audio tags. gnani-vachana 0.7.9 predates it: its `_validate_model` refuses `timbre-v3.0`,
+   its `_validate_timbre_options` refuses a language for any model but v2.5, and the plugin's
+   `_build_tts_payload` drops the language for v3.0. So this class builds the request body
+   itself (the same fields and audio_config the plugin sends, plus `language` for both
+   models), checks the voice against our copy of the published catalog
+   (`gnani_protocol.check_voice`), and gives the plugin's constructor a v2.5 placeholder to
+   validate before setting the real model and voice.
+   # UNVERIFIED: timbre-v3.0 against the real service (fake server only).
+
 The language is checked against gnani-vachana 0.7.9's own list before anything is sent,
-because the SDK refuses values outside it (it refuses `hi-en`); see config.py TTS_LANGUAGE.
+because ruling 25 asks for a value both the SDK and Timbre accept (the SDK refuses `hi-en`,
+which Gnani's docs list); see config.py TTS_LANGUAGE. Sending `hi-en` from the board needs an
+orchestrator ruling; the voice lab (`mockboard.voice.lab`) can already send it.
 """
 
 from __future__ import annotations
@@ -46,6 +60,7 @@ from typing import Any, cast
 from gnani.tts.client import SUPPORTED_TTS_LANGUAGES
 from loguru import logger
 from pipecat.frames.frames import (
+    ErrorFrame,
     Frame,
     InterruptionFrame,
     StartFrame,
@@ -58,7 +73,7 @@ from pipecat_gnani import tts as _plugin_tts
 from websockets.protocol import State
 
 from mockboard.config import Settings
-from mockboard.speech.gnani_protocol import TTS_SAMPLE_RATES, check_voice
+from mockboard.speech.gnani_protocol import TTS_MODELS, TTS_SAMPLE_RATES, check_voice
 
 RAW_PCM = {"encoding": "linear_pcm", "container": "raw", "sample_width": 2}
 
@@ -97,14 +112,28 @@ class TimbreTTSService(GnaniTTSService):
             )
         if sample_rate is not None and sample_rate not in TTS_SAMPLE_RATES:
             raise ValueError(f"Timbre sample rates are {TTS_SAMPLE_RATES}, not {sample_rate}")
+        if model not in TTS_MODELS:
+            raise ValueError(f"TTS_MODEL must be one of {TTS_MODELS} (Gnani docs), not {model!r}")
         check_voice(model, voice)  # the published catalog, before spending credits
+        # gnani-vachana 0.7.9 refuses timbre-v3.0 outright (see the module docstring, item 6):
+        # let the plugin validate a v2.5 placeholder, then set the real model and voice. The
+        # request body is ours (`request_body`), so the SDK's checks never see v3.0 again.
+        placeholder = model != "timbre-v2.5"
         super().__init__(
             api_key=api_key,
-            model=model,
+            model="timbre-v2.5" if placeholder else model,
             sample_rate=sample_rate,
-            settings=GnaniTTSService.Settings(voice=voice, language=language, **RAW_PCM),
+            settings=GnaniTTSService.Settings(voice="Poorvi" if placeholder else voice,
+                                              language=language, **RAW_PCM),
             **kwargs,
         )
+        if placeholder:
+            self._settings.model = model
+            self._settings.voice = voice
+            self._sync_model_name_to_metrics()
+        self.model = model
+        self.voice = voice
+        self.language = language
         self._audio_gate_open = True
         self.interruptions = 0
         self.audio_dropped_after_interruption = 0
@@ -206,13 +235,49 @@ class TimbreTTSService(GnaniTTSService):
             await self._disconnect_websocket()
         if self.ledger is not None:
             self.ledger.unit_started(text)
-        async for frame in super().run_tts(text, context_id):
+        async for frame in self._send_request(text):
             yield frame
         if self._ws is None:  # the plugin could not connect or send: nothing will come
             self._end_request(failed=True)
         elif not self._request_done.is_set():
             self._cancel_watchdog()
             self._watchdog = self.create_task(self._first_byte_watchdog(text), "timbre-ttfb")
+
+    def request_body(self, text: str, sample_rate: int) -> dict[str, Any]:
+        """The Timbre request: the plugin's fields and audio_config (pipecat-gnani 0.5.12
+        `_build_tts_payload`), plus `language` for timbre-v3.0 too (the docs list it for
+        both models; the plugin only sends it for v2.5)."""
+        body: dict[str, Any] = {
+            "text": text,
+            "voice": self.voice,
+            "model": self.model,
+            "audio_config": _plugin_tts._build_audio_config(self._settings, sample_rate),
+        }
+        if self.language is not None:
+            body["language"] = self.language
+        return body
+
+    async def _send_request(self, text: str) -> AsyncGenerator[Frame | None, None]:
+        """The plugin's `GnaniTTSService.run_tts` (pipecat-gnani 0.5.12) with our body."""
+        if not self._ws:
+            await self._connect_websocket()
+        if not self._ws:
+            logger.error("[timbre] synthesize failed: not connected")
+            await self.push_error(error_msg="Gnani TTS WebSocket not connected")
+            yield ErrorFrame(error="Gnani TTS WebSocket not connected")
+            return
+        try:
+            body = self.request_body(text, _plugin_tts._resolved_tts_sample_rate(self))
+            self._bot_speaking = True
+            self._awaiting_first_chunk = True
+            self._pcm_processor.reset()
+            await self._ws.send(json.dumps(body))
+            await self.start_tts_usage_metrics(text)
+        except Exception as e:
+            logger.error(f"[timbre] synthesize failed: {type(e).__name__}: {e}")
+            await self.push_error(error_msg=f"Error sending TTS request: {e}", exception=e)
+            yield ErrorFrame(error=f"Error sending TTS request: {e}", exception=e)
+        yield None
 
     async def _first_byte_watchdog(self, text: str) -> None:
         """Ruling 30: no audio in time means a half-open socket; reopen, resend once, then
@@ -233,7 +298,7 @@ class TimbreTTSService(GnaniTTSService):
                     if self._ws is None:
                         break
                     rate = _plugin_tts._resolved_tts_sample_rate(self)
-                    payload = _plugin_tts._build_tts_payload(text, self._settings, rate)
+                    payload = self.request_body(text, rate)
                     self._bot_speaking = True
                     self._awaiting_first_chunk = True
                     self._pcm_processor.reset()

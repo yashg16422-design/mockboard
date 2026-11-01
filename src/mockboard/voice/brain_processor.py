@@ -13,7 +13,9 @@ session API the text CLI uses:
    candidate stopped. A commit that did close an utterance also waits for its tagged
    transcripts (ruling 31, `result["mb"]`). Then
    calls `session.end_of_turn(deadline)` and streams `session.speak_stream()` to Timbre as one
-   `TTSSpeakFrame` per sentence. The turn task, not the stop frame's handler, does this work:
+   `TTSSpeakFrame` per sentence (or, ruling 38, `TTS_REQUEST_UNIT=line`: one per whole guarded
+   line; `first_rest`: the first sentence, then the rest as one). The turn task, not the stop
+   frame's handler, does this work:
    a SystemFrame can overtake queued transcripts (spikes/NOTES.md, surprise 2), and blocking a
    SystemFrame handler would also block interruptions.
 3. When the line has played (`BotStoppedSpeakingFrame` after the last audio), or the
@@ -71,6 +73,8 @@ from mockboard.speech.prisma_stt import PrismaProcessingFrame
 from mockboard.voice.lines import PlaybackLedger, split_sentences
 from mockboard.voice.strategies import IDLE, SPEAKING, THINKING
 
+TTS_UNITS = ("sentence", "line", "first_rest")  # ruling 38, TTS_REQUEST_UNIT
+
 # States of the conversation, as this processor sees them.
 STARTING = "starting"  # the opener / Moderator intro
 LISTENING = "listening"  # the board has finished; waiting for the candidate
@@ -100,6 +104,7 @@ class BrainProcessor(FrameProcessor):
         on_report: Callable[[Any, str], Awaitable[None]] | None = None,
         on_listen: Callable[[], Awaitable[None]] | None = None,
         autostart: bool = True,
+        tts_request_unit: str | None = None,
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -114,6 +119,10 @@ class BrainProcessor(FrameProcessor):
         self._final_wait_s = final_wait_s if final_wait_s is not None else (
             settings.stt_final_wait_ms / 1000
         )
+        # Ruling 38: one Timbre request per sentence, per whole line, or first + rest.
+        self._tts_unit = tts_request_unit or getattr(settings, "tts_request_unit", "sentence")
+        if self._tts_unit not in TTS_UNITS:
+            raise ValueError(f"tts_request_unit must be one of {TTS_UNITS}")
         # Ruling 34: has Silero heard speech that no final has covered yet?
         self._vad_speaking = False
         self._speech_unfinalised = False
@@ -411,14 +420,27 @@ class BrainProcessor(FrameProcessor):
             entry.update(commit_id=r.commit_id, reply=r.reply, wait_ms=r.wait_ms)
         return done
 
+    async def _speak(self, text: str) -> None:
+        self._pushed += 1
+        await self.push_frame(TTSSpeakFrame(text, append_to_context=False))
+
+    async def _feed_sentence(self, text: str, held: list[str]) -> None:
+        """Ruling 38: send a guarded sentence now, or hold it for one request per line."""
+        if self._tts_unit == "sentence" or (self._tts_unit == "first_rest" and not self._pushed):
+            await self._speak(text)
+        else:
+            held.append(text)
+
     async def _speak_turn(self) -> None:
         self._reset_ledger()
         await self._set_state(BOARD)
+        held: list[str] = []
         async for sentence in self.session.speak_stream():
             await self.emit("caption", side="board", speaker=sentence.speaker,
                             move=sentence.move, text=sentence.text, kind=sentence.kind)
-            self._pushed += 1
-            await self.push_frame(TTSSpeakFrame(sentence.text, append_to_context=False))
+            await self._feed_sentence(sentence.text, held)
+        if held:  # the whole guarded line (or its rest) as one Timbre request
+            await self._speak(" ".join(held))
         await self._wait_played()
         self._mark_playback()
         out = self.session.finish_line(details=self._details())
@@ -498,10 +520,12 @@ class BrainProcessor(FrameProcessor):
     async def say(self, text: str, *, speaker: str, kind: str) -> None:
         """A whole line that is not a turn's move (opener, confer, verdict)."""
         self._reset_ledger()
+        held: list[str] = []
         for sentence in split_sentences(text):
             await self.emit("caption", side="board", speaker=speaker, text=sentence, kind=kind)
-            self._pushed += 1
-            await self.push_frame(TTSSpeakFrame(sentence, append_to_context=False))
+            await self._feed_sentence(sentence, held)
+        if held:
+            await self._speak(" ".join(held))
         await self._wait_played()
 
     @property
