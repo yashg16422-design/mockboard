@@ -1,0 +1,74 @@
+Mock Board (text mode) | LLM: FAKE offline (-) | cards: data:<repo>/data/cards (6, version b702455ad97a) | prefix ~1088 tokens (approx)
+All fact cards are SYNTHETIC TEST CARDS. Nothing the board cites is a real fact.
+
+== Debate setup (no names or identifiers) ==
+   1. This House would ban smartphones in schools up to Class 10.
+   2. This House would replace board exams with continuous assessment.
+   3. This House would make coding compulsory from Class 6.
+   4. This House believes AI tutors will do Indian students more good than harm.
+   5. This House believes tourism does more good than harm to India's hill towns.
+   6. This House believes community policing beats building more police stations.
+   7. This House would build metro lines before flyovers in growing cities.
+   8. This House would ban single-use plastic completely, even if prices rise.
+   9. This House believes work-from-home is better than office work for young professionals.
+  10. This House would take a gap year before college.
+  11. This House believes cricket gets too much attention compared with other sports in India.
+  12. This House believes filter coffee beats masala chai.
+  13. This House believes street food is India's greatest culinary treasure.
+Motion number (1-13): 1
+Your side [for/against]: for
+Length [quick/standard] (default quick): quick
+Language [hinglish/hindi/english] (default hinglish): hinglish
+Opponent [logician/wit] (default logician): logician
+
+[Moderator Rao] Namaste, aur Mock Board debate mein swagat hai. Aaj ka motion hai: This House would ban smartphones in schools up to Class 10. Aap motion ke paksh mein bolenge, aur Ms. Kapoor doosri taraf se. Rounds honge: opening, clash aur closing. Faisla bahas ke tareeke par hoga, kaun sa paksh sahi hai is par nahi. Pehle aapka opening statement, shuru kijiye.
+
+You: Main motion ke paksh mein hoon. Phones class mein dhyan bhatkate hain, kyunki notifications aur games teacher se zyada attention kheenchte hain. Saath hi cyberbullying ka khatra bhi school tak aa jaata hai.
+[Ms. Kapoor] (opening_statement, D5) Aap kehte hain ki phones class mein dhyan bhatkate hain, kyunki notifications, aur yeh baat samajh aati hai. Lekin phones are learning tools when used well. Dictionaries, educational videos and practice apps can support lessons, especially where libraries are thin. Doosri baat, parents need to reach children for safety and logistics. Ab aap jawab dijiye.
+
+You: Lekin phones learning tools tabhi hain jab sahi use ho, aur Class 10 tak ke bachche khud ko rok nahi paate kyunki unka self-control abhi ban raha hai. School library aur computer lab yeh kaam bina distraction ke kar sakte hain, isliye phone ki zaroorat nahi hai.
+[Ms. Kapoor] (concede_point, D8) Yeh point aapka mazboot hai, ise maanna padega. Lekin teaching responsible use beats banning it.
+
+You: Parents ke liye school office ka landline aur teacher ka number kaafi hai. Fair point ki emergency mein contact zaroori hai, lekin uske liye har bachche ki jeb mein smartphone hona zaroori nahi.
+[Moderator Rao] (move_on, D6) Samay ho gaya. Ab closing statements: pehle aap, apni sabse mazboot baat rakhiye.
+
+You: Closing mein main kahunga ki padhai ka samay padhai ke liye hona chahiye. Ban ek saaf rule hai, aur responsible use ghar par sikhaya ja sakta hai, kyunki school ka kaam focus dena hai.
+[Ms. Kapoor] (closing_statement, D5) Maanna padega ki aapke is tark mein dum hai: phones in class pull attention away from learning. Phir bhi, a blanket ban hits the students who rely on phones most. Isliye mera paksh wahi hai.
+
+[Moderator Rao] The board will confer. Ek pal, hum faisla taiyaar kar rahe hain.
+[Moderator Rao] The board's verdict: Close debate. Strongest: Rebuttal quality, 4/5. Stand-in (rule-based, not a model): the user answered the opponent's actual arguments. Strongest: Fairness to the other side, 4/5. Stand-in (rule-based, not a model): the user granted the opponent a fair point. You answered 3 of the opponent's 4 points. It conceded 1, so 3 were still standing at the end. This verdict judges how the debate was argued, not which side of the motion is right.
+
+======================================================================
+DEBATE REPORT  (session golden-debate, language en)
+======================================================================
+Motion: This House would ban smartphones in schools up to Class 10.
+You argued: for
+
+Moderator's verdict: Close debate
+  - Strongest: Rebuttal quality, 4/5. Stand-in (rule-based, not a model): the user answered the opponent's actual arguments.
+  - Strongest: Fairness to the other side, 4/5. Stand-in (rule-based, not a model): the user granted the opponent a fair point.
+  - You answered 3 of the opponent's 4 points. It conceded 1, so 3 were still standing at the end.
+
+Scoreboard (computed by code from the debate record, not by a model):
+  round    turns  your points  their points answered  their points conceded  their points still standing  figures questioned
+  opening  1      3            0                      0                      4                            0
+  clash    2      4            3                      1                      3                            0
+  closing  1      2            0                      0                      3                            0
+  total    4      9            3                      1                      3                            0
+  Your points: the arguments you made. Their points: the opponent's case; answering a point does not remove it, only a concession does (still standing = their points - conceded).
+
+Best line [t1]: "Lekin phones learning tools tabhi hain jab sahi use ho, aur Class 10 tak ke bachche khud ko rok nahi paate kyunki unka self-control abhi ban raha hai."
+  Why: Stand-in (rule-based, not a model): the first sentence in a rebuttal that gives a reason.
+
+Debate rubric (1-5, or insufficient evidence):
+  clarity_structure        3/5  (Clarity and structure) Stand-in (rule-based, not a model): the user stated a position with reasons.
+  evidence_use             3/5  (Use of evidence) Stand-in (rule-based, not a model): claims came with reasons.
+  rebuttal_quality         4/5  (Rebuttal quality) Stand-in (rule-based, not a model): the user answered the opponent's actual arguments.
+  responsiveness             -  (Responsiveness) Stand-in (rule-based, not a model): not shown in this debate.
+  fairness_to_other_side   4/5  (Fairness to the other side) Stand-in (rule-based, not a model): the user granted the opponent a fair point.
+  composure                3/5  (Composure) Stand-in (rule-based, not a model): steady to the last turn.
+    evidence [clarity_structure / t0]: "Main motion ke paksh mein hoon."
+    evidence [evidence_use / t0]: "Main motion ke paksh mein hoon."
+    evidence [rebuttal_quality / t1]: "Lekin phones learning tools tabhi hain"
+    evidence [fairness_to_other_side / t2]: "Parents ke liye school office ka"
+    evidence [composure / t3]: "Closing mein main kahunga ki padhai"
