@@ -311,3 +311,10 @@ Orchestrator read trace voice-32a441f916 and the server log from the owner's Mac
 - P3 (b8feacb, e585ef8, 50f3411) reviewed in `docs/CTO_NOTES_15.md`: rejected on M1 (`is_clear_yes` closes on a question) and M2 (unguarded `adelete_thread` can lose the report), with fixes specified and trialled; builder's calls upheld. CTO confirmed 1862 cases, lint, verify-range, md5s.
 - **Ruling 71:** one milestone: P3 M1, M2, S1, S2 with tests; then `github/web-frontend` merges into `panel-phase` with `--no-ff` and `docs/tasks/WEB_FIX_01.md` is applied there by our builder, with `work_experience` added. Arena's branch itself is not changed. No further CTO round on the P3 fix; the merged web fixes get one narrow review.
 
+## Round 38 — Nov 1, 2026 (site merged into panel-phase)
+
+- **Accepted** the milestone (db47110, 2e09963, 34dc9e6). Orchestrator re-ran: lint clean, UPSC and debate md5s unchanged, `make test` on the merged tree (recorded in this round's commit message), and confirmed M1 directly: `ACCESS_ENABLED=true` in a `.env` file turns limits on, and an unrecognised value is refused. Builder showed both M2 mutations fail.
+- The orchestrator rewrote the last section of `WEB_REQUESTS.md`. PR #1 is merged by this push; Arena's branch is unchanged.
+- Not verified: no browser has opened the page since the fixes, and the server emits neither `answers` nor `closing` until P7. Accepted builder choices: IP limit is lifetime with reason `ip_full`, reviewer cookie 30 days, `MAX_OFFERS_PER_IP = 4`, `python-dotenv` direct dependency.
+- **Ruling 72:** the narrow web review of Ruling 71 moves into the P7 milestone review, when the site is connected to the panel, to save credits. Next milestone: P0.2 + P4.
+

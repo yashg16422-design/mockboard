@@ -41,15 +41,4 @@ The reviewer flag is on the signed cookie and in `GET /api/access`. It is not pa
 
 ## The answer cap belongs to the Chairperson
 
-This branch does not count candidate messages and does not close the interview. Real sessions need both, on the agent side, so a line is never cut off.
-
-When `create_app` builds the session, please pass:
-
-- whether this visitor is a reviewer (the access cookie on this branch; see `src/mockboard/access/`)
-- `max_answers`: `ACCESS_MAX_ANSWERS` for a test visitor, and no cap for a reviewer
-
-The Chairperson should close the interview at the cap, between lines. Please emit a data-channel event before that closing line, for example:
-
-`{ "type": "mockboard", "event": "answer_cap", "used": 10, "limit": 10 }`
-
-The page will explain it in the same plain words as the other limit notices. It will not invent a count the server did not send.
+Designed in `docs/CTO_NOTES_12.md` section 9 and superseding the earlier `answer_cap` request. `/api/offer` writes `pending_limits[pc_id] = decision.max_answers`; the panel reads it at P7. A missing entry means capped. The page uses the `answers` and `closing` events. Uncapped sessions get neither limit text nor `answers`.
