@@ -545,6 +545,7 @@ WEAK_LINES = [
     ("lets move on", "change_en_move"),
     ("can we move ahead", "change_en_ahead"),
     ("move on", "change_en_move_bare"),
+    ("kuch aur baat karte hain", "change_kuch_baat"),
 ]
 
 
@@ -580,6 +581,18 @@ def test_weak_patterns_say_so(text, pattern_id):
 
 def test_every_weak_pattern_has_a_line():
     assert {pattern_id for _text, pattern_id in WEAK_LINES} == _WEAK_CHANGE
+
+
+def test_the_weak_set_is_the_seven_patterns_of_ruling_56():
+    assert {
+        "change_aage",
+        "change_x_chhod",
+        "change_en_modal",
+        "change_en_move",
+        "change_en_ahead",
+        "change_en_move_bare",
+        "change_kuch_baat",
+    } == _WEAK_CHANGE
 
 
 @pytest.mark.parametrize(
@@ -650,6 +663,102 @@ def test_section_six_answers_are_not_requests(text):
 )
 def test_section_six_requests_still_fire(text):
     assert _got(text) == "change_topic"
+
+
+# ---------------------------------------------------------------------------
+# P1.2 (CTO_NOTES_10): a phrase with no topic word cannot be a strong hit (F1)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "neta kuch aur baat karte hain aur karte kuch aur hain",
+        "chunav mein neta kuch aur baat karte hain",
+        "log kuch aur baat karte hain par sach yeh hai",
+        "meeting mein kisan kuch aur baat karte hain",
+        "debate mein panelists kuch aur baat karte hain",
+        f"{FILLER * 4}aur neta kuch aur baat karte hain",
+        "students topic badal dete hain",
+        "hamare gaon ke log topic chhod dete hain",
+        "kisan kisi aur topic pe baat karte hain",
+    ],
+)
+def test_describing_what_others_talk_about_is_not_a_request(text):
+    assert _got(text) == NONE
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "sarkar berozgari ke alawa kuch aur baat karte hain",
+        "neta asli mudde ke alawa kuch aur baat karte hain",
+    ],
+)
+def test_alawa_before_the_idiom_is_weak_so_the_listener_can_veto_it(text):
+    hit = detect_request(text)
+    assert hit is not None
+    assert hit.pattern_id == "change_kuch_baat"
+    assert hit.strength is ChangeStrength.WEAK
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "kuch aur baat karte hain",
+        "hum kuch aur baat karte hain",
+        "chaliye kuch aur baat karte hain",
+        "sir kuch aur baat karte hain",
+        "dusri baat karte hain",
+        "yeh sab chhodkar kuch aur baat karte hain",
+        "bahut ho gaya, kuch aur baat karte hain",
+        "kuch aur baat kijiye",
+    ],
+)
+def test_the_idiom_as_a_request_fires_weak(text):
+    hit = detect_request(text)
+    assert hit is not None
+    assert hit.pattern_id == "change_kuch_baat"
+    assert hit.strength is ChangeStrength.WEAK
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["hum aage badhte hain", "sir hum aage badhte hain"],
+)
+def test_hum_stays_out_of_the_aage_left_edge(text):
+    assert _got(text) == NONE
+
+
+@pytest.mark.parametrize(
+    "text, term",
+    [
+        ("public service ke alawa kisi aur topic pe baat karte hain", "public service"),
+        ("public service ke alawa sir kisi aur topic pe baat karte hain", "public service"),
+        ("kisan ko chhodkar kisi aur topic pe baat karte hain", "kisan"),
+    ],
+)
+def test_refused_third_person_topic_stays_strong_with_its_term(text, term):
+    hit = detect_request(text)
+    assert hit is not None
+    assert hit.pattern_id == "change_other_baat"
+    assert hit.strength is ChangeStrength.STRONG
+    assert hit.avoid_terms == (term,)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "neta ke bare mein nahi, kisi aur topic pe baat kijiye",
+        "government ko chhodiye, topic badal dijiye",
+        "public kuch aur topic chhodiye",
+    ],
+)
+def test_strong_imperatives_ignore_the_third_person_guard(text):
+    hit = detect_request(text)
+    assert hit is not None
+    assert hit.kind == "change_topic"
+    assert hit.strength is ChangeStrength.STRONG
 
 
 @pytest.mark.parametrize(

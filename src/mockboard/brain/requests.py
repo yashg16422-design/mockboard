@@ -356,6 +356,8 @@ _ASK_VERB = (
     r"(?:puchiye|puch lijiye|lijiye|le lijiye|bataiye|bata dijiye|kijiye|dijiye|boliye|chahiye)"
 )
 _OTHER = rf"(?:kisi {_AUR}|kisi dusra|koi {_AUR}|koi dusra|dusra)"
+_SOMETHING_ELSE = rf"(?:{_OTHER}|kuch {_AUR}|kuch dusra)"
+_NO_KI_CLAUSE = r"(?!(?: \S+)? ki(?!\S))"  # "...baat karte hain ki gaon mein" is a sentence
 _SAY_AGAIN = r"(?:repeat|say (?:that|it)(?: again| once more| one more time)|say again)"
 _IMPERATIVE = r"(?:kijiye|kar dijiye|kar sakte hain|karein|karo|karte hain|kar dete hain)"
 _AGAIN_VERB = (
@@ -420,8 +422,10 @@ _PATTERNS: tuple[tuple[str, RequestKind, str], ...] = (
 
     # change_topic
     ("change_other_baat", RequestKind.CHANGE_TOPIC,
-     rf"(?:{_OTHER}|kuch {_AUR}|kuch dusra) (?:{_TOPIC_NOUN}(?: par| ke bare mein)? )?{_BAAT_VERB}"
-     r"(?!(?: \S+)? ki(?!\S))"),  # "...baat karte hain ki gaon mein" is a sentence, not a request
+     rf"{_SOMETHING_ELSE} {_TOPIC_NOUN}(?: par| ke bare mein)? {_BAAT_VERB}{_NO_KI_CLAUSE}"),
+    # No topic word: "neta kuch aur baat karte hain" is an idiom about politicians. Weak.
+    ("change_kuch_baat", RequestKind.CHANGE_TOPIC,
+     rf"{_SOMETHING_ELSE} {_BAAT_VERB}{_NO_KI_CLAUSE}"),
     ("change_other_topic", RequestKind.CHANGE_TOPIC,
      rf"(?<!mera )(?<!meri )(?<!hamara ){_OTHER} (?:topic|sawal|cheez)"
      rf"(?: par| ke bare mein| ka sawal)?(?: {_ASK_VERB}| chalte hain| chaliye)?" + _END),
@@ -559,7 +563,7 @@ _PATTERNS: tuple[tuple[str, RequestKind, str], ...] = (
 # change_topic pattern carries an explicit topic-change word and counts as strong.
 _WEAK_CHANGE: frozenset[str] = frozenset({
     "change_aage", "change_x_chhod", "change_en_modal", "change_en_move", "change_en_ahead",
-    "change_en_move_bare",
+    "change_en_move_bare", "change_kuch_baat",
 })
 
 
@@ -573,6 +577,12 @@ def _priority(pattern_id: str, kind: RequestKind) -> int:
         RequestKind.REPEAT: 4,
         RequestKind.CLARIFY_QUESTION: 5,
     }[kind]
+
+
+def _strength(pattern_id: str, kind: RequestKind) -> ChangeStrength | None:
+    if kind is not RequestKind.CHANGE_TOPIC:
+        return None
+    return ChangeStrength.WEAK if pattern_id in _WEAK_CHANGE else ChangeStrength.STRONG
 
 
 _COMPILED: tuple[tuple[str, RequestKind, re.Pattern[str]], ...] = tuple(
@@ -590,8 +600,9 @@ _POLITE = re.compile(
 
 # Someone else's words or habits, a condition, or a generality: within the same clause, before
 # the phrase. Phrases that carry their own subject ("can we", "I want to") ignore _THIRD_PERSON.
-# So do strong change_topic patterns: the words before them are usually the refused topic
-# ("public administration ke alawa kisi aur topic pe baat karte hain").
+# So do strong change_topic imperatives, and any change_topic right after "alawa" or "chhodkar":
+# there the words before are the refused topic ("kisan ke alawa kisi aur topic pe baat karte
+# hain"). A strong declarative is otherwise guarded: "students topic badal dete hain".
 _REPORTED = frozenset({
     "said", "says", "say", "asked", "asks", "told", "tells", "kaha", "kehte", "bola", "puchha",
     "pucha", "if", "agar", "jab", "when", "whenever", "unless", "while", "whether", "har",
@@ -605,6 +616,7 @@ _THIRD_PERSON = frozenset({
     "milkar", "saath",
 })
 _NEGATORS = frozenset({"dont", "not", "never", "mat", "na"})
+_REFUSAL_WORDS = frozenset({"alawa", "chhodkar"})
 _FIRST_PERSON_OBJECT = frozenset({"mujhe", "hamein", "hume", "humein", "humko"})
 _OWN_SUBJECT = frozenset({"can", "could", "shall", "may", "lets", "let", "i", "id", "ill", "we",
                           "would", "will", "mujhe", "main"})
@@ -617,7 +629,14 @@ _BEFORE_WINDOW = 6
 # these (or a clause break, or the turn start) on its left. Imperatives need nothing.
 _AAGE_LEFT = frozenset({*_FILLERS, "chaliye", "nahi"})
 # These stop mid-sentence too, so the phrase must close its clause. A regex cannot see breaks.
-_MUST_CLOSE = frozenset({"change_aage", "change_en_modal", "change_en_change"})
+_MUST_CLOSE = frozenset({
+    "change_aage", "change_en_modal", "change_en_change", "change_kuch_baat",
+})
+# "hum" stays out of _AAGE_LEFT: "hum aage badhte hain" describes a people moving forward.
+_LEFT_EDGE = {
+    "change_aage": _AAGE_LEFT,
+    "change_kuch_baat": frozenset({*_AAGE_LEFT, *_REFUSAL_WORDS, "hum"}),
+}
 _OWNER_WORDS = frozenset({"ka", "ki", "ke", "hum"})
 _DESCRIBES_A_PLACE = frozenset({
     "yahan", "company", "campus", "office", "placements", "parliament", "sansad", "assembly",
@@ -709,7 +728,21 @@ def _clause_before(tokens: _Tokens, start: int) -> list[str]:
     return _POLITE.sub(" ", prefix).split()
 
 
-def _not_a_request(tokens: _Tokens, start: int, end: int, strong_change: bool) -> bool:
+def _third_person_blocks(
+    tokens: _Tokens, end: int, before: list[str], strength: ChangeStrength | None
+) -> bool:
+    """False when third-person words near a phrase may be the topic, not its subject."""
+    if strength is None:
+        return True
+    words = [word for word in before if word not in _FILLERS]
+    if words and words[-1] in _REFUSAL_WORDS:
+        return False
+    return strength is ChangeStrength.WEAK or tokens.canon[end - 1] == "hain"
+
+
+def _not_a_request(
+    tokens: _Tokens, start: int, end: int, strength: ChangeStrength | None
+) -> bool:
     """True when the words around a match show someone is not asking the board for anything."""
     before = _clause_before(tokens, start)
     if before:
@@ -721,9 +754,9 @@ def _not_a_request(tokens: _Tokens, start: int, end: int, strong_change: bool) -
             return True
     after = tokens.canon[end : end + _AFTER_TOKENS]
     if tokens.canon[start] not in _OWN_SUBJECT:
-        if not strong_change and any(
+        if any(
             word in _THIRD_PERSON for word in (*before, *tokens.canon[start:end])
-        ):
+        ) and _third_person_blocks(tokens, end, before, strength):
             return True
         if after and after[0] == "to":  # English "move on to X" carries its own subject
             return True
@@ -741,10 +774,10 @@ def _ends_clause(tokens: _Tokens, end: int) -> bool:
     )
 
 
-def _aage_is_a_request(tokens: _Tokens, start: int, end: int) -> bool:
+def _left_edge_ok(tokens: _Tokens, start: int, end: int, left: frozenset[str]) -> bool:
     if tokens.canon[end - 1] != "hain":  # imperative
         return True
-    return start == 0 or tokens.breaks[start] or tokens.canon[start - 1] in _AAGE_LEFT
+    return start == 0 or tokens.breaks[start] or tokens.canon[start - 1] in left
 
 
 def _end_describes_something(tokens: _Tokens, start: int) -> bool:
@@ -775,19 +808,17 @@ def detect_request(text: str) -> RequestHit | None:
         for m in pattern.finditer(tokens.text):
             start = _token_index(tokens.text, m.start())
             end = _token_index(tokens.text, m.end()) + 1
-            strong_change = kind is RequestKind.CHANGE_TOPIC and pattern_id not in _WEAK_CHANGE
-            if not _position_ok(start, total) or _not_a_request(
-                tokens, start, end, strong_change
-            ):
+            strength = _strength(pattern_id, kind)
+            if not _position_ok(start, total) or _not_a_request(tokens, start, end, strength):
                 continue
             if pattern_id == "end_hi" and _end_describes_something(tokens, start):
                 continue
             if pattern_id in _MUST_CLOSE and not _ends_clause(tokens, end):
                 continue
-            if pattern_id == "change_aage" and not _aage_is_a_request(tokens, start, end):
+            left = _LEFT_EDGE.get(pattern_id)
+            if left is not None and not _left_edge_ok(tokens, start, end, left):
                 continue
             if kind is not RequestKind.CHANGE_TOPIC:
                 return RequestHit(kind, (), pattern_id)
-            strength = ChangeStrength.STRONG if strong_change else ChangeStrength.WEAK
             return RequestHit(kind, _avoid_terms(tokens), pattern_id, strength)
     return None
