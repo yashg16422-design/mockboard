@@ -469,6 +469,56 @@ DEBATE_JUDGE_TOOL = ToolSpec(
 )
 
 # ---------------------------------------------------------------------------
+# Panel agenda planning (P6, CTO_NOTES_12 §7, §8)
+# ---------------------------------------------------------------------------
+
+# The segments Nova may write questions for. `current_affairs` is not among them (CTO_NOTES_12
+# §8: the candidate chooses that issue, and Nova's knowledge may be stale), and a Hindi interview
+# is not planned at all. Flat on purpose: one list of strings per segment, no nesting.
+PLANNED_SEGMENTS = ("form_hr", "home_district", "degree", "interests")
+
+
+class AgendaOutput(_ToolModel):
+    form_hr_seeds: list[str] = Field(default_factory=list)
+    home_district_seeds: list[str] = Field(default_factory=list)
+    degree_seeds: list[str] = Field(default_factory=list)
+    interests_seeds: list[str] = Field(default_factory=list)
+
+    @field_validator("*", mode="before")
+    @classmethod
+    def _lists_of_text(cls, v: object) -> list[str]:
+        """Anything but a list of strings is an empty list: the segment then keeps its template
+        questions. (A wrong type is the model's slip, not a reason to stop the interview.)"""
+        if not isinstance(v, list):
+            return []
+        return [x for x in v if isinstance(x, str)]
+
+    def seeds_for(self, segment_id: str) -> list[str]:
+        return list(getattr(self, f"{segment_id}_seeds"))
+
+
+AGENDA_TOOL = ToolSpec(
+    name="record_agenda",
+    description=(
+        "Record the interview questions for four parts of a mock UPSC interview, written from "
+        "the candidate's application form."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            f"{segment}_seeds": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "One open-ended question each, in the order to ask them.",
+            }
+            for segment in PLANNED_SEGMENTS
+        },
+        "required": [f"{segment}_seeds" for segment in PLANNED_SEGMENTS],
+    },
+)
+
+
+# ---------------------------------------------------------------------------
 # Debate mode: motion screen and custom case file (CTO_NOTES_04 §5, §2)
 # ---------------------------------------------------------------------------
 
@@ -546,6 +596,7 @@ CASE_FILE_TOOL = ToolSpec(
 ALL_TOOLS: dict[str, tuple[ToolSpec, type[BaseModel]]] = {
     "listener": (LISTENER_TOOL, ListenerOutput),
     "listener_panel": (PANEL_LISTENER_TOOL, PanelListenerOutput),
+    "agenda_plan": (AGENDA_TOOL, AgendaOutput),
     "listener_debate": (DEBATE_LISTENER_TOOL, DebateListenerOutput),
     "librarian": (LIBRARIAN_TOOL, LibrarianOutput),
     "judge": (JUDGE_TOOL, JudgeOutput),

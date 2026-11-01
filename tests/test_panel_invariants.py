@@ -283,7 +283,7 @@ async def test_every_board_line_traces_to_its_agenda_item_and_member(
     for out, row in zip(p.outs, p.rows, strict=True):
         panel = row["panel"]
         assert panel["segment_id"] in agenda.topics
-        assert panel["agenda_source"] == "template"
+        assert panel["agenda_source"] == "nova"  # the fake planner's plan passes the validator
         assert panel["member"] in members | {"chairman"}
         assert panel["member_name"] == p.hooks.speaker_name(panel["member"])
         assert [x["text"] for x in panel["parts"]] == texts(out)
@@ -303,7 +303,7 @@ async def test_the_session_start_line_names_the_agenda_and_the_openers_member(
     first = json.loads(session.recorder.path.read_text(encoding="utf-8").splitlines()[0])
     assert first["event"] == "session_start" and first["panel"] == "on"
     assert [s["id"] for s in first["agenda"]["segments"]] == SEGMENTS
-    assert first["agenda"]["source"] == "template"
+    assert first["agenda"]["source"] == "nova" and first["agenda_plan"]["status"] == "used"
     assert first["segment_id"] == "form_hr" and first["member"] == "chairman"
     assert first["prompt_versions"]["actor"] == 5 and first["prompt_versions"]["opener"] == 2
     assert opener.parts[0].text == line_for(RITUAL_LINES, "hi-en")
@@ -496,8 +496,10 @@ async def test_per_turn_only_the_listener_and_the_actor_call_a_model(
 ):
     p = await play(settings, cards, form, tmp_path, [PLAIN[i % 3] for i in range(40)], cap=10)
     names = [c.name for c in p.llm.calls]
-    assert names.count("opener") == 1 and "plan_agenda" not in names
-    assert set(names) <= {"opener", "listener", "actor", "librarian", "judge"}
+    # The plan is one call, made before the first turn (A5, CTO_NOTES_06 §10).
+    assert names.count("opener") == 1 and names.count("plan_agenda") == 1
+    assert names.index("plan_agenda") < names.index("listener")
+    assert set(names) <= {"plan_agenda", "opener", "listener", "actor", "librarian", "judge"}
     for row in p.rows:
         assert {c["name"] for c in row["llm_calls"]} <= {"listener", "actor"}
 

@@ -604,6 +604,115 @@ def opener_responder(system: str, user: str) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Agenda planner (agenda_plan.v1)
+# ---------------------------------------------------------------------------
+
+_PLAN_SEEDS: dict[str, dict[str, tuple[str, ...]]] = {
+    "hi-en": {
+        "form_hr": (
+            "{place} se hone aur {degree} padhne ke baad, aapko civil services kyun sahi raasta "
+            "laga?",
+            "Agar civil services ka sapna poora na ho, to aap samaj ke liye kaunsa kaam chunenge, "
+            "aur kyun?",
+        ),
+        "home_district": (
+            "{place} mein rehkar aapne logon ki kaunsi dikkat kareeb se dekhi, aur use door karne "
+            "ke liye aap kya karenge?",
+            "Agar aap {place} ke prashasan mein hote, to sabse pehle kis ek cheez ko badalna "
+            "chahenge, aur kyun?",
+            "{state} mein gaon aur shehar ke beech aapko kaunsa antar khatakta hai, aur kyun?",
+        ),
+        "degree": (
+            "{degree} padhte hue aapne kaunsa ek vichar seekha jo aam logon ki zindagi se jud "
+            "sakta hai, aur kaise?",
+            "{degree} ki kaunsi samajh aapko prashasan ke kisi faisle mein kaam aa sakti hai, aur "
+            "kyun?",
+            "Agar aapko {degree} ko kisi gaon ki samasya par lagana ho, to aap kahan se shuru "
+            "karenge, aur kyun?",
+        ),
+        "interests": (
+            "{hobby} ne aapke sochne ki aadat ko kaise badla, aur woh aapke kaam mein kaise "
+            "dikhegi?",
+            "{hobby2} mein aapko kya kathin laga, aur usse aapne dhairya ke baare mein kaise "
+            "seekha?",
+            "{optional} ko optional vishay chunne ke peeche aapka kya vichar tha, aur kyun?",
+        ),
+    },
+    "en": {
+        "form_hr": (
+            "Coming from {place} and having studied {degree}, why did the civil services feel "
+            "like the right path for you?",
+            "If the civil services do not work out, which work would you choose for society, and "
+            "why?",
+        ),
+        "home_district": (
+            "Living in {place}, which difficulty of ordinary people have you seen up close, and "
+            "what would you do about it?",
+            "If you were in the administration of {place}, which one thing would you change "
+            "first, and why?",
+            "Between the villages and the towns of {state}, which gap troubles you, and why?",
+        ),
+        "degree": (
+            "While studying {degree}, which one idea did you learn that touches ordinary lives, "
+            "and how?",
+            "Which part of your understanding of {degree} could help in a decision of "
+            "government, and why?",
+            "If you had to apply {degree} to the problem of a village, where would you begin, "
+            "and why?",
+        ),
+        "interests": (
+            "How has {hobby} changed the way you think, and how will that show in your work?",
+            "What did you find hard in {hobby2}, and what did it teach you about patience?",
+            "What was your thinking in choosing {optional} as your optional, and do you still "
+            "agree with it?",
+        ),
+    },
+}
+_PLAN_GENERIC = {
+    "hi-en": {
+        "hobby": "Padhai ke bahar aapka sabse pasandida kaam",
+        "hobby2": "Khaali samay ka aapka koi doosra shauk",
+        "optional": "Aapka optional vishay",
+    },
+    "en": {
+        "hobby": "Your favourite pastime outside studies",
+        "hobby2": "Your other pastime",
+        "optional": "your optional subject",
+    },
+}
+
+
+def agenda_plan_responder(system: str, user: str) -> dict[str, Any]:
+    """A stand-in for Nova's `record_agenda`: the same four lists, phrased from the form's own
+    words. Word lists, not a model: it exists so the planner, the validator and the late-plan paths
+    run offline. A term the form lacks falls back to a plain phrase, and a question that then
+    fails the validator is replaced by its template, as a real plan's would be."""
+    from mockboard.brain.agenda import _term
+
+    form = dict(
+        line.split(": ", 1) for line in _tag(user, "application_form").splitlines() if ": " in line
+    )
+    mix = "en" if form.get("interview_language") == "english" else "hi-en"
+    hobbies = [t for t in (_term(h) for h in form.get("hobbies", "").split(",")) if t]
+    terms = {
+        "place": _term(form.get("district")) or _term(form.get("home_state")) or "aapka ilaaka",
+        "state": _term(form.get("home_state")) or _term(form.get("district")) or "aapka rajya",
+        "degree": _term(form.get("degree_subject")) or "aapka vishay",
+        "hobby": hobbies[0] if hobbies else _PLAN_GENERIC[mix]["hobby"],
+        "hobby2": hobbies[1] if len(hobbies) > 1 else _PLAN_GENERIC[mix]["hobby2"],
+        "optional": _term(form.get("optional_subject")) or _PLAN_GENERIC[mix]["optional"],
+    }
+
+    def fill(text: str) -> str:
+        out = text.format(**terms)
+        return out[0].upper() + out[1:]
+
+    return {
+        f"{segment}_seeds": [fill(t) for t in texts] for segment, texts in _PLAN_SEEDS[mix].items()
+    }
+
+
+# ---------------------------------------------------------------------------
 # Judge
 # ---------------------------------------------------------------------------
 
@@ -848,6 +957,7 @@ def fake_responders(
         "librarian": make_librarian_responder(cards, tolerance),
         "actor": make_actor_responder(),
         "opener": opener_responder,
+        "plan_agenda": agenda_plan_responder,
         "judge": judge_responder,
         "judge_debate": debate_judge_responder,
         "motion_screen": motion_screen_responder,

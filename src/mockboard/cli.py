@@ -302,7 +302,7 @@ def _print_panel_line(session: InterviewSession, line, tag: str = "") -> None:
 async def _interview(args, settings, session, rt, ask, lines, recorder, cards) -> int:
     opener = await session.open()
     if args.panel:
-        print()
+        print(f"\n{session.hooks.agenda_note()}\n")
         _print_panel_line(session, opener)
     else:
         print(f"\n[{session.speaker_name(rt.strategy.chairman)}] {opener.text}")

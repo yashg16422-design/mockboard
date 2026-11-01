@@ -21,6 +21,7 @@ Nothing here calls a model except the line itself (`compose_panel_line`) and the
 
 from __future__ import annotations
 
+import asyncio
 import time
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
@@ -32,6 +33,7 @@ from mockboard.brain.agenda import (
     capped_budgets,
     seed_alternatives,
 )
+from mockboard.brain.agenda_plan import PlanReport, plan_agenda, upgrade_agenda
 from mockboard.brain.avoid_terms import expand_terms, find_avoided, topics_in_play
 from mockboard.brain.director import PanelDirector, opening_memory
 from mockboard.brain.graphs import generate_report
@@ -47,6 +49,7 @@ from mockboard.brain.panel_lines import RITUAL_LINES, line_for
 from mockboard.brain.personas import PERSONA_DIR, chairman, load_personas
 from mockboard.brain.prompts import build_prompt_kit, check_prefix_budget
 from mockboard.brain.schemas import (
+    Agenda,
     Analysis,
     BoardMove,
     CompletedTurn,
@@ -122,6 +125,11 @@ class PanelHooks:
         self._line: PanelLine | None = None
         self._director_ms: float = 0.0
         self._raw = ""
+        # Nova's plan for the agenda's seed text (P6). The template agenda above always stands in.
+        self._plan: asyncio.Task | None = None
+        self._plan_applied = False
+        self._opened = False  # True once `open()` has had its say: a plan after that is late
+        self._plan_report: PlanReport | None = None
         self._row: dict[str, Any] = {}
         self._finished = False
 
@@ -158,7 +166,92 @@ class PanelHooks:
         self.wrap_up_due = True
 
     def ritual_line(self) -> str:
+        """The Chairperson's first line. Asking for it starts the agenda plan, so the few seconds
+        the voice loop spends speaking the ritual are the plan's head start (CTO_NOTES_06 §2)."""
+        self._start_plan()
         return line_for(RITUAL_LINES, self.mix)
+
+    # -- the agenda plan (P6) ----------------------------------------------------------------
+
+    def _start_plan(self) -> None:
+        """Begin planning, once. Needs a running loop; without one `open()` starts it."""
+        if self._plan is not None or self._plan_report is not None:
+            return
+        s = self.session
+        if not self.settings.agenda_plan_enabled:
+            self._plan_report = PlanReport("skipped", error="agenda planning is switched off")
+            return
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            return
+        self._plan = asyncio.ensure_future(
+            plan_agenda(s.deps.llm, self.kit, s.form, self.agenda, avoid=tuple(self._refused))
+        )
+        self._plan.add_done_callback(self._plan_finished)
+
+    def _plan_finished(self, task: asyncio.Task) -> None:
+        """A plan that ended after `open()` stopped waiting upgrades the segments not begun."""
+        if self._opened and not task.cancelled():
+            self._adopt_plan(task, late=True)
+
+    def _adopt_plan(self, task: asyncio.Task, *, late: bool) -> None:
+        """Take the plan's result, once. At the opening it is the whole agenda (nothing has begun);
+        late, it upgrades only the segments after the current one and says so as `agenda_upgraded`.
+        """
+        if self._plan_applied:
+            return
+        self._plan_applied = True
+        try:
+            planned, report = task.result()
+        except Exception as exc:  # `plan_agenda` does not raise, but a lost task must not either
+            planned, report = self.agenda, PlanReport("failed", error=type(exc).__name__)
+        self._plan_report = report
+        if report.status != "used":
+            if late:
+                self._write_upgrade_event(report, [])
+            return
+        if not late:
+            self._set_agenda(planned)
+            return
+        before = {g.id: g.seeds for g in self.agenda.segments}
+        upgraded = upgrade_agenda(self.agenda, planned, self.session.state.topic_index)
+        changed = [g.id for g in upgraded.segments if g.seeds != before[g.id]]
+        self._set_agenda(upgraded)
+        self._write_upgrade_event(report, changed)
+
+    def _set_agenda(self, agenda: Agenda) -> None:
+        self.agenda = agenda
+        self.director.agenda = agenda
+
+    def _write_upgrade_event(self, report: PlanReport, changed: list[str]) -> None:
+        self.session.recorder.write_event(
+            "agenda_upgraded", tag="plan", upgraded=changed, agenda_source=self.agenda.source,
+            agenda_plan=report.as_trace(),
+        )
+
+    def agenda_note(self) -> str:
+        """One line for a person: where the agenda's questions came from. No question text."""
+        report = self._plan_report
+        if report is None:
+            return f"Agenda: {self.agenda.source} (plan still pending)"
+        if report.status == "used":
+            return (
+                f"Agenda: {self.agenda.source} ({report.accepted} questions written by the planner,"
+                f" {len(report.rejected)} replaced by templates, {report.ms:.0f} ms)"
+            )
+        why = f": {report.error}" if report.error else ""
+        return f"Agenda: {self.agenda.source} (plan {report.status}{why})"
+
+    async def _await_plan(self) -> None:
+        """Wait at most `agenda_plan_wait_s` for the plan; the interview starts either way."""
+        self._start_plan()
+        task = self._plan
+        if task is not None and not task.done():
+            await asyncio.wait({task}, timeout=self.settings.agenda_plan_wait_s)
+        self._opened = True
+        if task is not None and task.done() and not task.cancelled():
+            self._adopt_plan(task, late=False)
 
     def ctx(self, ctx: StrategyContext) -> StrategyContext:
         """The strategist's view: `last_move` from here, and every claim of a segment the candidate
@@ -182,6 +275,7 @@ class PanelHooks:
     async def open(self) -> tuple[LineResult, BoardMove, dict[str, Any]]:
         """The ritual, then the first seed of the Chairperson's own segment, asked once."""
         s = self.session
+        await self._await_plan()  # at most `agenda_plan_wait_s`; the templates stand if it is late
         first = self.agenda.segments[0]
         seed = first.seeds[0].text
         chair = self.chair_id
@@ -217,6 +311,9 @@ class PanelHooks:
                     for g in self.agenda.segments
                 ],
             },
+            "agenda_plan": (
+                self._plan_report.as_trace() if self._plan_report else {"status": "pending"}
+            ),
             "segment_id": first.id,
             "seed_id": f"{first.id}#0",
             "member": chair,
@@ -429,6 +526,8 @@ class PanelHooks:
         """Fold the last turn and delete the checkpointer thread. Safe to call twice, and meant to
         run on every exit path, a disconnect included: the saver is shared, so an unfinished
         session would leak its thread for the life of the server (CTO_NOTES_15 §9.1)."""
+        if self._plan is not None and not self._plan.done():
+            self._plan.cancel()  # a plan nobody will use must not outlive the session
         if not self._finished:
             self._finished = True
             await self.director.finish()

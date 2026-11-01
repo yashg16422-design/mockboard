@@ -240,6 +240,7 @@ class Settings(BaseSettings):
     prompt_opener_version: int = 1
     # The panel's prompts (P4, behind --panel only). The UPSC versions above stay until P7.
     prompt_listener_panel_version: int = 4  # v3 + the candidate's request, English-only notes
+    prompt_agenda_plan_version: int = 1  # Nova's seed questions for four segments (P6)
     prompt_actor_panel_version: int = 5  # v4 + Namaste only at the first hand-off (Ruling 73)
     prompt_opener_panel_version: int = 2  # no greeting: the ritual line is said by code
     # Debate mode (ADR-009, CTO_NOTES_04).
@@ -250,6 +251,14 @@ class Settings(BaseSettings):
     prompt_motion_screen_version: int = 1
     prompt_case_file_version: int = 1
     report_language: str = Field(default="en", pattern=r"^(en|hi)$")
+
+    # --- Panel agenda planning (P6, CTO_NOTES_06 §2, CTO_NOTES_12 §7). Nova only rewrites seed
+    # text; the template agenda always exists and stands in if the plan is late, bad or missing.
+    agenda_plan_enabled: bool = True
+    # How long the opening waits for the plan before the interview starts on the templates. A late
+    # plan still upgrades the segments not yet begun. UNVERIFIED: Nova's time for the call; this is
+    # a guess until an approved real run.
+    agenda_plan_wait_s: float = Field(default=1.5, ge=0)
 
     # --- Eval gate (ENGINEERING.md §5): `make eval-gate` exits non-zero when a dev-split run
     # catches fewer planted errors than this share, or makes more false corrections than this
@@ -334,6 +343,7 @@ class Settings(BaseSettings):
         return {
             **self.prompt_versions(),
             "listener": self.prompt_listener_panel_version,
+            "agenda_plan": self.prompt_agenda_plan_version,
             "actor": self.prompt_actor_panel_version,
             "opener": self.prompt_opener_panel_version,
         }
