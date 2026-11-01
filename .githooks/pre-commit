@@ -2,12 +2,36 @@
 # Commit gate (Ruling 60, CTO_NOTES_12 section 5). Exports the INDEX, not the working tree, and
 # runs ruff and pytest on that copy, so a fix left unstaged or a file left out fails here.
 # Switched on by `make hooks` (also part of `make venv`). `--no-verify` is banned on this project.
+# Also runs for merges, through `pre-merge-commit`, which sets MOCKBOARD_HOOK_FULL.
 set -euo pipefail
 
 repo=$(git rev-parse --show-toplevel)
 python=${MOCKBOARD_HOOK_PYTHON:-$repo/.venv/bin/python}
 if [ ! -x "$python" ]; then
     echo "pre-commit: no Python at $python. Run: make venv" >&2
+    exit 1
+fi
+
+# Ruling 67: a commit that touches only these exact paths skips the tests, because no test reads
+# them. An allowlist of paths, never `*.md`: `src/mockboard/prompts/*.md` are prompts and are hashed
+# by tests. tests/test_commit_hook.py pins this list. `make verify-range` still tests every commit.
+docs_only() {
+    [ -z "${MOCKBOARD_HOOK_FULL:-}" ] || return 1
+    git rev-parse -q --verify HEAD >/dev/null || return 1             # first commit
+    [ ! -f "$(git rev-parse --git-dir)/MERGE_HEAD" ] || return 1      # a merge is never docs-only
+    local paths
+    paths=$(git diff --cached --no-renames --name-only HEAD)
+    [ -n "$paths" ] || return 1                                       # message-only amend, empty
+    ! grep -qvE '^(docs/|README\.md$|CLAUDE\.md$)' <<<"$paths"
+}
+if docs_only; then
+    echo "pre-commit: docs only, tests skipped (Ruling 67)"
+    exit 0
+fi
+
+# 13 `importorskip` calls would otherwise drop the voice tests and still report green.
+if ! "$python" -c 'import pipecat, pipecat_gnani' 2>/dev/null; then
+    echo "pre-commit: the voice extra is missing from $python. Run: make voice-install" >&2
     exit 1
 fi
 

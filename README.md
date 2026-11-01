@@ -78,7 +78,7 @@ make test
 make lint
 ```
 
-Commits are gated: `make venv` (or `make hooks` on an existing checkout) switches on `.githooks/pre-commit`, which runs both checks on what is staged, not on your working folder. A full run takes a few minutes. `--no-verify` is not used on this project. To check each commit afterwards without trusting the hook, run `make verify-range BASE=<sha>`.
+Commits are gated: `make venv` (or `make hooks` on an existing checkout) switches on `.githooks/pre-commit`, which runs both checks on what is staged, not on your working folder. A full run takes a few minutes. `.githooks/pre-merge-commit` does the same for merges. A commit touching only `docs/`, `README.md` or `CLAUDE.md` skips the tests (Ruling 67). The voice extra must be installed (`make voice-install`), or the gate refuses. `--no-verify` is not used on this project. To check each commit afterwards without trusting the hook, run `make verify-range BASE=<sha>`.
 
 ## Run the evaluation
 

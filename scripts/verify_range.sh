@@ -15,6 +15,11 @@ if [ ! -x "$python" ]; then
     echo "verify-range: no Python at $python. Run: make venv" >&2
     exit 2
 fi
+# A venv without the voice extra would skip the voice tests and still report green (Ruling 67).
+if ! "$python" -c 'import pipecat, pipecat_gnani' 2>/dev/null; then
+    echo "verify-range: the voice extra is missing from $python. Run: make voice-install" >&2
+    exit 2
+fi
 if ! commits=$(git rev-list --reverse "$base..HEAD"); then
     echo "verify-range: cannot read commits after $base" >&2
     exit 2
