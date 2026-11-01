@@ -260,3 +260,8 @@ Orchestrator read trace voice-32a441f916 and the server log from the owner's Mac
 - **Ruling 56 (amends Ruling 53):** the listener veto covers seven weak patterns, adding `change_kuch_baat`. P5 uses a shared word count.
 - **Ruling 57:** after P1.2 the detector is frozen until P12's real transcripts. Next: P2, P3, then P0.2 before P4.
 
+## Round 30 — Nov 1, 2026 (P1.2 rejected on one defect; F4)
+
+- **Rejected** P1.2 (5d43ca6 to d47a2cf) on F4 only; review in `docs/CTO_NOTES_11.md`. All other claims were confirmed by the CTO: 1194 tests, lint, md5s, F1 to F3, dev `end` 21/21. All five judgement calls are accepted; `end_en_modal` accepting `here|now` holds only with `pending_end` (Ruling 52).
+- **Ruling 58:** F4: `cheez` in `change_other_topic` moves to a strong pattern requiring an imperative, using the exact code in CTO_NOTES_11 section 3, plus one test pinning `change_kuch_baat` in `_MUST_CLOSE`. The CTO has specified and trialled the fix, so no further CTO round is needed. The orchestrator confirms the diff matches and re-runs the checks. The freeze of Ruling 57 starts after F4.
+
