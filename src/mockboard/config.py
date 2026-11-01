@@ -238,6 +238,9 @@ class Settings(BaseSettings):
     prompt_actor_version: int = 3  # ruling 36/37: open-ended, no quiz, no quoting
     prompt_judge_version: int = 1
     prompt_opener_version: int = 1
+    # The panel's prompts (P4, behind --panel only). The UPSC versions above stay until P7.
+    prompt_actor_panel_version: int = 4  # agenda item, conversation notes, avoid topics
+    prompt_opener_panel_version: int = 2  # no greeting: the ritual line is said by code
     # Debate mode (ADR-009, CTO_NOTES_04).
     prompt_shared_debate_version: int = 1
     prompt_listener_debate_version: int = 2  # Round 20: Devanagari
@@ -323,6 +326,14 @@ class Settings(BaseSettings):
             "actor": self.prompt_actor_version,
             "judge": self.prompt_judge_version,
             "opener": self.prompt_opener_version,
+        }
+
+    def panel_prompt_versions(self) -> dict[str, int]:
+        """The UPSC map with the panel's actor and opener. Recorded in a panel session's trace."""
+        return {
+            **self.prompt_versions(),
+            "actor": self.prompt_actor_panel_version,
+            "opener": self.prompt_opener_panel_version,
         }
 
     def _mode_prompt_versions(self, mode: str) -> dict[str, int]:

@@ -6,7 +6,7 @@
 # UNVERIFIED: how real Prisma output spells these words. The lists are ours, written without
 # real transcripts, and each group is only as good as the spellings we thought of.
 tourism: [tourism, turism, tourist, paryatan, पर्यटन, टूरिज्म, टूरिज़्म, पर्यटक]
-agriculture: [agriculture, farming, krishi, kheti, कृषि, खेती, किसान, kisan]
+agriculture: [agriculture, farming, krishi, kheti, कृषि, खेती, किसान, kisan, एग्रीकल्चर]
 education: [education, shiksha, शिक्षा, padhai, पढ़ाई, schooling]
 health: [health, healthcare, swasthya, स्वास्थ्य, hospital, अस्पताल]
 corruption: [corruption, bhrashtachar, भ्रष्टाचार, bhrastachar]
@@ -16,7 +16,7 @@ environment: [environment, paryavaran, पर्यावरण, ecology]
 pollution: [pollution, pradushan, प्रदूषण]
 climate: [climate, jalvayu, जलवायु]
 water: [water, paani, pani, पानी, jal, जल]
-electricity: [electricity, bijli, बिजली]
+electricity: [electricity, bijli, बिजली, इलेक्ट्रिसिटी]
 infrastructure: [infrastructure, sadak, सड़क, roads, highway]
 railways: [railway, railways, rail, रेल, रेलवे]
 police: [police, policing, पुलिस]

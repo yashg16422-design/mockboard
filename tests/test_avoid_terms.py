@@ -122,3 +122,29 @@ def test_fallback_agenda_carries_the_forms_own_words_as_segment_aliases(form):
     assert form.degree_subject in by_id["degree"].aliases
     assert by_id["form_hr"].aliases == () and by_id["current_affairs"].aliases == ()
     assert all(len(s.aliases) <= 5 for s in agenda.segments)
+
+
+# Three topics, each refused in one form and written by the actor in another: Latin, a garbled
+# Latin spelling, a Devanagari transliteration and the Hindi word (CTO_NOTES_09 §9 tests).
+MATRIX = {
+    "tourism": {
+        "latin": "tourism", "garbled": "turism", "devanagari": "टूरिज्म", "hindi": "paryatan",
+    },
+    "agriculture": {
+        "latin": "agriculture", "garbled": "agriculure", "devanagari": "एग्रीकल्चर",
+        "hindi": "krishi",
+    },
+    "electricity": {
+        "latin": "electricity", "garbled": "electricty", "devanagari": "इलेक्ट्रिसिटी",
+        "hindi": "bijli",
+    },
+}
+
+
+@pytest.mark.parametrize("topic", sorted(MATRIX))
+@pytest.mark.parametrize("said", ["latin", "garbled", "devanagari", "hindi"])
+@pytest.mark.parametrize("written", ["latin", "devanagari", "hindi"])
+def test_matrix_a_refusal_in_one_script_holds_in_the_others(topic, said, written):
+    forms = MATRIX[topic]
+    line = f"Aap {forms[written]} ke baare mein kya sochte hain?"
+    assert find_avoided(line, expand_terms([forms[said]])) is not None, (topic, said, written)

@@ -509,6 +509,34 @@ def _seeds(segment_id: str, form: CandidateForm, terms: dict[str, str]) -> list[
     return seeds
 
 
+# A question that names nothing, for the rare seed no alternative of which is clear of a refused
+# topic. Open-ended and free of facts, so it passes `seed_violations`.
+NEUTRAL_SEEDS: dict[str, str] = {
+    "hi-en": "Is vishay par aap apne anubhav se kya kehna chahenge, aur kyun?",
+    "en": "On this subject, what would you like to say from your own experience, and why?",
+    "hi": "इस विषय पर आप अपने अनुभव से क्या कहना चाहेंगे, और क्यों?",
+}
+
+
+def seed_alternatives(segment_id: str, index: int, form: CandidateForm) -> list[str]:
+    """Other questions that can stand where seed `index` of the fallback agenda stands, best first:
+    the form-free wording of the same seed, or the other DM/SP situations. For a board that must
+    not say a refused topic. Empty when `index` is not a fallback seed (a Nova seed, work
+    experience), and the caller then uses `NEUTRAL_SEEDS`."""
+    mix = _mix(form)
+    if segment_id == CURRENT_AFFAIRS and index >= len(_SEEDS[segment_id][mix]):
+        chosen = situation_for(form)
+        return [s[mix] for s in SITUATIONS if s[mix] != chosen]
+    shift = 1 if segment_id == FORM_HR and form.work_experience and index >= 1 else 0
+    if segment_id == FORM_HR and form.work_experience and index == 1:
+        return []  # the work-experience seed names nothing from the form
+    seeds = _SEEDS[segment_id][mix]
+    position = index - shift
+    if not 0 <= position < len(seeds):
+        return []
+    return [seeds[position].generic]
+
+
 def resolve_budgets(budgets: Mapping[str, int] | None = None) -> dict[str, int]:
     """Default budgets with the caller's on top. An unknown id is a bug, so it raises."""
     unknown = set(budgets or ()) - set(SEGMENT_MEMBERS)

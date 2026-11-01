@@ -177,11 +177,12 @@ def alias_groups() -> tuple[tuple[str, ...], ...]:
 
 
 def aliases_of(term: str) -> tuple[str, ...]:
-    """The rest of every alias group that holds `term` (a whole word of it, by phonetic key)."""
+    """The rest of every alias group that holds `term` (a whole word of it, by phonetic key, with
+    one slip allowed in a long word: "agriculure" finds agriculture)."""
     keys = {term_key(w) for w in words_of(term) if w.casefold() not in _STOP}
     found: dict[str, None] = {}
     for group in alias_groups():
-        if any(term_key(member) in keys for member in group):
+        if any(_same_key(term_key(member), key) for member in group for key in keys):
             found.update(dict.fromkeys(group))
     return tuple(found)
 

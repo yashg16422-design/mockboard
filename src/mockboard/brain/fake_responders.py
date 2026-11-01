@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import re
+import zlib
 from collections.abc import Callable
 from typing import Any
 
@@ -396,10 +397,107 @@ def _debate_actor_line(board: dict[str, Any], user: str) -> str:
     return "Ek minute, main beech mein rokta hoon. Apne mukhya point par aaiye."
 
 
-def actor_responder(system: str, user: str) -> str:
+
+# Panel stand-in (actor.v4, opener.v2): several wordings per move, so a scripted session does not
+# repeat itself, none of them quoting the candidate. A stand-in, not a model: it cannot rephrase.
+_PANEL_WORDINGS: dict[str, tuple[str, ...]] = {
+    Move.probe.value: (
+        "Achha. Is baat ke peeche aapka sabse bada karan kya hai?",
+        "Theek hai. Isse jude logon par iska asar aap kaise dekhte hain?",
+        "Ji. Agar aap khud is sthiti mein hote, to pehla qadam kya uthate, aur kyun?",
+        "Achha. Is par aapko sabse badi dikkat kahan dikhti hai?",
+        "Theek hai. Is soch ko zameen par utarne mein kaunsi rukawat aa sakti hai?",
+        "Ji. Is baat ko aap kisi aam nagrik ko kaise samjhayenge?",
+        "Achha. Is par aapko kis tarah ki madad ya jaankari chahiye hogi?",
+        "Theek hai. Isse sabse zyada kiska fayda ya nuksaan hoga, aapke hisaab se?",
+    ),
+    Move.counter.value: (
+        "Samajh mein aata hai. Lekin doosra paksh kehta hai ki isse nuksaan bhi ho sakta hai. "
+        "Aap use kaise tolenge?",
+        "Theek hai. Jo log isse sahmat nahi, unka sabse mazboot tark kya hoga, aur aap use "
+        "kaise dekhte hain?",
+        "Achha. Maan lijiye koi kahe ki yeh tareeka sabke liye theek nahi, to aapka jawab kya "
+        "hoga?",
+        "Ji. Is soch ke khilaaf sabse vazandar baat kya ho sakti hai, aur uska aap kya karenge?",
+        "Samajh mein aata hai. Agar yeh tareeka na chale, to aapka doosra raasta kya hoga?",
+        "Theek hai. Kya is soch ki koi keemat bhi hai, jise aap nazar-andaaz nahi karenge?",
+    ),
+    Move.steelman.value: (
+        "Achha. Ab doosre paksh ki jagah baithiye: unka sabse mazboot tark kya hoga?",
+        "Theek hai. Jis paksh se aap sahmat nahi, uska sabse achha tark aap kaise rakhenge?",
+        "Ji. Agar aapko doosri taraf se bolna pade, to aap kaunsi baat sabse pehle rakhenge?",
+    ),
+    Move.pressure.value: (
+        "Aapki baat mein dum hai. Koi ek thos udaharan dijiye, jisse yeh aur saaf ho.",
+        "Theek hai. Ise ek asli sthiti se samjhaiye, jo aapne khud dekhi ya suni ho.",
+        "Achha. Is baat ke samarthan mein aap kaunsa ek kaaran sabse pehle rakhenge?",
+    ),
+    Move.reassure.value: (
+        "Koi baat nahi, aaram se sochiye. Aap apne anubhav se is par kya kehna chahenge?",
+        "Jaldi nahi hai. Ek aasaan shuruaat kijiye: is vishay se aapka pehla vaasta kab pada?",
+        "Koi baat nahi. Chaliye ise aasaan karte hain: is par aapka pehla khayal kya aata hai?",
+    ),
+    Move.interrupt.value: (
+        "Ek minute, kripya seedhe mukhya baat par aaiye.",
+    ),
+    Move.rephrase_question.value: (
+        "Chaliye, ise saral tareeke se rakhte hain: is vishay par aap apne anubhav se kya "
+        "sochte hain, aur kyun?",
+    ),
+}
+_PANEL_OPENINGS = ("Achha.", "Theek hai.", "Ji.")
+
+
+def _panel_actor_line(user: str, used: set[str] | None = None) -> str | None:
+    ctx = json.loads(_tag(user, "board_context") or "{}")
+    item = json.loads(_tag(user, "agenda_item") or "{}")
+    move = ctx.get("move", Move.probe.value)
+    last_question = _tag(user, "last_question")
+    # One step per answered turn (the summary has a line for each), so successive lines differ.
+    turn_no = len(_tag(user, "conversation_summary").splitlines())
+    pick = turn_no + zlib.crc32(_tag(user, "candidate_speech").encode("utf-8")) % 3
+    if move == Move.next_question.value:
+        seed = item.get("seed") or "Is vishay par aap apne anubhav se kya kehna chahenge, aur kyun?"
+        if ctx.get("after_handoff"):
+            return f"Shukriya. Namaste. {seed}"
+        if ctx.get("preface_already_spoken"):
+            return seed
+        return f"{_PANEL_OPENINGS[pick % len(_PANEL_OPENINGS)]} {seed}"
+    wordings = _PANEL_WORDINGS.get(move)
+    if not wordings:
+        return None  # fact_challenge and anything else: the UPSC stand-in below
+    said = {last_question, *re.findall(r"- Question: (.+)", _tag(user, "recent_exchanges"))}
+    # `used` is what this stand-in said earlier in the session; `said` is what the panel just asked.
+    for fresh_only in (True, False):
+        for step in range(len(wordings)):
+            line = wordings[(pick + step) % len(wordings)]
+            if any(q and q in line for q in said) or (fresh_only and used and line in used):
+                continue
+            if used is not None:
+                used.add(line)
+            return line
+    return wordings[pick % len(wordings)]
+
+
+def make_actor_responder() -> Callable[[str, str], str]:
+    """An actor stand-in with a memory of its own panel lines, so one fake session never repeats a
+    wording while an unused one is left. One per fake client, so sessions do not share it."""
+    used: set[str] = set()
+
+    def respond(system: str, user: str) -> str:
+        return actor_responder(system, user, used)
+
+    return respond
+
+
+def actor_responder(system: str, user: str, used: set[str] | None = None) -> str:
     debate = _tag(user, "debate_board")
     if debate:
         return _debate_actor_line(json.loads(debate), user)
+    if _tag(user, "agenda_item"):
+        line = _panel_actor_line(user, used)
+        if line is not None:
+            return line
     ctx = json.loads(_tag(user, "board_context") or "{}")
     move = ctx.get("move", Move.probe.value)
     if move == Move.fact_challenge.value:
@@ -425,6 +523,9 @@ def actor_responder(system: str, user: str) -> str:
 
 
 def opener_responder(system: str, user: str) -> str:
+    seed = json.loads(_tag(user, "agenda_item") or "{}").get("seed")
+    if seed:  # opener.v2: the ritual greeting is said by code, so the question only
+        return str(seed)
     form = dict(
         line.split(": ", 1) for line in _tag(user, "application_form").splitlines() if ": " in line
     )
@@ -679,7 +780,7 @@ def fake_responders(
     return {
         "listener": listener_responder,
         "librarian": make_librarian_responder(cards, tolerance),
-        "actor": actor_responder,
+        "actor": make_actor_responder(),
         "opener": opener_responder,
         "judge": judge_responder,
         "judge_debate": debate_judge_responder,
