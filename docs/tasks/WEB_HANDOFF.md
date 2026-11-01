@@ -44,7 +44,7 @@ Another agent is changing the backend at the same time, so these limits are what
 ## Pages
 
 1. **Home:** what this is, one honest explanation of how it works, start button.
-2. **Form:** the fields above, one calm column. Include "Likely questions" as a disabled slot until the API exists.
+2. **Form:** the fields above, one calm column. Include "Likely questions" as a disabled slot until the API exists. Add one quiet hint near the start button, as in Ruling 54: "To leave a subject at any time, say: kisi aur topic pe baat karte hain."
 3. **Interview room:** the core of the product. The panel of five as a quiet row, with the current speaker clear at a glance. Live captions from the board and the candidate, a timer, mic state, and end interview. Include mic-permission, connecting, no-speech, reconnect and error states.
 4. **Report:** printable, grouped by member once the data exists; plain text from the `report` event until then.
 
