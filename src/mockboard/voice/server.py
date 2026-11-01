@@ -134,7 +134,7 @@ def make_session(cfg: AppConfig, form: CandidateForm | None) -> InterviewSession
     from mockboard.modes.debate.session import DebateSetup, Length, OpponentStyle
 
     s = cfg.settings
-    cards, _origin = load_cards_or_builtin(s.cards_dir, s.topics)
+    cards, _origin = load_cards_or_builtin(s.cards_dir)
     session_id = f"voice-{uuid.uuid4().hex[:10]}"
     recorder = TraceRecorder(s.trace_dir, session_id)
     llm = build_llm(s, cfg.fake_llm, cards, recorder)

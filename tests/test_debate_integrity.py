@@ -38,7 +38,7 @@ class NotFakeLLM:
 
 
 def session_for(settings, llm, motion_id: str, *, cards=None, side=Side.against):
-    cards = cards if cards is not None else load_cards(settings.cards_dir, settings.topics)
+    cards = cards if cards is not None else load_cards(settings.cards_dir)
     deps = build_deps(settings, llm, cards=cards)
     setup = DebateSetup(motion=MOTIONS[motion_id], user_side=side)
     return InterviewSession(
@@ -75,7 +75,7 @@ def test_m1_fake_runs_keep_synthetic_cards_for_offline_tests(deps):
 
 
 def test_m1_explicit_setting_overrides_the_llm_check(settings, fake_llm):
-    deps = build_deps(settings, fake_llm, cards=load_cards(settings.cards_dir, settings.topics))
+    deps = build_deps(settings, fake_llm, cards=load_cards(settings.cards_dir))
     setup = DebateSetup(motion=MOTIONS["tourism_hill_towns"], user_side=Side.against,
                         allow_synthetic_cards=False)
     s = InterviewSession(

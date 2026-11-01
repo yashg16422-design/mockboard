@@ -229,7 +229,7 @@ async def run(args: argparse.Namespace) -> int:
 
     # First, so a bad file stops the run before anything is built or spent.
     file_form = load_form_file(args.form_file) if args.form_file else None
-    cards, origin = load_cards_or_builtin(settings.cards_dir, settings.topics)
+    cards, origin = load_cards_or_builtin(settings.cards_dir)
     lines = None
     if args.script:
         lines = Path(args.script).read_text(encoding="utf-8").splitlines()

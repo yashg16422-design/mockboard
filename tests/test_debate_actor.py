@@ -106,7 +106,7 @@ def test_number_guard_drops_uncarded_figures_and_keeps_the_rest():
 
 def test_number_guard_allows_only_the_motions_own_cards():
     s = Settings(_env_file=None)
-    cards = load_cards(s.cards_dir, s.topics)  # the data cards motions 5 and 6 cite
+    cards = load_cards(s.cards_dir)  # the data cards motions 5 and 6 cite
     b = brief_for("tourism_hill_towns", cards.cards.values())
     assert {c.topic for c in b.cards} == {"tourism"}
     # A card figure only in a sentence about that card (ruling 29: two shared content words).

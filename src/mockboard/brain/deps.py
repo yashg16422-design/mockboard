@@ -101,7 +101,7 @@ def build_deps(
     """
     personas = load_personas()
     if cards is None:
-        cards = load_cards(settings.cards_dir, settings.topics)
+        cards = load_cards(settings.cards_dir)
     if allow_synthetic_cards is None:
         allow_synthetic_cards = is_offline_llm(llm)
     if not allow_synthetic_cards:

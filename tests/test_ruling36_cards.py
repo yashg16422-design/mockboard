@@ -30,7 +30,7 @@ class RealModeLLM(FakeLLMClient):
 
 
 def data_cards(settings) -> CardSet:
-    return load_cards(settings.cards_dir, settings.topics)  # all SYNTHETIC test cards today
+    return load_cards(settings.cards_dir)  # all SYNTHETIC test cards today
 
 
 def real_card() -> FactCard:
