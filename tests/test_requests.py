@@ -26,6 +26,7 @@ from mockboard.brain.requests import (
     RequestKind,
     _priority,
     detect_request,
+    word_count,
 )
 
 CORPUS_PATH = Path(__file__).parent / "data" / "request_corpus.jsonl"
@@ -1006,6 +1007,62 @@ def test_avoid_term_survives_garbled_alawa(text, term):
 def test_key_stays_an_english_word():
     assert _got("the key alawa nothing") == NONE
     assert detect_request("key issue is water") is None
+
+
+# ---------------------------------------------------------------------------
+# P1.2: test hygiene (item 7) and the shared word count (Ruling 56)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "text, pattern_id",
+    [
+        ("end the interview", "end_en_bare"),
+        ("ye mushkil hai agla sawal puchiye", "skip_agla_tail"),
+        ("agla topic par chaliye", "change_agla_topic"),
+        ("i would rather not talk about tourism", "change_en_rather"),
+        ("i missed it could you say that again", "repeat_tail"),
+        ("but what do you mean", "clarify_mean_tail"),
+        ("samjhaiye", "clarify_hi_samjhaiye"),
+    ],
+)
+def test_the_untested_patterns_each_win_a_line(text, pattern_id):
+    hit = detect_request(text)
+    assert hit is not None
+    assert hit.pattern_id == pattern_id
+
+
+@pytest.mark.parametrize(
+    "text", ["agla sawal phir se boliye", "agla sawal dohraiye", "dusra sawal dobara puchiye"]
+)
+def test_an_explicit_again_word_is_repeat_even_after_agla(text):
+    assert _got(text) == "repeat"
+
+
+@pytest.mark.parametrize(
+    "text, words",
+    [
+        ("", 0),
+        ("...", 0),
+        ("can we move on", 4),
+        ("Can we, move on?", 4),
+        ("kisiaur topic", 3),  # run together, split
+        ("tourism ke a lawa", 3),  # split apart, joined
+        ("फिरसे बोलिए", 3),
+    ],
+)
+def test_word_count_counts_as_the_detector_counts(text, words):
+    assert word_count(text) == words
+
+
+def test_the_position_rule_uses_the_same_count():
+    """A plain split says 20 words here; the detector says 21, so the mid-turn phrase is out."""
+    tail = "the district has good roads and many small farms near the river roads"
+    text = f"phir se boliye kisiaur {tail} and the farms"
+    assert len(text.split()) == 20
+    assert word_count(text) == SHORT_ANSWER_WORDS + 1
+    assert detect_request(text) is None
+    assert _got(text.replace("kisiaur", "kisi")) == "repeat"
 
 
 @pytest.mark.parametrize(

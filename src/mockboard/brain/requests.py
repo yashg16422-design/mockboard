@@ -537,7 +537,6 @@ _PATTERNS: tuple[tuple[str, RequestKind, str], ...] = (
     ("repeat_hi", RequestKind.REPEAT,
      rf"(?:phir se|dobara|ek baar aur|ek baar phir|ek aur baar)(?: \S+)? {_AGAIN_VERB}"),
     ("repeat_hi_sawal", RequestKind.REPEAT,
-     r"(?<!agla )(?<!next )(?<!aur )(?<!dusra )"
      rf"sawal (?:(?:phir se|dobara|ek baar aur)(?: \S+)? {_AGAIN_VERB}|dohraiye"
      rf"|repeat {_IMPERATIVE})"),
     ("repeat_hi_verb", RequestKind.REPEAT, _START + rf"repeat {_IMPERATIVE}" + _END),
@@ -818,6 +817,15 @@ def _end_describes_something(tokens: _Tokens, start: int) -> bool:
 
 def _position_ok(start: int, total: int) -> bool:
     return total <= SHORT_ANSWER_WORDS or start >= total - TAIL_WORDS
+
+
+def word_count(text: str) -> int:
+    """Words in a turn, counted as the detector counts them (Ruling 56).
+
+    The listener's veto (P5) must use this, so its over-8-words rule cannot disagree with the
+    position rule on run-together or split-apart tokens.
+    """
+    return len(_tokenise(text).canon)
 
 
 def detect_request(text: str) -> RequestHit | None:
