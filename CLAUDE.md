@@ -25,7 +25,7 @@ Mock Board is a voice-first, Hinglish UPSC Personality Test (interview) board, w
 - Three Bedrock lanes (actor / fast / background) with short hot-lane timeouts; chaos test proves sessions survive throttling.
 
 ## Known state (Nov 1, 2026)
-- 722 tests pass offline (`make test`); voice tests need the voice extra.
+- `make test` passes offline; 913 tests with the voice extra installed at P1, Nov 1 (the count grows, so trust the run, not this line). Only Python 3.14 has been run; 3.12 is unverified.
 - Owner's first real session (Round 20) exposed: fixed topics ("tourism", "internal_security" hard-coded in `config.py`), no understanding of candidate requests ("let's talk about something else"), actor sees only the last Q/A, no panel structure. **Next phase fixes these: see `docs/tasks/PANEL_PHASE.md`.**
 - Owner still to report: voice lab choice (`make voice-lab`), Prisma mode choice (`make stt-ab`).
 - No real fact cards yet; real sessions run without fact checks and say so.
@@ -43,4 +43,4 @@ Mock Board is a voice-first, Hinglish UPSC Personality Test (interview) board, w
 - Commit trailer: `Co-Authored-By: Claude <noreply@anthropic.com>`.
 - Prompts are versioned files in `src/mockboard/prompts/` (never edit an old version; add `.vN+1` and log in `prompts/CHANGELOG.md`).
 - Every new behaviour gets a test; board-behaviour invariants (`tests/test_board_invariants.py`, `tests/test_debate_invariants.py`) must keep passing.
-- Real-service checks: you can run them directly on this Mac (network and credentials are available here). Keep real calls small and say what they cost.
+- Real-service checks: never make a real Gnani or Bedrock call that costs credits without the owner's approval first (Ruling 41). This covers subagents. Say what the call does and what it costs when asking. Free targets (`make test`, `lint`, `cli-fake*`, `voice-fake`, `eval*`) need no approval.

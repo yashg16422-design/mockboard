@@ -83,9 +83,10 @@ The aim is a serious examination room rendered as precise engineering documentat
 Real sessions cost the owner credits, so every limit is enforced by the server before a session is built. Page checks are only for messaging.
 
 **Rules**
-- A visitor gets `ACCESS_FREE_SESSIONS` interviews, default **5**.
-- Reviewers enter an access code and are not limited by that count.
-- Each interview is capped at `ACCESS_MAX_ANSWERS` candidate answers, default **20**, on the server.
+- A test user gets `ACCESS_FREE_SESSIONS` interviews, default **5**.
+- Each test-user interview is capped at `ACCESS_MAX_ANSWERS` candidate messages, default **10**, on the server.
+- The owner and reviewers enter an access code and have no limit: no session cap, no message cap and no daily cap. The owner can use it any number of times.
+- An interview lasts at most 17 minutes for everyone (owner's decision), set on the agent side.
 - `ACCESS_DAILY_SESSIONS` caps all non-reviewer sessions per UTC day, default **30**. **This is the real credit guard**, because per-visitor limits can be dodged by clearing cookies.
 - `ACCESS_ENABLED=false` (default) keeps local development and `voice-fake` unchanged.
 
@@ -93,10 +94,11 @@ Real sessions cost the owner credits, so every limit is enforced by the server b
 - `src/mockboard/access/` is a pure module with no FastAPI import, with one function `admit(identity, now) -> Decision`, backed by a `sqlite3` file under a git-ignored `runs/` path.
 - Identity is a signed, HttpOnly, SameSite=Lax cookie holding a random id, plus a salted hash of the client IP so clearing cookies alone does not reset the count. Never store a raw IP. Sign with `ACCESS_SECRET` from the environment.
 - Reviewer codes come from `ACCESS_REVIEWER_CODES` in `.env`, compared in constant time, stored only as a signed cookie flag, never in the repo. Failed code attempts are rate limited.
-- Hook into `POST /api/offer` before any WebRTC work. Refuse with 429 `{ "error": "limit", "reason": "free_used" | "daily_full", "used": n, "limit": n }`, and show a calm message on the page.
-- `GET /api/access` returns remaining interviews and reviewer status for the page.
+- Hook into `POST /api/offer` before any WebRTC work. Refuse with 429 `{ "error": "limit", "reason": "free_used" | "daily_full", "used": n, "limit": n }`, and show the polite notice below.
+- `GET /api/access` returns remaining interviews, messages per interview and reviewer status for the page.
+- **Polite limit notice (required).** Show the limits before the interview starts, and when one is reached explain why, warmly and in plain words. The reason is true: this is a student's contest project, and each spoken interview uses paid speech and AI services, so test access is limited to keep it available for everyone. Never use the words "error", "denied" or "blocked", and never make the visitor feel at fault. Say what is still possible: how many interviews remain, or when the daily limit resets. Suggested wording, adjust only for tone: "Thank you for trying Mock Board. Every spoken interview uses paid speech and AI services, and this is a student project, so test access is limited to 5 interviews of 10 answers each. You have used yours. If you are reviewing this project, please enter your access code." For `daily_full`: "Today's test interviews are all taken. They open again tomorrow. Thank you for your patience."
 - **Counting:** a session counts only when its WebRTC connection really connects. Page reloads must not count. The connection point is the `gate.offer` callback in `/api/offer`. If counting there needs a change outside your files, write it in `WEB_REQUESTS.md`.
-- **The answer cap needs the agent side.** Do not implement it in the brain. Add it to `WEB_REQUESTS.md`, and Claude Code will wire it into the panel.
+- **The message cap is on the agent side.** Do not implement it in the brain. Claude Code will make the Chairperson close the interview courteously at the cap, so it never cuts off mid-line, and will add an event for the page. Pass the reviewer status with the session; the handshake goes in `WEB_REQUESTS.md`.
 - Tests go in `tests/test_access.py`: quota reached, reviewer bypass, daily cap, tampered cookie, disabled mode, no raw IP stored, reload not counted.
 
 ## Merge plan
