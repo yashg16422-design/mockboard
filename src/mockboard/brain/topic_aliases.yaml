@@ -1,0 +1,41 @@
+# Other spoken forms of common domain topics, in Latin and Devanagari (CTO_NOTES_09 section 9).
+# Used only to widen what the board refuses to return to after a candidate says "X ke alawa ..."
+# or asks to change the topic. Words, never facts. A topic missing here is allowed: the phonetic
+# key in brain/avoid_terms.py is the backstop.
+#
+# UNVERIFIED: how real Prisma output spells these words. The lists are ours, written without
+# real transcripts, and each group is only as good as the spellings we thought of.
+tourism: [tourism, turism, tourist, paryatan, पर्यटन, टूरिज्म, टूरिज़्म, पर्यटक]
+agriculture: [agriculture, farming, krishi, kheti, कृषि, खेती, किसान, kisan]
+education: [education, shiksha, शिक्षा, padhai, पढ़ाई, schooling]
+health: [health, healthcare, swasthya, स्वास्थ्य, hospital, अस्पताल]
+corruption: [corruption, bhrashtachar, भ्रष्टाचार, bhrastachar]
+unemployment: [unemployment, berozgari, berojgari, बेरोज़गारी, बेरोजगारी, rozgaar, रोज़गार, रोजगार]
+poverty: [poverty, gareebi, garibi, ग़रीबी, गरीबी]
+environment: [environment, paryavaran, पर्यावरण, ecology]
+pollution: [pollution, pradushan, प्रदूषण]
+climate: [climate, jalvayu, जलवायु]
+water: [water, paani, pani, पानी, jal, जल]
+electricity: [electricity, bijli, बिजली]
+infrastructure: [infrastructure, sadak, सड़क, roads, highway]
+railways: [railway, railways, rail, रेल, रेलवे]
+police: [police, policing, पुलिस]
+judiciary: [judiciary, courts, nyayapalika, न्यायपालिका, adalat, अदालत]
+elections: [election, elections, chunav, चुनाव, voting]
+security: [security, suraksha, सुरक्षा, terrorism, aatankvad, आतंकवाद, naxalism, नक्सलवाद]
+economy: [economy, arthvyavastha, अर्थव्यवस्था, economic]
+inflation: [inflation, mehngai, mehangai, महंगाई, महँगाई]
+women: [women, mahila, mahilayen, महिला, महिलाएं, महिलाएँ]
+youth: [youth, yuva, युवा]
+technology: [technology, praudyogiki, प्रौद्योगिकी, digital, डिजिटल]
+industry: [industry, udyog, उद्योग, manufacturing]
+trade: [trade, vyapar, व्यापार]
+migration: [migration, palayan, पलायन]
+urbanisation: [urbanisation, urbanization, shehri, शहरीकरण, shehr, शहर]
+housing: [housing, awas, आवास]
+sanitation: [sanitation, swachhta, स्वच्छता, swachh]
+transport: [transport, transportation, parivahan, परिवहन]
+population: [population, jansankhya, जनसंख्या]
+disaster: [disaster, aapda, आपदा, flood, floods, baadh, बाढ़]
+reservation: [reservation, arakshan, आरक्षण]
+foreign_policy: [diplomacy, videsh, विदेश]

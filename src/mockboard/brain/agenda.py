@@ -538,6 +538,18 @@ def _title(segment_id: str, terms: dict[str, str]) -> str:
     return f"{_TITLES[segment_id]}: {detail}" if detail else _TITLES[segment_id]
 
 
+def _aliases(segment_id: str, form: CandidateForm) -> tuple[str, ...]:
+    """The form's own words for what this segment is about: what the board must stop saying if
+    the candidate asks to leave it (`brain/avoid_terms.py`). Cleaned by `_term`, so inert."""
+    values: dict[str, list[str | None]] = {
+        HOME_DISTRICT: [form.district, form.home_state],
+        DEGREE: [form.degree_subject],
+        INTERESTS: [*form.hobbies, form.optional_subject],
+    }
+    found = dict.fromkeys(t for t in (_term(v) for v in values.get(segment_id, [])) if t)
+    return tuple(found)[:5]
+
+
 def build_fallback_agenda(
     form: CandidateForm, budgets: Mapping[str, int] | None = None
 ) -> Agenda:
@@ -552,6 +564,7 @@ def build_fallback_agenda(
                 title=_title(segment_id, terms),
                 budget=resolved[segment_id],
                 seeds=_seeds(segment_id, form, terms),
+                aliases=_aliases(segment_id, form),
             )
             for segment_id, member in SEGMENT_MEMBERS.items()
         ],
