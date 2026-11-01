@@ -24,12 +24,15 @@ What can change:
 A declined `end` that counts, after a counted `end` on a segment's last unit, overspends that
 segment by one (Ruling 52 keeps the confirmation there, Ruling 66 covers only the last unit of the
 whole agenda). The cap guard then closes one answer early, so `answers_used <= max_answers` and
-`turns <= max_answers + free_turns` still hold, and `must_ask` is timed against the cap too. Known
-cost: at a tight cap this corner can lose the last segment, situation included.
+`turns <= max_answers + free_turns` still hold, and `must_ask` is timed against the cap too. A
+counted decline with the situation due asks it. Known cost: a candidate who has used every free
+turn and asks to stop on the last available question can still lose it, since adding a turn would
+break the cap (Ruling 62's "should be asked" holds as far as the cap allows, CTO_NOTES_15 §4).
 """
 
 from __future__ import annotations
 
+import logging
 import operator
 import unicodedata
 from collections.abc import Callable, Sequence
@@ -75,6 +78,8 @@ from mockboard.brain.schemas import (
     TurnUnderstanding,
 )
 from mockboard.brain.strategist import CLOSE_TARGET, PRESSURE
+
+logger = logging.getLogger("mockboard.brain.director")
 
 __all__ = [
     "PANEL_FREE_TURNS",
@@ -133,6 +138,8 @@ def is_clear_yes(text: str) -> bool:
     Either the whole reply is yes-words, or it repeats the `end` request without a negation
     ("haan interview khatam karte hain"). Word lists are ours, unmeasured on real transcripts.
     """
+    if text.rstrip().endswith(("?", "？")):  # "ji?" is "pardon?", and a close cannot be undone
+        return False
     words = [w for w in (_norm(t.strip(_PUNCTUATION)) for t in text.split()) if w]
     if not words or any(w.replace("'", "") in _NEGATIONS for w in words):
         return False
@@ -450,7 +457,11 @@ class _Plan:
 def plan_handle_request(p: _Plan) -> PanelDecision:
     kind = p.u.free_kind or p.u.request_kind
     if kind == "end_declined":
-        return p.repeat((p.chair(END_DECLINED_LINES),), "D-RESUME", "end not confirmed; resume")
+        resume = (p.chair(END_DECLINED_LINES),)
+        forced = p.forced_seed()
+        if forced is not None:
+            return p.ask_seed(forced, "the situation must be asked within the budget", resume)
+        return p.repeat(resume, "D-RESUME", "end not confirmed; resume")
     if kind == RequestKind.END:
         move = p.board_move(Move.clarify, p.cfg.chairman, "D-END-CONFIRM", "Ruling 52")
         return p.decision(
@@ -503,8 +514,7 @@ def plan_next_question(p: _Plan) -> PanelDecision:
 
 def plan_close(p: _Plan) -> PanelDecision:
     assert p.u.close_reason is not None
-    before = (p.chair(END_DECLINED_LINES),) if p.u.free_kind == "end_declined" else ()
-    return p.close(p.u.close_reason, before)
+    return p.close(p.u.close_reason)  # "we go on" must not precede the close (CTO_NOTES_15 S1)
 
 
 _PLANNERS: dict[str, Callable[[_Plan], PanelDecision]] = {
@@ -755,8 +765,10 @@ class PanelDirector:
             self.requests.extend(requests)
             self.decisions.extend(decisions)
             self._queued.clear()
-        finally:
+        try:
             await self._graph.checkpointer.adelete_thread(self.session_id)
+        except Exception:  # a leaked thread must not cost the candidate the report
+            logger.warning("director: thread %s not deleted", self.session_id)
         return self.memory
 
 

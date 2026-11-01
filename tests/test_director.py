@@ -287,6 +287,53 @@ def test_is_clear_yes(text: str, expected: bool):
     assert is_clear_yes(text) is expected
 
 
+QUESTIONING_REPLIES = [
+    "ji?", "haan?", "yes?", "ok?", "जी?", "हाँ?", "theek hai?", "bilkul?", "sure?", "ji ？",
+    "kya interview khatam karna hai?",
+]  # fmt: skip
+
+
+@pytest.mark.parametrize("reply", QUESTIONING_REPLIES)
+async def test_a_question_never_closes_the_interview(reply: str):
+    assert is_clear_yes(reply) is False
+    sim = Sim()
+    question = sim.director.memory.last_question
+    await sim.say(END)
+    d = await sim.say(reply)
+    assert not d.finished and d.repeat_text == question and d.free
+
+
+def test_the_question_guard_leaves_a_plain_yes_alone():
+    assert is_clear_yes("haan ji") and is_clear_yes("जी हाँ") and is_clear_yes("ji  ")
+
+
+async def exhausted_at_current_affairs(answered: int) -> Sim:
+    """Cap 10, every free turn gone, `answered` answers given, standing in the last segment."""
+    sim = Sim(cap=10)
+    for _ in range(PANEL_FREE_TURNS):
+        assert (await sim.say("")).free
+    await answers(sim, answered)
+    assert sim.topic == "current_affairs"
+    return sim
+
+
+async def test_a_counted_decline_asks_the_situation_when_it_is_due():
+    sim = await exhausted_at_current_affairs(7)
+    assert (await sim.say(END)).pending_end
+    d = await sim.say("nahi")
+    assert d.counted and d.seed_segment == "current_affairs" and d.seed_index == 2
+    assert texts(d)[0] == hi(END_DECLINED_LINES)
+    assert not d.finished and d.move.move == Move.next_question
+
+
+async def test_a_decline_that_closes_does_not_first_say_we_go_on():
+    sim = await exhausted_at_current_affairs(8)
+    assert (await sim.say(END)).pending_end
+    d = await sim.say("nahi")
+    assert d.finished and d.close_reason == "answers"
+    assert hi(END_DECLINED_LINES) not in texts(d)
+
+
 async def test_ruling_66_end_on_the_last_unit_with_no_free_turn_closes_at_once():
     sim = await to_last_unit(Sim(cap=10, free_turns=0))
     d = await sim.say(END)
@@ -943,3 +990,22 @@ async def test_a_failed_first_run_still_seeds_the_memory():
     await sim.say("")
     d = await sim.say(REPEAT)
     assert d.director_error is None and d.repeat_text == question
+
+
+class _SaverThatCannotDelete:
+    async def adelete_thread(self, thread_id: str) -> None:
+        raise RuntimeError("delete failed")
+
+
+async def test_finish_survives_a_failing_delete(monkeypatch):
+    sim = Sim()
+    await answers(sim, 2)
+    monkeypatch.setattr(sim.director._graph, "checkpointer", _SaverThatCannotDelete())
+    assert (await sim.director.finish()).asked_seeds
+
+
+async def test_finish_survives_a_graph_with_no_checkpointer(monkeypatch):
+    sim = Sim()
+    await answers(sim, 2)
+    monkeypatch.setattr(sim.director._graph, "checkpointer", None)
+    assert (await sim.director.finish()).asked_seeds
