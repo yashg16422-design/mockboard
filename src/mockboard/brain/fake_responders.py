@@ -178,6 +178,63 @@ def extract_claims(text: str) -> list[dict[str, Any]]:
     return claims
 
 
+# The panel listener stand-in (listener.v4). Its word lists are deliberately NOT the detector's:
+# they are the "wider openers" Ruling 57 keeps out of `brain/requests.py`, which a real listener is
+# there to catch. A word list, not understanding.
+_WIDE_ASK = r"(?:why (?:don'?t|do not) we|should we|shall we|how about|what about|maybe we " \
+    r"(?:can|could)|i think we should|can we|could we|let'?s|kya hum)"
+_WIDE_CHANGE = re.compile(
+    rf"\b{_WIDE_ASK}\b[^.?!]{{0,40}}\b(?:something (?:else|different)|(?:another|a different|"
+    r"different) (?:topic|area|subject|direction)|shift|kuch aur|alag)\b",
+    re.IGNORECASE,
+)
+_WIDE_SKIP = re.compile(
+    r"\bi(?:'d| would) rather not (?:answer|attempt|say)\b|\bpass on this one\b", re.IGNORECASE
+)
+_WIDE_REPEAT = re.compile(
+    r"\b(?:could|can|would) you (?:please )?(?:say|ask|repeat) (?:that|it|the question) "
+    r"(?:again|once more)\b",
+    re.IGNORECASE,
+)
+_WIDE_CLARIFY = re.compile(
+    r"\b(?:could|can) you (?:put|say|explain) (?:that|it|the question) (?:more )?(?:simply|"
+    r"differently)\b",
+    re.IGNORECASE,
+)
+_NOTE_STOP = {
+    "which", "their", "there", "these", "those", "about", "would", "could", "should", "because",
+    "being", "where", "while", "after", "before", "other", "using",
+}  # fmt: skip
+
+
+def _fake_request(speech: str) -> str:
+    """What a stand-in listener hears the candidate ask, for a turn of at most 30 words."""
+    if len(speech.split()) > 30:
+        return "none"
+    for kind, pattern in (
+        ("change_topic", _WIDE_CHANGE),
+        ("skip", _WIDE_SKIP),
+        ("repeat", _WIDE_REPEAT),
+        ("clarify_question", _WIDE_CLARIFY),
+    ):
+        if pattern.search(speech):
+            return kind
+    return "none"
+
+
+def _fake_note(speech: str) -> str:
+    """A stand-in for the listener's English paraphrase: the longest few Latin words, never a run of
+    the transcript, so the memory notes of a fake session read like notes and not like a copy."""
+    seen: list[str] = []
+    for word in re.findall(r"[A-Za-z]{5,}", speech):
+        low = word.lower()
+        if low not in seen and low not in _NOTE_STOP:
+            seen.append(low)
+    top = sorted(seen, key=lambda w: (-len(w), seen.index(w)))[:3]
+    top.sort(key=seen.index)
+    return f"Candidate spoke about {', '.join(top)}." if top else ""
+
+
 def listener_responder(system: str, user: str) -> dict[str, Any]:
     speech = to_ascii_digits(nfc(_tag(user, "candidate_speech")))
     low = speech.lower()
@@ -197,6 +254,9 @@ def listener_responder(system: str, user: str) -> dict[str, Any]:
     context = _tag(user, "debate_context")
     if context:  # debate mode (listener_debate.v1): add the optional debate fields
         out.update(_debate_fields(speech, json.loads(context), garbled))
+    if "candidate_request" in system:  # the panel listener (listener.v4 names the field)
+        out["candidate_request"] = _fake_request(speech)
+        out["stance"] = "" if garbled else _fake_note(speech)
     return out
 
 

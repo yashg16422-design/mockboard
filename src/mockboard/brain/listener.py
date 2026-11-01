@@ -12,7 +12,13 @@ from mockboard.brain.llm import LLMClient, ToolSpec
 from mockboard.brain.numbers import nfc, parse_number_phrase
 from mockboard.brain.prompts import PromptKit, tag
 from mockboard.brain.schemas import Analysis, Claim, ClaimKind, DebateArgument, Segment
-from mockboard.brain.tools import LISTENER_TOOL, ListenerClaim, ListenerOutput
+from mockboard.brain.tools import (
+    LISTENER_TOOL,
+    PANEL_LISTENER_TOOL,
+    ListenerClaim,
+    ListenerOutput,
+    PanelListenerOutput,
+)
 
 # Devanagari vowel signs are not `\w` in Python, so the script's block is listed too:
 # "मुझे नहीं पता" is three words, not seven fragments.
@@ -124,6 +130,8 @@ def to_analysis(
             "off_limits": out.off_limits or _raw_text_off_limits(out, segment.text),
         }
     honest = out.honest_unknown or honest_unknown_marker(segment.text)
+    if hasattr(out, "candidate_request"):  # the panel listener's field (P5)
+        debate["candidate_request"] = out.candidate_request
     return Analysis(
         turn_id=turn_id,
         segment_id=segment.segment_id,
@@ -150,6 +158,22 @@ def fallback_analysis(*, turn_id: str, segment: Segment, note: str = "") -> Anal
         word_count=word_count(segment.text),
         is_fallback=True,
     )
+
+
+def panel_listener_wiring(kit: PromptKit, version: int) -> tuple[PromptKit, dict]:
+    """What a panel session's listener call uses in place of the UPSC board's: the same shared
+    prefix, `listener.v<version>`, the panel tool and its output model (P5). The debate listener is
+    a separate tool, and `LISTENER_TOOL` itself is untouched."""
+    panel_kit = PromptKit(
+        shared_prefix=kit.shared_prefix,
+        versions={**kit.versions, "listener": version},
+        card_set_version=kit.card_set_version,
+    )
+    return panel_kit, {
+        "prompt_id": "listener",
+        "tool": PANEL_LISTENER_TOOL,
+        "output_model": PanelListenerOutput,
+    }
 
 
 async def analyse_segment(

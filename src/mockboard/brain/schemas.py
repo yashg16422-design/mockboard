@@ -246,6 +246,13 @@ class Analysis(_Model):
     concedes_point: bool = False  # the user grants one of the opponent's points
     point_strength: PointStrength | None = None
     off_limits: bool = False  # parties, leaders, elections, or attacks on groups
+    # Panel mode only (P5, CTO_NOTES_06 §3): what the panel listener heard the candidate ask of the
+    # board, one of `tools.CANDIDATE_REQUESTS`. A vote, never a decision: the director weighs it.
+    candidate_request: str = "none"
+    # True when any segment of the turn got no analysis (a merged turn is `is_fallback` only when
+    # all did). A listener that failed on a segment has not said "none" about it, so the weak-
+    # pattern veto must not count its silence (Ruling 56).
+    any_fallback: bool = False
 
     @property
     def is_strong(self) -> bool:
@@ -335,6 +342,9 @@ class StrategyContext(_Model):
     voice_signals: VoiceSignals = Field(default_factory=VoiceSignals)
     # Debate mode only (None in UPSC mode).
     debate: DebateContext | None = None
+    # Panel sessions only: the fast graph's listener then uses the panel listener (tool, prompt and
+    # candidate request) instead of the UPSC board's. Set by `PanelHooks.ctx`; False elsewhere.
+    panel: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -618,7 +628,8 @@ class TurnUnderstanding(_Model):
     counted: bool = False
     free: bool = False
     close_reason: CloseReason | None = None
-    change_is_weak: bool = False  # P5's veto goes on this (Ruling 53)
+    change_is_weak: bool = False  # a rule hit was one of the seven weak patterns (Ruling 56)
+    request_disagree: bool = False  # a healthy listener said something else than the rules
 
 
 class PanelDecision(_Model):
@@ -646,6 +657,7 @@ class PanelDecision(_Model):
     request_kind: str | None = None
     request_source: str = "none"
     request_pattern: str = ""
+    request_disagree: bool = False  # trace only (CTO_NOTES_06 §3, Ruling 53)
     avoid_terms: tuple[str, ...] = ()
     director_error: str | None = None
 
@@ -658,6 +670,9 @@ class CompletedTurn(_Model):
     # The question the board actually put after this turn. None for a fixed line or a fallback
     # line, so `repeat` can never replay one.
     asked: str | None = None
+    # The turn's joined transcript, used only to keep a copied run of it out of the memory note
+    # (`director.copies_speech`). It is never written into a note.
+    raw: str = ""
 
 
 # ---------------------------------------------------------------------------

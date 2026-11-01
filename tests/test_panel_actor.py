@@ -88,11 +88,14 @@ def test_actor_v4_states_the_data_rule_and_the_new_blocks():
     assert "{{max_words}}" in body
 
 
-def test_panel_prompt_versions_differ_from_upsc_only_in_actor_and_opener(settings):
+def test_panel_prompt_versions_differ_from_upsc_only_in_listener_actor_and_opener(settings):
     upsc, panel_versions = settings.prompt_versions(), settings.panel_prompt_versions()
-    assert upsc["actor"] == 3 and upsc["opener"] == 1
-    assert panel_versions["actor"] == 5 and panel_versions["opener"] == 2
-    assert {k: v for k, v in panel_versions.items() if upsc[k] != v} == {"actor": 5, "opener": 2}
+    assert upsc["listener"] == 3 and upsc["actor"] == 3 and upsc["opener"] == 1
+    assert panel_versions["listener"] == 4 and panel_versions["actor"] == 5
+    assert panel_versions["opener"] == 2
+    assert {k: v for k, v in panel_versions.items() if upsc[k] != v} == {
+        "listener": 4, "actor": 5, "opener": 2,
+    }
 
 
 def test_changelog_lists_every_new_version():

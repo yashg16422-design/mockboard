@@ -74,7 +74,11 @@ REQUEST_ACCURACY_NOTE = (
     "Latin and Devanagari. Rephrased requests are caught less often: 0.75 on held-out synthetic "
     "lines by rules alone. Accuracy on real speech has not been measured yet."
 )
-_SOURCE_WORDS = {"rules": "found by the board's rules", "llm": "found by the listener"}
+_SOURCE_WORDS = {
+    "rules": "found by the board's rules",
+    "rules+llm": "found by the board's rules and confirmed by the listener",
+    "llm": "found by the listener",
+}
 
 
 @dataclass
@@ -117,6 +121,7 @@ class PanelHooks:
         self._refused_turns: set[str] = set()
         self._line: PanelLine | None = None
         self._director_ms: float = 0.0
+        self._raw = ""
         self._row: dict[str, Any] = {}
         self._finished = False
 
@@ -165,7 +170,11 @@ class PanelHooks:
             ):
                 closed.add(claim.id)
         return ctx.model_copy(
-            update={"last_move": self.last_move, "challenged_claim_ids": sorted(closed)}
+            update={
+                "last_move": self.last_move,
+                "challenged_claim_ids": sorted(closed),
+                "panel": True,  # the fast graph's listener is then the panel listener (P5)
+            }
         )
 
     # -- open -----------------------------------------------------------------
@@ -222,6 +231,7 @@ class PanelHooks:
         hand-offs. Never raises (the director falls back to its pure function)."""
         started = time.monotonic()
         raw = " ".join(seg.text for seg in turn.segments).strip()
+        self._raw = raw  # a reopened turn overwrites it; `apply` reads the last one
         dturn = DirectorTurn(
             ctx=turn.ctx, base_move=move, analysis=analysis, raw_text=raw,
             answers_used=self.answers_used, free_used=self.free_used,
@@ -354,7 +364,7 @@ class PanelHooks:
             st.honest_unknowns_in_topic = 0
             st.pressure_in_topic = 0
         self.director.queue_completed(
-            CompletedTurn(analysis=analysis, decision=d, asked=self._asked(move, d))
+            CompletedTurn(analysis=analysis, decision=d, asked=self._asked(move, d), raw=self._raw)
         )
         self._row = {
             "answers_used": self.answers_used,
@@ -396,6 +406,7 @@ class PanelHooks:
             "candidate_request": d.request_kind,
             "request_source": d.request_source,
             "request_pattern": d.request_pattern,
+            "request_disagree": d.request_disagree,
             "avoid_terms": list(self.avoid_for(d)),
             "counted": d.counted,
             "free": d.free,

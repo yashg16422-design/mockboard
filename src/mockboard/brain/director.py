@@ -34,8 +34,10 @@ from __future__ import annotations
 
 import logging
 import operator
+import re
 import unicodedata
 from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 from typing import Annotated, Any, TypedDict
 
 from langgraph.checkpoint.memory import InMemorySaver
@@ -217,10 +219,71 @@ def _cap_hit(turn: DirectorTurn, cfg: PanelSettings) -> bool:
     return cap_left is not None and cap_left <= 0
 
 
-def _resolve_request(text: str):
-    """The turn's request. P5 adds the listener's vote and the weak-pattern veto here, in the one
-    place that branches on strength (Ruling 53). Until then a weak hit acts like a strong one."""
-    return detect_request(text)
+VETO_OVER_WORDS = 8  # Ruling 53: a weak hit on a turn longer than this can be vetoed
+LLM_REQUEST_MAX_WORDS = 30  # CTO_NOTES_06 §3: a longer turn takes no request from the listener
+
+
+@dataclass(frozen=True)
+class ResolvedRequest:
+    """What the turn asked of the board, after the rules and the listener have both been heard.
+
+    `source` is "rules", "rules+llm", "llm", "llm_ignored" (the listener voted, the code did not
+    follow it), "rules_vetoed" (a weak rule hit the healthy listener denied) or "none".
+    `disagree` is True when a healthy listener said something else than the rules did, whether
+    or not the rules won. `weak_hit` is whether a rule hit was one of the seven weak patterns
+    (before any veto)."""
+
+    kind: RequestKind | None = None
+    source: str = "none"
+    pattern: str = ""
+    avoid_terms: tuple[str, ...] = ()
+    weak_hit: bool = False
+    disagree: bool = False
+
+
+def _listener_vote(analysis: Analysis) -> str | None:
+    """The listener's vote, or None when it cannot be counted: a listener that failed on any
+    segment has not said "none" about it, so its silence is no evidence (Ruling 56)."""
+    if analysis.is_fallback or analysis.any_fallback:
+        return None
+    return analysis.candidate_request or "none"
+
+
+def _resolve_request(turn: DirectorTurn) -> ResolvedRequest:
+    """The one place that weighs the rules against the listener (CTO_NOTES_06 §3, Rulings 53, 56).
+
+    | rules hit X | listener (healthy)  | result                                                   |
+    | X           | X                   | X, "rules+llm"                                           |
+    | X           | anything else       | X, "rules", `disagree`; EXCEPT a weak change_topic and   |
+    |             | including none      | none on a turn over 8 words: "rules_vetoed", no request  |
+    | X           | failed or absent    | X, "rules"                                               |
+    | none        | Y, 30 words or less | Y, "llm"; except `end`, which needs a rule hit           |
+    | none        | Y, over 30 words    | none, "llm_ignored"                                      |
+    | none        | none or failed      | none                                                     |
+
+    Strong patterns and a failed listener never change a rule hit. The detector itself is frozen
+    (Ruling 57): everything wider than its patterns is the listener's to find.
+    """
+    text = turn.raw_text
+    hit = detect_request(text)
+    vote = _listener_vote(turn.analysis)
+    words = word_count(text)
+    if hit is not None:
+        weak = hit.strength is ChangeStrength.WEAK
+        if vote == hit.kind.value:
+            return ResolvedRequest(hit.kind, "rules+llm", hit.pattern_id, hit.avoid_terms, weak)
+        disagree = vote is not None
+        if weak and vote == "none" and words > VETO_OVER_WORDS:
+            return ResolvedRequest(None, "rules_vetoed", hit.pattern_id, (), True, True)
+        return ResolvedRequest(hit.kind, "rules", hit.pattern_id, hit.avoid_terms, weak, disagree)
+    if vote in (None, "none"):
+        return ResolvedRequest()
+    if vote == RequestKind.END.value or words > LLM_REQUEST_MAX_WORDS:
+        return ResolvedRequest(source="llm_ignored")
+    try:
+        return ResolvedRequest(RequestKind(vote), "llm")
+    except ValueError:  # not one of the five kinds
+        return ResolvedRequest()
 
 
 def _is_silence(turn: DirectorTurn) -> bool:
@@ -239,14 +302,15 @@ def understand(
     budget_spent = ctx.turns_in_topic + 1 >= segment.budget
     last_segment = _following(agenda, segment.id) is None
 
-    hit = _resolve_request(turn.raw_text)
-    kind = hit.kind if hit is not None else None
+    hit = _resolve_request(turn)
+    kind = hit.kind
     known: dict[str, Any] = {
         "request_kind": kind.value if kind else None,
-        "request_source": "rules" if kind else "none",
-        "request_pattern": hit.pattern_id if hit else "",
-        "avoid_terms": hit.avoid_terms if hit else (),
-        "change_is_weak": hit is not None and hit.strength is ChangeStrength.WEAK,
+        "request_source": hit.source,
+        "request_pattern": hit.pattern,
+        "avoid_terms": hit.avoid_terms,
+        "change_is_weak": hit.weak_hit,
+        "request_disagree": hit.disagree,
     }
 
     # Step 1, the reply: a clear yes neither counts nor uses a free turn (CTO_NOTES_12 §9.3).
@@ -386,6 +450,7 @@ class _Plan:
             request_kind=self.u.request_kind,
             request_source=self.u.request_source,
             request_pattern=self.u.request_pattern,
+            request_disagree=self.u.request_disagree,
             avoid_terms=self.u.avoid_terms,
             **fields,
         )
@@ -546,11 +611,58 @@ def decide_panel(
 # --- Folding finished turns --------------------------------------------------------------------
 
 
-def _gist(analysis: Analysis) -> str:
-    if analysis.is_fallback:
+MAX_NOTE_WORDS = 15  # one stance or reason, in the notes the board remembers
+COPY_RUN_WORDS = 6  # this many words in a row from the transcript make a piece a copy of it
+_NOTE_WORD = re.compile(r"[\w\u0900-\u097f']+")
+_DEVANAGARI = re.compile(r"[\u0900-\u097f]")
+UNKNOWN_NOTE = "Said honestly that they did not know."
+
+
+def _note_words(text: str) -> list[str]:
+    return [w.casefold() for w in _NOTE_WORD.findall(text)]
+
+
+def copies_speech(piece: str, raw: str) -> bool:
+    """True when `piece` repeats a run of `COPY_RUN_WORDS` or more words of the transcript.
+
+    A note is a paraphrase by the listener (listener.v4). A copied run may carry a speech
+    recognition error, and the board would later say it back as its own memory of the candidate.
+    The cost is that an English answer paraphrased very closely loses that note: a thinner memory
+    is the safer side of that trade."""
+    mine, theirs = _note_words(piece), _note_words(raw)
+    if len(mine) < COPY_RUN_WORDS or len(theirs) < COPY_RUN_WORDS:
+        return False
+    runs = {tuple(theirs[i : i + COPY_RUN_WORDS]) for i in range(len(theirs) - COPY_RUN_WORDS + 1)}
+    return any(
+        tuple(mine[i : i + COPY_RUN_WORDS]) in runs for i in range(len(mine) - COPY_RUN_WORDS + 1)
+    )
+
+
+def _gist(done: CompletedTurn) -> str:
+    """The note the board keeps of one answered question (CTO_NOTES_06 §5, P5 quality rules).
+
+    Empty for a fallback analysis, a garbled one, and a turn that was only a request (a request
+    is not what the candidate thinks). Every piece must be English, in the listener's own words
+    (no Devanagari, no run copied from the transcript), at most `MAX_NOTE_WORDS` long and new. An
+    honest "I do not know" is kept as a note, since it tells the next member what not to press on.
+    The whole note is capped at `MAX_GIST_WORDS`. Raw text never gets in."""
+    analysis, d = done.analysis, done.decision
+    if analysis.is_fallback or analysis.garbled:
         return ""
-    pieces = [analysis.stance, *analysis.reasons[:MAX_GIST_REASONS]]
-    return " ".join(" ".join(p for p in pieces if p).split()[:MAX_GIST_WORDS])
+    if d.request_kind in ("skip", "change_topic") and not analysis.reasons:
+        return ""
+    kept: list[str] = []
+    seen: set[str] = set()
+    for piece in [analysis.stance, *analysis.reasons[:MAX_GIST_REASONS]]:
+        text = " ".join(" ".join(piece.split()[:MAX_NOTE_WORDS]).split())
+        key = text.casefold()
+        if not text or key in seen or _DEVANAGARI.search(text) or copies_speech(text, done.raw):
+            continue
+        seen.add(key)
+        kept.append(text)
+    if analysis.honest_unknown and not any("know" in k.casefold() for k in kept):
+        kept.insert(0, UNKNOWN_NOTE)
+    return " ".join(" ".join(kept).split()[:MAX_GIST_WORDS])
 
 
 def _keeps_last_question(done: CompletedTurn) -> bool:
@@ -585,7 +697,7 @@ def _fold_one(memory: PanelMemory, done: CompletedTurn) -> PanelMemory:
             segment_id=d.answered_segment,
             member=d.answered_member,
             question=memory.last_question,
-            gist=_gist(done.analysis),
+            gist=_gist(done),
         )
         update["notes"] = [*memory.notes, note]
     uses = _count_line_uses(memory, d)

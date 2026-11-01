@@ -94,7 +94,7 @@ from mockboard.brain.judge import (
     run_judge,
 )
 from mockboard.brain.librarian import ask_librarian, claim_cache_key, fallback_vote, gate_verdict
-from mockboard.brain.listener import analyse_segment, fallback_analysis
+from mockboard.brain.listener import analyse_segment, fallback_analysis, panel_listener_wiring
 from mockboard.brain.llm import LLMError, is_transient
 from mockboard.brain.schemas import (
     Analysis,
@@ -362,7 +362,12 @@ def _make_listener(max_attempts: int, late: LateListens) -> Callable:
         ctx = state.get("ctx")
         rt = deps.mode(ctx.mode if ctx is not None else None)  # ADR-009
         mode_kwargs: dict[str, Any] = {}
-        if rt.profile.listener_tool is not None:
+        kit = rt.kit
+        if ctx is not None and ctx.panel:  # a panel session: the panel listener (P5)
+            kit, mode_kwargs = panel_listener_wiring(
+                rt.kit, deps.settings.prompt_listener_panel_version
+            )
+        elif rt.profile.listener_tool is not None:
             tool, output_model = rt.profile.listener_tool
             mode_kwargs = {
                 "prompt_id": rt.profile.prompt_id("listener"),
@@ -375,7 +380,7 @@ def _make_listener(max_attempts: int, late: LateListens) -> Callable:
         call = asyncio.ensure_future(
             analyse_segment(
                 deps.llm,
-                rt.kit,
+                kit,
                 segment=seg,
                 question=state.get("question", ""),
                 turn_id=turn_id,

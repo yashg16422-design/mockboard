@@ -239,6 +239,7 @@ class Settings(BaseSettings):
     prompt_judge_version: int = 1
     prompt_opener_version: int = 1
     # The panel's prompts (P4, behind --panel only). The UPSC versions above stay until P7.
+    prompt_listener_panel_version: int = 4  # v3 + the candidate's request, English-only notes
     prompt_actor_panel_version: int = 5  # v4 + Namaste only at the first hand-off (Ruling 73)
     prompt_opener_panel_version: int = 2  # no greeting: the ritual line is said by code
     # Debate mode (ADR-009, CTO_NOTES_04).
@@ -329,9 +330,10 @@ class Settings(BaseSettings):
         }
 
     def panel_prompt_versions(self) -> dict[str, int]:
-        """The UPSC map with the panel's actor and opener. Recorded in a panel session's trace."""
+        """The UPSC map with the panel's listener, actor and opener, for a panel session's trace."""
         return {
             **self.prompt_versions(),
+            "listener": self.prompt_listener_panel_version,
             "actor": self.prompt_actor_panel_version,
             "opener": self.prompt_opener_panel_version,
         }

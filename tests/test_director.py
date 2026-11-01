@@ -221,7 +221,8 @@ async def test_change_topic_in_the_last_segment_closes():
     assert texts(d) == [hi(CHANGE_TOPIC_ACK_LINES), hi(CLOSE_LINES)]
 
 
-async def test_a_weak_change_acts_like_a_strong_one_until_p5():
+async def test_a_weak_change_on_a_short_turn_stands_even_when_the_listener_says_none():
+    """P5's veto only covers turns over 8 words (Ruling 53); the Sim's listener says none."""
     sim = Sim()
     await answers(sim, 2)
     d = await sim.say("can we move on")
@@ -895,7 +896,9 @@ def test_a_gist_is_capped_and_paraphrased():
     sim = Sim()
     turn, _ = sim.build(ANSWER)
     d = decide_panel(turn, agenda, opening_memory(agenda), sim.settings)
-    analysis = Analysis(turn_id="t1", stance=" ".join(["word"] * 50), reasons=["a", "b", "c"])
+    stance = " ".join(f"s{i}" for i in range(40))  # a piece is trimmed to 15 words, then the whole
+    reasons = [" ".join(f"{k}{i}" for i in range(40)) for k in ("r", "q", "p")]  # note to 30
+    analysis = Analysis(turn_id="t1", stance=stance, reasons=reasons)
     done = CompletedTurn(analysis=analysis, decision=d)
     memory, _, _ = fold_turns(opening_memory(agenda), [done])
     assert len(memory.notes[0].gist.split()) == 30

@@ -99,6 +99,46 @@ LISTENER_TOOL = ToolSpec(
 )
 
 
+# Panel listener (P5, CTO_NOTES_06 §3): the UPSC fields plus the candidate's request to the board,
+# as the model heard it. A separate tool and model, so `LISTENER_TOOL` (which the debate tool
+# spreads) is not touched. The code decides what the vote is worth (`brain/director.py`).
+
+CANDIDATE_REQUESTS = ("none", "change_topic", "repeat", "clarify_question", "skip", "end")
+
+
+class PanelListenerOutput(ListenerOutput):
+    candidate_request: str = "none"
+
+    @field_validator("candidate_request", mode="before")
+    @classmethod
+    def _known_request(cls, v: object) -> str:
+        """An unknown or odd value is no request, never an error: a request must be one of the five
+        kinds the director knows, and everything else is `none`."""
+        word = v.strip().lower().replace("-", "_").replace(" ", "_") if isinstance(v, str) else ""
+        return word if word in CANDIDATE_REQUESTS else "none"
+
+
+PANEL_LISTENER_TOOL = ToolSpec(
+    name="record_panel_analysis",
+    description=(
+        "Record the structured analysis of one segment of the candidate's answer, and whether "
+        "the candidate is asking the board to do something."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            **LISTENER_TOOL.input_schema["properties"],
+            "candidate_request": {
+                "type": "string",
+                "enum": list(CANDIDATE_REQUESTS),
+                "description": "What the candidate asks the board to do, or 'none'.",
+            },
+        },
+        "required": [*LISTENER_TOOL.input_schema["required"], "candidate_request"],
+    },
+)
+
+
 # Debate listener (CTO_NOTES_04 §2): the UPSC fields plus optional debate fields. A separate
 # tool and model, so the UPSC listener's schema and parsing are untouched.
 
@@ -505,6 +545,7 @@ CASE_FILE_TOOL = ToolSpec(
 
 ALL_TOOLS: dict[str, tuple[ToolSpec, type[BaseModel]]] = {
     "listener": (LISTENER_TOOL, ListenerOutput),
+    "listener_panel": (PANEL_LISTENER_TOOL, PanelListenerOutput),
     "listener_debate": (DEBATE_LISTENER_TOOL, DebateListenerOutput),
     "librarian": (LIBRARIAN_TOOL, LibrarianOutput),
     "judge": (JUDGE_TOOL, JudgeOutput),
