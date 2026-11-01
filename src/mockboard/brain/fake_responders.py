@@ -492,10 +492,15 @@ _PANEL_WORDINGS: dict[str, tuple[str, ...]] = {
         "Theek hai. Ise ek asli sthiti se samjhaiye, jo aapne khud dekhi ya suni ho.",
         "Achha. Is baat ke samarthan mein aap kaunsa ek kaaran sabse pehle rakhenge?",
     ),
+    # `{topic}` is what the segment is about (`_segment_topic`), so a reassure after silence says
+    # what it is reassuring about and never "is vishay" with nothing before it (Ruling 76 item 4).
     Move.reassure.value: (
-        "Koi baat nahi, aaram se sochiye. Aap apne anubhav se is par kya kehna chahenge?",
-        "Jaldi nahi hai. Ek aasaan shuruaat kijiye: is vishay se aapka pehla vaasta kab pada?",
-        "Koi baat nahi. Chaliye ise aasaan karte hain: is par aapka pehla khayal kya aata hai?",
+        "Koi baat nahi, aaram se sochiye. Aap {topic} ke baare mein apne anubhav se kya kehna "
+        "chahenge?",
+        "Jaldi nahi hai. Ek aasaan shuruaat kijiye: {topic} ke baare mein aapko sabse pehle kya "
+        "laga tha?",
+        "Koi baat nahi. Chaliye ise aasaan karte hain: {topic} par aapka pehla khayal kya aata "
+        "hai?",
     ),
     Move.interrupt.value: (
         "Ek minute, kripya seedhe mukhya baat par aaiye.",
@@ -505,6 +510,21 @@ _PANEL_WORDINGS: dict[str, tuple[str, ...]] = {
         "sochte hain, aur kyun?",
     ),
 }
+# What each segment is about, in the words a member would use, keyed by the start of the segment's
+# title (`agenda._TITLES`; a title may carry ": detail" after it). Unknown: the question itself.
+_SEGMENT_TOPICS = (
+    ("The candidate's form", "civil services ki taraf aapke safar"),
+    ("Home state", "apne zile"),
+    ("Degree subject", "apni padhai"),
+    ("Hobbies", "apne shauk aur optional vishay"),
+    ("Current affairs", "is mudde"),
+)
+
+
+def _segment_topic(title: str) -> str:
+    return next((t for head, t in _SEGMENT_TOPICS if title.startswith(head)), "is sawal")
+
+
 _PANEL_OPENINGS = ("Achha.", "Theek hai.", "Ji.")
 _PANEL_THANKS = ("Ji, shukriya.", "Aabhaar.", "Ji, dhanyavaad.")
 
@@ -532,6 +552,8 @@ def _panel_actor_line(user: str, used: set[str] | None = None) -> str | None:
     wordings = _PANEL_WORDINGS.get(move)
     if not wordings:
         return None  # fact_challenge and anything else: the UPSC stand-in below
+    topic = _segment_topic(str(item.get("segment", "")))
+    wordings = tuple(w.replace("{topic}", topic) for w in wordings)
     said = {last_question, *re.findall(r"- Question: (.+)", _tag(user, "recent_exchanges"))}
     # `used` is what this stand-in said earlier in the session; `said` is what the panel just asked.
     for fresh_only in (True, False):
@@ -604,23 +626,22 @@ def opener_responder(system: str, user: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Agenda planner (agenda_plan.v1)
+# Agenda planner (agenda_plan.v2: never names the district or the state)
 # ---------------------------------------------------------------------------
 
 _PLAN_SEEDS: dict[str, dict[str, tuple[str, ...]]] = {
     "hi-en": {
         "form_hr": (
-            "{place} se hone aur {degree} padhne ke baad, aapko civil services kyun sahi raasta "
-            "laga?",
+            "{degree} padhne ke baad, aapko civil services kyun sahi raasta laga?",
             "Agar civil services ka sapna poora na ho, to aap samaj ke liye kaunsa kaam chunenge, "
             "aur kyun?",
         ),
         "home_district": (
-            "{place} mein rehkar aapne logon ki kaunsi dikkat kareeb se dekhi, aur use door karne "
-            "ke liye aap kya karenge?",
-            "Agar aap {place} ke prashasan mein hote, to sabse pehle kis ek cheez ko badalna "
+            "Apne zile mein rehkar aapne logon ki kaunsi dikkat kareeb se dekhi, aur use door "
+            "karne ke liye aap kya karenge?",
+            "Agar aap apne zile ke prashasan mein hote, to sabse pehle kis ek cheez ko badalna "
             "chahenge, aur kyun?",
-            "{state} mein gaon aur shehar ke beech aapko kaunsa antar khatakta hai, aur kyun?",
+            "Apne rajya mein gaon aur shehar ke beech aapko kaunsa antar khatakta hai, aur kyun?",
         ),
         "degree": (
             "{degree} padhte hue aapne kaunsa ek vichar seekha jo aam logon ki zindagi se jud "
@@ -640,17 +661,17 @@ _PLAN_SEEDS: dict[str, dict[str, tuple[str, ...]]] = {
     },
     "en": {
         "form_hr": (
-            "Coming from {place} and having studied {degree}, why did the civil services feel "
-            "like the right path for you?",
+            "Studying {degree}, why did the civil services feel like the right path for you?",
             "If the civil services do not work out, which work would you choose for society, and "
             "why?",
         ),
         "home_district": (
-            "Living in {place}, which difficulty of ordinary people have you seen up close, and "
-            "what would you do about it?",
-            "If you were in the administration of {place}, which one thing would you change "
-            "first, and why?",
-            "Between the villages and the towns of {state}, which gap troubles you, and why?",
+            "Living in your district, which difficulty of ordinary people have you seen up "
+            "close, and what would you do about it?",
+            "If you were in the administration of your district, which one thing would you "
+            "change first, and why?",
+            "Between the villages and the towns of your home state, which gap troubles you, and "
+            "why?",
         ),
         "degree": (
             "While studying {degree}, which one idea did you learn that touches ordinary lives, "

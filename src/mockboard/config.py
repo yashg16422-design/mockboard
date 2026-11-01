@@ -254,7 +254,7 @@ class Settings(BaseSettings):
     prompt_actor_version: int = 5  # v4 + Namaste only at the first hand-off (Ruling 73)
     prompt_judge_version: int = 1
     prompt_opener_version: int = 2  # no greeting: the ritual line is said by code
-    prompt_agenda_plan_version: int = 1  # Nova's seed questions for four segments (P6)
+    prompt_agenda_plan_version: int = 2  # Nova's seed questions (P6); v2: never names the place
     # Debate mode (ADR-009, CTO_NOTES_04).
     prompt_shared_debate_version: int = 1
     prompt_listener_debate_version: int = 2  # Round 20: Devanagari

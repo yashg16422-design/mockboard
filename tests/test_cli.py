@@ -215,7 +215,7 @@ def test_answers_only_example_gives_the_same_board_lines_as_the_form_script(caps
     out = capsys.readouterr().out
     board = "".join(line + "\n" for line in out.splitlines() if line.startswith("["))
     assert rc == 0
-    assert hashlib.md5(board.encode("utf-8")).hexdigest() == "e748940f8faa2863b5891d3c71532a67"
+    assert hashlib.md5(board.encode("utf-8")).hexdigest() == "e32140d5f91a41cfa21da8b5860720fa"
 
 
 # --- Ruling 73 item 5: the panel's turn cap is its agenda, so --max-turns must not pretend ------

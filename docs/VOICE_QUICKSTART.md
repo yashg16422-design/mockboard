@@ -70,7 +70,7 @@ make voice-debate MOTION=1 SIDE=for
 
 Extra options are `--length quick|standard`, `--language hinglish|english|hindi` and `--opponent logician|wit`. The Moderator introduces the motion, you give your opening statement, the opponent opens, there is a clash round, and then come the closing statements. At the end the Moderator says "The board will confer" and reads the verdict, and the full debate report appears in the page.
 
-Useful switches for either mode: `--fake-llm` (real voice, free model), `--fake-speech` (real model, no Gnani credits), `--voice Vikrant` (another voice of the model in `TTS_MODEL`), `--max-turns 4` (a shorter session), `--record-audio` (save your own microphone audio, section 7) and `--port 7862`.
+Useful switches for either mode: `--fake-llm` (real voice, free model), `--fake-speech` (real model, no Gnani credits), `--voice Vikrant` (another voice of the model in `TTS_MODEL`), `--record-audio` (save your own microphone audio, section 7) and `--port 7862`. `--max-turns 4` (a shorter session) is for debate only: the UPSC panel sets its own turn cap from its agenda and the server refuses the flag there (a test user's cap comes from `ACCESS_MAX_ANSWERS`).
 
 ## 5. What a session costs (estimates, not measurements)
 

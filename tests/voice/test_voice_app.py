@@ -41,6 +41,25 @@ def test_parse_args_and_public_config(settings):
         server.parse_args(["--mode", "debate", "--motion", "99", "--side", "for"])
 
 
+def test_the_server_refuses_max_turns_for_the_panel_and_keeps_it_for_debate(capsys):
+    """Ruling 76 item 3 (CTO_NOTES_16 S3): the panel sets its own turn cap, so a flag that would be
+    silently ignored is refused, as the text CLI refuses it."""
+    for argv in (["--mode", "upsc", "--max-turns", "4"],
+                 ["--max-turns", "4"]):  # upsc is the default mode
+        with pytest.raises(SystemExit) as exc:
+            server.parse_args(argv)
+        assert exc.value.code == 2
+        err = capsys.readouterr().err
+        assert "--max-turns" in err and "ACCESS_MAX_ANSWERS" in err
+    debate = ["--mode", "debate", "--motion", "1", "--side", "for"]
+    assert server.parse_args([*debate, "--max-turns", "4"]).max_turns == 4
+    assert server.parse_args(debate).max_turns == 9
+    assert server.parse_args(["--mode", "upsc"]).max_turns == 9  # unused: the agenda decides
+    quickstart = (server.HERE.parents[2] / "docs" / "VOICE_QUICKSTART.md").read_text("utf-8")
+    advertised = [line for line in quickstart.splitlines() if "--max-turns 4" in line]
+    assert advertised and all("debate only" in line for line in advertised)
+
+
 def test_page_config_and_form_validation(settings):
     cfg = cfg_for(settings, ["--mode", "upsc", "--fake-speech"])  # real LLM: no default form
     client = TestClient(server.create_app(cfg))

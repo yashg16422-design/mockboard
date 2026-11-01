@@ -20,8 +20,10 @@ What Nova may and may not write, from CTO_NOTES_12 §8:
   `template`; one with some is `nova`.
 
 # UNVERIFIED: how fast Nova answers, and how often its seeds pass. Both come from an approved real
-# run. The checks are conservative but they are not proof: a lower-case name, or a fact presupposed
-# in a question ("Kanpur ke chamda udyog ne yahan ki zindagi kaise badli?") can still pass a regex.
+# run. The checks are conservative but they are not proof: a lower-case name can still pass a regex,
+# and so can a fact presupposed about something other than the district or state. A seed that names
+# the district or the state is refused outright (Ruling 76 item 1), because that is where a
+# presupposed place fact ("Kanpur ke chamda udyog ne yahan ki zindagi kaise badli?") would sit.
 # `check_place_facts` in the actor gate and the prompt are the remaining nets. If real output does
 # not hold up, cut P6 (it is on the cut list); the template agenda is the product.
 """
@@ -55,6 +57,8 @@ __all__ = [
     "PlanReport",
     "build_plan_graph",
     "build_plan_user",
+    "names_the_place",
+    "place_terms",
     "plan_agenda",
     "planned_seed_violations",
     "replaceable_positions",
@@ -114,6 +118,44 @@ def _allowed_capitals(form: CandidateForm) -> frozenset[str]:
     return frozenset(words | _OPENERS | _ACRONYM_OK)
 
 
+# Words of a place that say which kind of place or which direction it is, not which place: a state
+# "Uttar Pradesh" is named by the whole phrase, not by "uttar" (which is also a Hindi word), and a
+# district "Kanpur Nagar" is named by "Kanpur". Lower case.
+_GENERIC_PLACE_WORDS = frozenset(
+    {
+        "nagar", "pradesh", "uttar", "dakshin", "madhya", "purvi", "paschim", "district", "state",
+        "city", "urban", "rural", "union", "territory", "north", "south", "east", "west",
+    }
+)  # fmt: skip
+_MIN_PLACE_WORD = 5
+
+
+def place_terms(form: CandidateForm) -> tuple[str, ...]:
+    """What names the candidate's district or state: each whole value, and each word of it that
+    is long enough and not a generic word. Ruling 76 item 1 (CTO_NOTES_16 S1): the template lines
+    already carry the place, so a planned seed need not, and one that does presupposes a fact about
+    it ("Kanpur ke chamda udyog ne yahan ki zindagi kaise badli?")."""
+    terms: list[str] = []
+    for value in (form.district, form.home_state):
+        if not value:
+            continue
+        whole = " ".join(value.split())
+        terms.append(whole)
+        terms.extend(
+            w for w in re.findall(r"[A-Za-z]+", whole)
+            if len(w) >= _MIN_PLACE_WORD and w.lower() not in _GENERIC_PLACE_WORDS
+        )
+    return tuple(dict.fromkeys(terms))
+
+
+def names_the_place(seed: str, form: CandidateForm) -> str | None:
+    """The term of the district or state the seed names, whole-word and ignoring case, or None."""
+    for term in place_terms(form):
+        if re.search(rf"(?<![A-Za-z]){re.escape(term)}(?![A-Za-z])", seed, re.IGNORECASE):
+            return term
+    return None
+
+
 def planned_seed_violations(
     text: str, segment_id: str, form: CandidateForm, avoid: Sequence[str] = ()
 ) -> list[str]:
@@ -123,6 +165,8 @@ def planned_seed_violations(
         return ["not text"]
     seed = text.strip()
     problems: list[str] = []
+    if names_the_place(seed, form) is not None:
+        problems.append("names the candidate's district or state")
     if not _ALLOWED.match(seed):
         problems.append("has a character a plain question does not (digit, quote, mark-up, stop)")
     if seed.count("?") != 1:

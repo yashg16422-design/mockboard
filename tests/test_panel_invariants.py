@@ -675,6 +675,28 @@ async def test_a_repeat_after_a_reassure_says_the_reassures_simpler_question(
     assert after.line.parts[-1].text == asked  # silence did not replace it
 
 
+SEGMENT_REFERENTS = [
+    "civil services ki taraf aapke safar", "apne zile", "apni padhai",
+    "apne shauk aur optional vishay", "is mudde",
+]
+
+
+@pytest.mark.parametrize("segment_index", range(5))
+async def test_a_reassure_after_silence_says_what_it_is_about_and_varies_with_the_segment(
+    settings, cards, form, tmp_path, segment_index
+):
+    """Ruling 76 item 4 (CTO_NOTES_16 S4): "is vishay se ..." with nothing before it was said to a
+    candidate whose question was about something else. The line now names the segment's subject."""
+    session, _, _ = await start(settings, cards, form, tmp_path)
+    await reach(session, segment_index, 0, [])
+    out = await answer(session, "", think_s=0.5)
+    assert out.move.move == Move.reassure
+    said = " ".join(texts(out))
+    assert "is vishay" not in said.lower(), said
+    assert SEGMENT_REFERENTS[segment_index] in said, said
+    await session.close()
+
+
 REQUEST_MIX = [
     *PLAIN, *PLAIN,
     "please repeat", "next question please", CHANGES["latin"], CHANGES["no_term"],

@@ -66,7 +66,11 @@ DEBATE_MODE = "debate"
 DEBATE_BOARD_LINES_MD5 = "f2a23f33b90df75103f505a2696e6944"
 # md5 of `cli --fake --script examples/fake_session.txt --session-id golden-sess | grep '^\['`, the
 # panel's board lines (P7). It replaces 826ef550999cc34d9018806dce1b665e, the old board's.
-UPSC_BOARD_LINES_MD5 = "e748940f8faa2863b5891d3c71532a67"
+# Milestone D moved it from e748940f8faa2863b5891d3c71532a67 (Ruling 76 items 1 and 4): three board
+# lines changed, the planner stand-in no longer names the district in two questions, and a reassure
+# after silence names what it is about ("is mudde par", not "is par"). The debate hash below is
+# untouched.
+UPSC_BOARD_LINES_MD5 = "e32140d5f91a41cfa21da8b5860720fa"
 # sha256 values taken at 7d94936, before any Panel phase code.
 DEBATE_PREFIX_SHA256 = "a36d6feb232b9f86209639a161be6a48465e1635140a7bf15a4a402659246555"
 DEBATE_TOOLS_SHA256 = {

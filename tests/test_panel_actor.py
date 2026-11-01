@@ -93,7 +93,7 @@ def test_upsc_prompt_versions_are_the_panels_and_the_old_board_files_stay_on_dis
     deleted (the prompt rule), they are simply no longer named."""
     versions = settings.prompt_versions()
     assert versions["listener"] == 4 and versions["actor"] == 5
-    assert versions["opener"] == 2 and versions["agenda_plan"] == 1
+    assert versions["opener"] == 2 and versions["agenda_plan"] == 2
     for old in ("listener.v3.md", "actor.v3.md", "opener.v1.md"):
         assert (PROMPT_DIR / old).exists(), old
     assert "agenda_plan" not in settings.prompt_versions("debate")

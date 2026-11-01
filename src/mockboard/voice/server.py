@@ -577,7 +577,10 @@ def parse_args(argv: list[str] | None = None) -> AppConfig:
     p.add_argument("--fake-speech", action="store_true",
                    help="fake STT/TTS: beeps and scripted answers, no Gnani credits")
     p.add_argument("--voice", help="Timbre voice (default TTS_VOICE, normally Poorvi)")
-    p.add_argument("--max-turns", type=int, default=9)
+    p.add_argument("--max-turns", type=int, default=None,
+                   help="debate only: hard cap on candidate turns (default 9). The UPSC panel sets "
+                        "its own cap from its agenda and refuses this flag; a test user's cap "
+                        "comes from ACCESS_MAX_ANSWERS (Ruling 76 item 3)")
     p.add_argument("--host", default="localhost")
     p.add_argument("--port", type=int, default=7860)
     p.add_argument("--trace-dir", help="override TRACE_DIR (default traces)")
@@ -585,12 +588,16 @@ def parse_args(argv: list[str] | None = None) -> AppConfig:
                    help="save YOUR microphone audio to traces/<session>.mic.wav on this computer "
                         "(off by default; for `python -m mockboard.voice.stt_ab`)")
     a = p.parse_args(argv)
+    if MODES[a.mode] != "debate" and a.max_turns is not None:
+        p.error("--max-turns does not apply to the UPSC panel: the agenda sets the turn cap, and "
+                "a test user's cap comes from ACCESS_MAX_ANSWERS (--max-turns is for debate)")
     settings = Settings()
     if a.trace_dir:
         settings = settings.model_copy(update={"trace_dir": Path(a.trace_dir)})
     cfg = AppConfig(mode=MODES[a.mode], settings=settings, fake_llm=a.fake_llm,
                     fake_speech=a.fake_speech, voice=a.voice or settings.tts_voice,
-                    max_turns=a.max_turns, length=a.length, language=a.language,
+                    max_turns=9 if a.max_turns is None else a.max_turns, length=a.length,
+                    language=a.language,
                     opponent=a.opponent, host=a.host, port=a.port,
                     record_audio=a.record_audio)
     if cfg.mode == "debate":

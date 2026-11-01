@@ -13,14 +13,14 @@ Interview language [hinglish/hindi/english] (default hinglish): hinglish
 Agenda: nova (11 questions written by the planner, 0 replaced by templates, <n> ms)
 
 [Chairperson Sharma] Namaste. Please be seated.
-[Chairperson Sharma] Kanpur Nagar se hone aur Electronics padhne ke baad, aapko civil services kyun sahi raasta laga?
+[Chairperson Sharma] Electronics padhne ke baad, aapko civil services kyun sahi raasta laga?
 
 You: Kanpur mein maine dekha ki small electronics repair shops bahut hain, lekin skilled training kam hai. Main ITI ke saath tie-up karke repair skilling badhaunga.
 [Chairperson Sharma] (probe, R8) Ji. Agar aap khud is sthiti mein hote, to pehla qadam kya uthate, aur kyun?
 
 You: Exampleland mein tourism GDP ka 30 percent hai in 2023, isliye tourism hi growth ka main engine hai and jobs bhi wahi deta hai.
 [Chairperson Sharma] Dhanyavaad. Shrimati Menon, please.
-[Shrimati Menon] (move_on, D-HANDOFF) Shukriya. Namaste. Kanpur Nagar mein rehkar aapne logon ki kaunsi dikkat kareeb se dekhi, aur use door karne ke liye aap kya karenge?
+[Shrimati Menon] (move_on, D-HANDOFF) Shukriya. Namaste. Apne zile mein rehkar aapne logon ki kaunsi dikkat kareeb se dekhi, aur use door karne ke liye aap kya karenge?
 
 You: Mujhe lagta hai tourism se local logon ko rozgaar milta hai. Lekin environment par bhi asar padta hai, so carrying capacity rules zaroori hain.
 [Shrimati Menon] (fact_challenge, R4) Aapne 30 percent kaha. Exampleland test data ke 2023 ke figure ke hisaab se yeh 12 percent hai. Aapka figure kahan se hai?
@@ -60,7 +60,7 @@ You: Public administration mujhe isliye pasand hai kyunki usme niti aur zameeni 
 [Shri Rathore] (counter, R6) Samajh mein aata hai. Agar yeh tareeka na chale, to aapka doosra raasta kya hoga?
 
 You: Mujhe exact pata nahi hai, but I think local logon se baat karke pehle samasya samajhni chahiye.
-[Shri Rathore] (reassure, R3) Koi baat nahi. Chaliye ise aasaan karte hain: is par aapka pehla khayal kya aata hai?
+[Shri Rathore] (reassure, R3) Koi baat nahi. Chaliye ise aasaan karte hain: is mudde par aapka pehla khayal kya aata hai?
 
 You: Pehle rahat samagri ki list banakar sabse zaroorat mand logon tak pahunchaunga, aur gaon ke pradhan se baat karunga.
 [Shri Rathore] (next_question, D-SEED) Theek hai. Maan lijiye aap DM hain aur ek factory ke theke ke mazdoor hadtaal par hain. Dono pakshon se baat karke aap kaise aage badhenge?
