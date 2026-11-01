@@ -4,6 +4,7 @@
     python -m mockboard.cli                             # real Nova Pro on Bedrock (Sydney)
     python -m mockboard.cli --fake --script answers.txt # scripted answers, one per line
     python -m mockboard.cli --mode debate --fake        # debate mode (curated motions)
+    python -m mockboard.cli --fake --form-file examples/forms/sample_form.json
 
 Flow: application form (no names) -> opener -> typed answers -> fast analysis graph per
 segment (background fact checks) -> delayed fact challenge phrased as a question citing the
@@ -24,6 +25,8 @@ import json
 import sys
 from collections.abc import Callable, Iterator
 from pathlib import Path
+
+from pydantic import ValidationError
 
 from mockboard.brain.cards import load_cards_or_builtin
 from mockboard.brain.deps import build_deps
@@ -104,6 +107,26 @@ def read_form(ask: Callable[[str], str | None], use_defaults: bool) -> Candidate
         if value:
             raw[name] = value
     return CandidateForm.model_validate(_form_values(raw))
+
+
+def load_form_file(path: str | Path) -> CandidateForm:
+    """The application form from a JSON file. Refuses any field `CandidateForm` does not have
+    (Ruling 5: no names or identifiers). Messages name fields, never the values in them."""
+    try:
+        doc = json.loads(Path(path).read_text(encoding="utf-8"))
+    except OSError as exc:
+        raise SystemExit(f"Could not read form file {path}: {exc.strerror}") from exc
+    except ValueError as exc:  # bad JSON, or not UTF-8
+        raise SystemExit(f"form file {path} is not valid JSON: {exc}") from exc
+    if not isinstance(doc, dict):
+        raise SystemExit(f"form file {path} must hold one JSON object")
+    try:
+        return CandidateForm.model_validate(_form_values(doc))
+    except ValidationError as exc:
+        problems = "; ".join(
+            f"{'.'.join(str(part) for part in e['loc'])}: {e['msg']}" for e in exc.errors()
+        )
+        raise SystemExit(f"form file {path} was refused: {problems}") from exc
 
 
 def _form_values(raw: dict[str, object]) -> dict[str, object]:
@@ -196,6 +219,8 @@ async def run(args: argparse.Namespace) -> int:
     if overrides:
         settings = settings.model_copy(update=overrides)
 
+    # First, so a bad file stops the run before anything is built or spent.
+    file_form = load_form_file(args.form_file) if args.form_file else None
     cards, origin = load_cards_or_builtin(settings.cards_dir, settings.topics)
     lines = None
     if args.script:
@@ -229,6 +254,9 @@ async def run(args: argparse.Namespace) -> int:
     if args.mode == DEBATE_MODE:
         options = await read_debate_setup(ask, llm=llm, settings=settings,
                                           use_defaults=use_defaults)
+    elif file_form is not None:
+        form = file_form
+        print(f"\nApplication form from {args.form_file}")
     else:
         form = read_form(ask, use_defaults=use_defaults)
     kwargs = {"session_id": session_id} if session_id else {}
@@ -305,6 +333,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help=f"session mode (ADR-009; default {DEFAULT_MODE})",
     )
     p.add_argument("--script", help="file with scripted inputs, one per line (form, then answers)")
+    p.add_argument(
+        "--form-file",
+        help="application form as JSON (see examples/forms/sample_form.json); UPSC mode only. "
+        "With it, --script holds only the answers, no form lines",
+    )
     p.add_argument("--language", choices=["en", "hi"], help="report language (default: settings)")
     p.add_argument("--max-turns", type=int, default=9, help="hard cap on candidate turns")
     p.add_argument(
@@ -324,7 +357,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument("--no-trace", action="store_true", help="do not write a trace file")
     p.add_argument("--print-trace", action="store_true", help="print trace summary at the end")
     p.add_argument("--report-json", help="also write the report as JSON to this path")
-    return p.parse_args(argv)
+    args = p.parse_args(argv)
+    if args.form_file and args.mode == DEBATE_MODE:
+        p.error("--form-file is for the UPSC interview; debate has no application form")
+    return args
 
 
 def main(argv: list[str] | None = None) -> int:

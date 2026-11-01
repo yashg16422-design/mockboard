@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
+
+import pytest
 
 from mockboard import cli
 from mockboard.config import REPO_ROOT
@@ -91,3 +94,82 @@ def test_read_form_parses_hobbies():
     form = cli.read_form(lambda _p: next(answers), use_defaults=False)
     assert form.hobbies == ["a", "b", "c"] and form.interview_language == "hindi"
     assert form.district is None
+
+
+SAMPLE_FORM = REPO_ROOT / "examples" / "forms" / "sample_form.json"
+
+
+def write_form(tmp_path, doc) -> Path:
+    path = tmp_path / "form.json"
+    path.write_text(doc if isinstance(doc, str) else json.dumps(doc), encoding="utf-8")
+    return path
+
+
+def test_sample_form_is_the_default_fake_form_plus_an_optional_subject():
+    form = cli.load_form_file(SAMPLE_FORM)
+    expected = cli.CandidateForm.model_validate(cli._form_values(cli.DEFAULT_FAKE_FORM))
+    assert form.optional_subject == "Public Administration"
+    assert form.model_copy(update={"optional_subject": None}) == expected
+
+
+def test_form_file_rejects_an_unknown_field_without_echoing_its_value(tmp_path):
+    good = json.loads(SAMPLE_FORM.read_text(encoding="utf-8"))
+    path = write_form(tmp_path, {**good, "name": "Synthetic Person"})
+    with pytest.raises(SystemExit) as exc:
+        cli.load_form_file(path)
+    assert "name" in str(exc.value) and "Synthetic Person" not in str(exc.value)
+
+
+@pytest.mark.parametrize(
+    "content",
+    ["{not json", '["a", "list"]', '{"home_state": "Uttar Pradesh"}'],
+    ids=["bad-json", "not-an-object", "missing-required"],
+)
+def test_form_file_refuses_a_bad_document_with_a_readable_message(tmp_path, content):
+    with pytest.raises(SystemExit, match="form file"):
+        cli.load_form_file(write_form(tmp_path, content))
+
+
+def test_form_file_refuses_a_missing_file(tmp_path):
+    with pytest.raises(SystemExit, match="form file"):
+        cli.load_form_file(tmp_path / "absent.json")
+
+
+def test_form_file_accepts_hobbies_as_text_and_any_language_case(tmp_path):
+    path = write_form(
+        tmp_path,
+        {
+            "home_state": "Kerala",
+            "degree_subject": "History",
+            "hobbies": "a, b",
+            "interview_language": "HINDI",
+        },
+    )
+    form = cli.load_form_file(path)
+    assert form.hobbies == ["a", "b"] and form.interview_language == "hindi"
+
+
+def test_cli_with_form_file_reads_answers_only_from_the_script(tmp_path, capsys):
+    answers = tmp_path / "answers.txt"
+    answers.write_text("Mujhe lagta hai local rozgaar zaroori hai.\n/quit\n", encoding="utf-8")
+    rc = cli.main(
+        ["--fake", "--form-file", str(SAMPLE_FORM), "--script", str(answers), "--no-trace"]
+    )
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "== Application form" not in out and "Home state:" not in out
+    assert f"Application form from {SAMPLE_FORM}" in out
+    assert "You: Mujhe lagta hai local rozgaar" in out
+
+
+def test_a_bad_form_file_stops_before_any_llm_is_built(tmp_path, monkeypatch):
+    monkeypatch.setattr(cli, "build_llm", lambda *a: pytest.fail("LLM built before the form"))
+    path = write_form(tmp_path, {"home_state": "Kerala"})
+    with pytest.raises(SystemExit, match="form file"):
+        cli.main(["--form-file", str(path), "--no-trace"])
+
+
+def test_debate_refuses_a_form_file(capsys):
+    with pytest.raises(SystemExit):
+        cli.parse_args(["--mode", "debate", "--form-file", str(SAMPLE_FORM)])
+    assert "--form-file" in capsys.readouterr().err
