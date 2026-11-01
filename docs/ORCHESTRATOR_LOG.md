@@ -306,3 +306,8 @@ Orchestrator read trace voice-32a441f916 and the server log from the owner's Mac
 - **Ruling 70 (owner told the orchestrator to run this and said credits are being overspent):** work moves to larger chunks with one CTO review per milestone, not per chunk: merge plus web fixes; P0.2 plus P4 to P6; P7; P8 to P11. The orchestrator still runs tests, a fake session and logs a ruling at each. Reviews are narrow, with no mutation sweeps or tuning rounds, and cut order in CTO_NOTES_06 section 14 applies early: `summary.v1`, page buttons for Utility A and replay, then P8 if needed.
 - Ruling 41 stands: real calls still need the owner's explicit yes.
 
+## Round 37 — Nov 1, 2026 (P3 fix and web merge as one milestone)
+
+- P3 (b8feacb, e585ef8, 50f3411) reviewed in `docs/CTO_NOTES_15.md`: rejected on M1 (`is_clear_yes` closes on a question) and M2 (unguarded `adelete_thread` can lose the report), with fixes specified and trialled; builder's calls upheld. CTO confirmed 1862 cases, lint, verify-range, md5s.
+- **Ruling 71:** one milestone: P3 M1, M2, S1, S2 with tests; then `github/web-frontend` merges into `panel-phase` with `--no-ff` and `docs/tasks/WEB_FIX_01.md` is applied there by our builder, with `work_experience` added. Arena's branch itself is not changed. No further CTO round on the P3 fix; the merged web fixes get one narrow review.
+
