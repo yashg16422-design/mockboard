@@ -237,9 +237,63 @@ function onMessage(raw) {
   }
 }
 
+function addLine(parent, text) {
+  const p = document.createElement("p");
+  p.textContent = text;
+  parent.append(p);
+}
+
+function outlineList(parent, outline) {
+  if (Array.isArray(outline)) {
+    const ol = document.createElement("ol");
+    for (const step of outline) {
+      const li = document.createElement("li");
+      li.textContent = String(step);
+      ol.append(li);
+    }
+    parent.append(ol);
+    return;
+  }
+  if (outline) addLine(parent, String(outline));
+}
+
 function renderReport(m) {
-  // Grouped layout arrives in the report commit. Until then, show the text the server sent.
-  $("report").textContent = m.text || "";
+  // Plain text until the server sends members. Nothing here is invented.
+  const members = Array.isArray(m.members)
+    ? m.members.filter((item) => item && typeof item === "object")
+    : [];
+  const grouped = $("report-grouped");
+  const plain = $("report");
+  grouped.replaceChildren();
+  plain.textContent = m.text || "";
+  if (!members.length) {
+    grouped.hidden = true;
+    plain.hidden = false;
+  } else {
+    grouped.hidden = false;
+    plain.hidden = true;
+    for (const member of members) {
+      const block = document.createElement("section");
+      block.className = "member-block";
+      const h = document.createElement("h3");
+      h.textContent = member.name ? String(member.name) : "Member";
+      block.append(h);
+      if (member.notes) addLine(block, String(member.notes));
+      if (member.weakest_question) addLine(block, "Weakest question. " + String(member.weakest_question));
+      outlineList(block, member.outline);
+      grouped.append(block);
+    }
+    if (Array.isArray(m.practice_plan) && m.practice_plan.length) {
+      const block = document.createElement("section");
+      block.className = "member-block";
+      const h = document.createElement("h3");
+      h.textContent = "Practice plan";
+      block.append(h);
+      outlineList(block, m.practice_plan);
+      grouped.append(block);
+    }
+  }
+  $("report-demo").hidden = !(cfg && (cfg.fake_llm || cfg.fake_speech));
   $("report-path").textContent = m.path ? "Saved on this computer at " + m.path : "";
   show("report");
 }
@@ -470,6 +524,7 @@ $("form").addEventListener("submit", (e) => {
 
 $("start").addEventListener("click", start);
 $("stop").addEventListener("click", () => { requestStop(); });
+$("print").addEventListener("click", () => { window.print(); });
 
 init().catch((e) => {
   const msg = "Could not load the config: " + e.message;

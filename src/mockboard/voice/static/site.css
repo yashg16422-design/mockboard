@@ -536,18 +536,15 @@ fieldset.field legend {
   .top,
   .site-foot,
   .no-print,
-  .skip { display: none !important; }
+  .skip,
+  .voice,
+  .actions { display: none !important; }
 
   main { width: auto; padding: 0; }
-
-  #view-home,
-  #view-form,
-  #view-room { display: none !important; }
-
-  #view-report { display: block !important; }
 
   .report-sheet { border: 0; background: transparent; padding: 0; }
 
   .report-text,
-  .member-block { color: #111; }
+  .member-block,
+  .report-path { color: #111; }
 }

@@ -44,6 +44,17 @@ def test_webrtc_client_still_posts_one_offer():
     assert "event: \"stop\"" in js or 'event: "stop"' in js
 
 
+def test_report_can_be_printed_and_grouped_when_the_server_sends_members():
+    assert 'id="print"' in PAGE
+    assert 'id="report"' in PAGE
+    assert 'id="report-grouped"' in PAGE
+    js = Path("src/mockboard/voice/static/app.js").read_text(encoding="utf-8")
+    assert "weakest_question" in js
+    assert "practice_plan" in js
+    assert "window.print" in js
+    assert "m.text" in js
+
+
 def test_page_keeps_the_voice_client_contract():
     # tests/voice/test_voice_app.py reads these from the served page.
     assert "Mock Board" in PAGE

@@ -140,9 +140,14 @@
   </section>
 
   <section id="view-report" data-view="report" hidden>
-    <h1>Report</h1>
+    <div class="room-head">
+      <h1>Report</h1>
+      <button type="button" class="ghost no-print" id="print">Print</button>
+    </div>
+    <p class="quiet" id="report-demo" hidden>Demo mode. This sitting used stand-ins for the model, the speech, or both.</p>
     <p class="report-path" id="report-path"></p>
     <div class="report-sheet" id="report-sheet">
+      <div id="report-grouped" hidden></div>
       <pre class="report-text" id="report"></pre>
     </div>
   </section>
