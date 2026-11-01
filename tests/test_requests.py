@@ -13,6 +13,7 @@ from pathlib import Path
 import pytest
 
 from mockboard.brain.requests import (
+    _THIRD_PERSON,
     END_MAX_WORDS,
     SHORT_ANSWER_WORDS,
     TAIL_WORDS,
@@ -22,6 +23,7 @@ from mockboard.brain.requests import (
 )
 
 CORPUS_PATH = Path(__file__).parent / "data" / "request_corpus.jsonl"
+SAMPLE_FORM = Path(__file__).parent.parent / "examples" / "forms" / "sample_form.json"
 KINDS = tuple(kind.value for kind in RequestKind)
 NONE = "none"
 # Each kind's recall on the rule-tuning split must not fall below this.
@@ -299,3 +301,74 @@ def test_punctuation_ends_the_context_window():
 def test_rules_reach_the_same_kind_in_any_case_and_punctuation():
     assert _got("CAN WE MOVE ON???") == _got("can we move on") == "change_topic"
     assert _got("Phir-se boliye!") == "repeat"
+
+
+# ---------------------------------------------------------------------------
+# P1.1 (CTO_NOTES_09): the third-person guard must not block the refused topic (M1)
+# ---------------------------------------------------------------------------
+
+
+def _form_values() -> list[str]:
+    form = json.loads(SAMPLE_FORM.read_text(encoding="utf-8"))
+    values: list[str] = []
+    for value in form.values():
+        values.extend(value if isinstance(value, list) else [value])
+    return values
+
+
+def test_public_administration_is_refused_by_name():
+    hit = detect_request("public administration ke alawa kisi aur topic pe baat karte hain")
+    assert hit is not None
+    assert hit.kind == "change_topic"
+    assert hit.avoid_terms == ("public administration",)
+
+
+@pytest.mark.parametrize(
+    "text, term",
+    [
+        ("government ke alawa kisi aur topic pe baat karte hain", "government"),
+        ("kisan ke alawa kisi aur topic pe baat karte hain", "kisan"),
+        ("students ke alawa kisi aur topic pe baat karte hain", "students"),
+        ("foreign ministers ke alawa kuch aur puchiye", "foreign ministers"),
+        ("enough about the government", None),
+        ("other than government can we talk about something else", "government"),
+    ],
+)
+def test_third_person_nouns_can_be_the_refused_topic(text, term):
+    hit = detect_request(text)
+    assert hit is not None
+    assert hit.kind == "change_topic"
+    if term is not None:
+        assert hit.avoid_terms == (term,)
+
+
+@pytest.mark.parametrize("word", sorted(_THIRD_PERSON))
+def test_every_third_person_word_can_be_the_refused_topic(word):
+    hit = detect_request(f"{word} ke alawa kisi aur topic pe baat karte hain")
+    assert hit is not None
+    assert hit.kind == "change_topic"
+    assert hit.avoid_terms == (word,)
+
+
+@pytest.mark.parametrize("value", _form_values())
+def test_every_sample_form_value_can_be_the_refused_topic(value):
+    hit = detect_request(f"{value} ke alawa kisi aur topic pe baat karte hain")
+    assert hit is not None
+    assert hit.kind == "change_topic"
+    assert hit.avoid_terms == (value.lower(),)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "government ne kaha kisi aur topic pe baat karte hain",  # reported speech stays guarded
+        "mat kisi aur topic pe baat karo",
+        "agar kisi aur topic pe baat karte hain to theek hai",
+    ],
+)
+def test_strong_change_keeps_the_negator_and_reported_speech_checks(text):
+    assert _got(text) == NONE
+
+
+def test_third_person_guard_still_blocks_weak_phrases():
+    assert _got("The government failed aage badhiye") == NONE

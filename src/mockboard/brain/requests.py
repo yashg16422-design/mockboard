@@ -431,9 +431,11 @@ _PATTERNS: tuple[tuple[str, RequestKind, str], ...] = (
      r"|some other|a different|other)(?: \S+){0,2})?" + _END),
     ("change_en_ahead", RequestKind.CHANGE_TOPIC,
      rf"{_ASK} (?:move|go) (?:ahead|forward)" + _END),
+    ("change_en_move_bare", RequestKind.CHANGE_TOPIC,
+     _START + r"(?:move on|moving on|move one)" + _END),
     ("change_en_bare", RequestKind.CHANGE_TOPIC,
-     _START + r"(?:move on|moving on|move one|something else|some other topic|another topic"
-     r"|a different topic|different topic)" + _END),
+     _START + r"(?:something else|some other topic|another topic|a different topic"
+     r"|different topic)" + _END),
     ("change_en_else", RequestKind.CHANGE_TOPIC,
      rf"(?:{_ASK}|we can) (?:talk about|talk on|speak about|speak on|discuss|switch to|move to"
      rf"|move on to|go to|shift to|turn to|ask me about|ask me|ask about|ask|focus on|get to"
@@ -529,6 +531,13 @@ _COMPILED: tuple[tuple[str, RequestKind, re.Pattern[str]], ...] = tuple(
     (pid, kind, re.compile(rf"(?<!\S)(?:{pattern})(?!\S)")) for pid, kind, pattern in _PATTERNS
 )
 
+# Move-along phrases that name no topic and can close an ordinary sentence. Every other
+# change_topic pattern carries an explicit topic-change word and counts as strong.
+_WEAK_CHANGE: frozenset[str] = frozenset({
+    "change_aage", "change_x_chhod", "change_en_modal", "change_en_move", "change_en_ahead",
+    "change_en_move_bare",
+})
+
 # Polite openers contain "if" or "agar", and must not read as a conditional.
 _POLITE = re.compile(
     r"\b(?:if (?:possible|i may|you dont mind|you do not mind|thats ok|that is ok|its ok)"
@@ -539,6 +548,8 @@ _POLITE = re.compile(
 
 # Someone else's words or habits, a condition, or a generality: within the same clause, before
 # the phrase. Phrases that carry their own subject ("can we", "I want to") ignore _THIRD_PERSON.
+# So do strong change_topic patterns: the words before them are usually the refused topic
+# ("public administration ke alawa kisi aur topic pe baat karte hain").
 _REPORTED = frozenset({
     "said", "says", "say", "asked", "asks", "told", "tells", "kaha", "kehte", "bola", "puchha",
     "pucha", "if", "agar", "jab", "when", "whenever", "unless", "while", "whether", "har",
@@ -645,7 +656,7 @@ def _clause_before(tokens: _Tokens, start: int) -> list[str]:
     return _POLITE.sub(" ", prefix).split()
 
 
-def _not_a_request(tokens: _Tokens, start: int, end: int) -> bool:
+def _not_a_request(tokens: _Tokens, start: int, end: int, strong_change: bool) -> bool:
     """True when the words around a match show someone is not asking the board for anything."""
     before = _clause_before(tokens, start)
     if before:
@@ -657,7 +668,9 @@ def _not_a_request(tokens: _Tokens, start: int, end: int) -> bool:
             return True
     after = tokens.canon[end : end + _AFTER_TOKENS]
     if tokens.canon[start] not in _OWN_SUBJECT:
-        if any(word in _THIRD_PERSON for word in (*before, *tokens.canon[start:end])):
+        if not strong_change and any(
+            word in _THIRD_PERSON for word in (*before, *tokens.canon[start:end])
+        ):
             return True
         if after and after[0] == "to":  # English "move on to X" carries its own subject
             return True
@@ -687,7 +700,10 @@ def detect_request(text: str) -> RequestHit | None:
         for m in pattern.finditer(tokens.text):
             start = _token_index(tokens.text, m.start())
             end = _token_index(tokens.text, m.end()) + 1
-            if not _position_ok(start, total) or _not_a_request(tokens, start, end):
+            strong_change = kind is RequestKind.CHANGE_TOPIC and pattern_id not in _WEAK_CHANGE
+            if not _position_ok(start, total) or _not_a_request(
+                tokens, start, end, strong_change
+            ):
                 continue
             avoid = _avoid_terms(tokens) if kind is RequestKind.CHANGE_TOPIC else ()
             return RequestHit(kind, avoid, pattern_id)

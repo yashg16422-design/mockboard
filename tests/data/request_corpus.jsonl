@@ -355,3 +355,6 @@
 {"id": "t073", "text": "इंटरव्यू में सवाल पूछे गए", "expect": "none", "lang": "devanagari", "split": "holdout", "synthetic": true}
 {"id": "t074", "text": "age badhne ke liye mehnat jaruri hai", "expect": "none", "lang": "garbled", "split": "holdout", "synthetic": true}
 {"id": "t075", "text": "samaj ko samajh nahi aaya", "expect": "none", "lang": "garbled", "split": "holdout", "synthetic": true}
+{"id": "d208", "text": "public administration ke alawa kisi aur topic pe baat karte hain", "expect": "change_topic", "lang": "hinglish", "split": "dev", "synthetic": true, "avoid": ["public administration"]}
+{"id": "d209", "text": "government ke alawa kisi aur topic pe baat karte hain", "expect": "change_topic", "lang": "hinglish", "split": "dev", "synthetic": true, "avoid": ["government"]}
+{"id": "d210", "text": "foreign ministers ke alawa kuch aur puchiye", "expect": "change_topic", "lang": "hinglish", "split": "dev", "synthetic": true, "avoid": ["foreign ministers"]}
