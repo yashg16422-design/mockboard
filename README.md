@@ -1,6 +1,6 @@
 # Mock Board
 
-Mock Board is a practice interview board for the UPSC Civil Services Personality Test. Three fictional board members (a chairperson, an economist and a retired IPS officer) interview the candidate in Hinglish, ask follow-up questions based on what the candidate actually said, and politely question a wrong figure by quoting a checked fact card. They always ask, never assert. After the interview, a judge writes a report against the personal qualities that UPSC publishes, and every score is backed by a quote taken word for word from the candidate's answers. It is being built for Gnani.ai's Great Indian AI Internship Challenge 2026, using Gnani Prisma (speech to text) and Gnani Timbre (text to speech) for the voice, and Amazon Nova Pro on Bedrock for the language model.
+Mock Board is a practice interview board for the UPSC Civil Services Personality Test. A fictional five-member panel (a chairperson and four members, each with their own field) interviews the candidate in Hinglish from their application form, hands over from member to member by name, understands requests like "let's talk about something else" or "please repeat", asks follow-up questions based on what the candidate actually said, and politely question a wrong figure by quoting a checked fact card. They always ask, never assert. After the interview, a judge writes a report against the personal qualities that UPSC publishes, and every score is backed by a quote taken word for word from the candidate's answers. It is being built for Gnani.ai's Great Indian AI Internship Challenge 2026, using Gnani Prisma (speech to text) and Gnani Timbre (text to speech) for the voice, and Amazon Nova Pro on Bedrock for the language model.
 
 Today Mock Board runs in **text mode only**: you type your answers in a terminal. The voice loop, the web page and the deployment are not built yet (see "Honest status" below).
 
@@ -45,7 +45,7 @@ To watch a complete scripted interview (the answers come from `examples/fake_ses
 make cli-fake
 ```
 
-In this run you can see the board reassure the candidate after an honest "I don't know", question a wrong figure one turn after it was said, and acknowledge the candidate when they admit a mistake. `make cli-fake-hi` runs the same script and writes the report in Hindi.
+In this run you can see the whole panel (since P7, the UPSC interview is always the panel): the Chairperson's ritual line, five members in order with a spoken hand-off at each change, a wrong figure questioned a turn after it was said and the acknowledgement when the candidate admits it, a repeat that costs no answer, a topic change that never comes back, an honest "I don't know" reassured, and the Chairperson's close. The full transcript, read line by line, is in [docs/tasks/P7_FAKE_TRANSCRIPT.md](docs/tasks/P7_FAKE_TRANSCRIPT.md). `--max-answers 10` caps the interview the way a test user's is capped (the old `--panel` flag still works and does nothing). `make cli-fake-hi` runs the same script and writes the report in Hindi.
 
 To be interviewed yourself, still offline. On your laptop (WSL), in the `mockboard` folder:
 
@@ -118,7 +118,7 @@ Eval summaries go to `eval/results/`. A report is printed at the end of each int
 ## Repository map
 
 - `src/mockboard/session.py` is the session controller. It runs one interview from the opening question to the report, through the three calls the voice loop will also use: `submit_segment`, `end_of_turn` and `speak`.
-- `src/mockboard/brain/` is the "slow brain". `graphs.py` holds the three LangGraph graphs (fast analysis, fact check, report). `listener.py`, `librarian.py`, `strategist.py` and `judge.py` hold the logic of each graph node. `actor.py` turns a chosen move into the spoken line and enforces the guards. `llm.py` is the only module that talks to Bedrock. `numbers.py` and `spoken.py` handle Indian number words and how figures are spoken. `cards.py`, `schemas.py`, `tools.py`, `prompts.py` and `deps.py` hold the data models and the wiring. `personas/` has one YAML file per board member. `fake_responders.py` is the offline fake model.
+- `src/mockboard/brain/` is the "slow brain". `graphs.py` holds the three LangGraph graphs (fast analysis, fact check, report). `listener.py`, `librarian.py`, `strategist.py` and `judge.py` hold the logic of each graph node. `actor.py` turns a chosen move into the spoken line and enforces the guards. `llm.py` is the only module that talks to Bedrock. `numbers.py` and `spoken.py` handle Indian number words and how figures are spoken. `cards.py`, `schemas.py`, `tools.py`, `prompts.py` and `deps.py` hold the data models and the wiring. `personas/` has one YAML file per panel member (the debate's are in `personas/debate/`). `director.py`, `agenda.py` and `agenda_plan.py` are the panel's interview director, agenda and agenda planner, and `modes/upsc_panel/` holds its session hooks. `fake_responders.py` is the offline fake model.
 - `src/mockboard/prompts/` holds every prompt as a versioned file, with a changelog.
 - `src/mockboard/obs/` holds the per-turn trace recorder and an optional Langfuse hook (off by default).
 - `src/mockboard/cli.py` is the text-mode interview, and `src/mockboard/config.py` holds every setting.
@@ -126,7 +126,9 @@ Eval summaries go to `eval/results/`. A report is printed at the end of each int
 - `eval/` holds the evaluation harness, `tests/` the offline tests, `probes/` the service probes, and `examples/` the scripted session.
 - `docs/` holds the plan, the engineering standards, the CTO reviews, the orchestrator's rulings, the learning guide [docs/WALKTHROUGH.md](docs/WALKTHROUGH.md), and the decision records in [docs/adr/](docs/adr/).
 
-## Honest status (October 26, 2026)
+## Honest status (October 26, 2026; the paragraphs below are older than the voice app, the site and the panel)
+
+**Update, November 1 (P7).** The UPSC interview is now the panel on every path: text, `make voice-fake` and `make voice-upsc`. The interview limit is 17 minutes (wrap-up at 16), and Prisma's stream is rotated before its 15-minute cap (`UNVERIFIED`: rotation has never run live). No real Nova, Prisma or Timbre call has run on the panel yet; its prompts (`listener.v4`, `actor.v5`, `opener.v2`, `agenda_plan.v1`) have only met the offline fake model.
 
 **What works.** The whole text-mode interview runs end to end, offline or against Nova: the form-driven opening question, per-segment analysis, the rule-based strategist with its nine moves, delayed fact challenges that only fire when the model and a deterministic numeric check agree, the actor's guards (word cap, ask-never-assert, opener check), the persona fallback line when the actor fails, separate thread pools and timeouts for the three kinds of Bedrock call, the shared cache of real librarian votes, the judge's report with verified quotes, the per-turn trace, and the evaluation harness. There are 342 offline tests, including whole-session behaviour checks and a chaos test that injects Bedrock failures into 24 complete interviews.
 

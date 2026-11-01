@@ -1,6 +1,6 @@
 # ADR-010: The interview director
 
-- **Status:** Draft (chunk P0). Finalised in chunk P11, when the design is built and measured.
+- **Status:** Draft (chunk P0), cut over in P7 on November 1, 2026. Finalised in chunk P11, when the design is measured.
 - **Date:** November 1, 2026
 - **Source:** [CTO_NOTES_06.md](../CTO_NOTES_06.md), sections 2, 4, 7 and 11; [ORCHESTRATOR_LOG.md](../ORCHESTRATOR_LOG.md), rounds 23 and 24, rulings 41 to 43.
 
@@ -23,6 +23,16 @@ Three things constrain the design. The move must stay instant (Ruling 9): analys
 - **Agenda planning is a separate graph on the background lane (D3).** A deterministic agenda from the form always exists first, and Nova only upgrades seed text. If planning is slow, fails or returns a bad seed, the template stands.
 - **Fixed segment ids, form-driven content (D8).** The five ids (`form_hr`, `home_district`, `degree`, `interests`, `current_affairs`) are the panel's structure. They are not topics.
 - **Modes stay profiles (ADR-009).** The panel is built dark behind `PanelSetup` and `session_hooks`, then becomes the UPSC path in one cutover commit (P7).
+
+## The cutover (P7)
+
+- **UPSC is the panel on every path.** `UPSC_PROFILE.session_hooks` always builds `PanelHooks`; no options means an uncapped `PanelSetup`. `--panel` stays as a hidden alias that does nothing.
+- **Deleted for good:** `Settings.topics` (cards are discovered from the folder, keyterms follow the segment ids), the three old personas (`panel/` moved up, so one persona table), the old session code paths, `StrategyContext.panel`, and `voice_session_max_s`. The old prompt files stay on disk, unedited.
+- **Limits:** wrap-up 960 s, hard stop 1020 s (17 minutes); debate keeps 600 s and has no wrap-up. At the wrap-up the next finished turn closes with the time line; at the hard stop a silent candidate gets the Chairperson's time line and a talking one is treated as having stopped.
+- **Cap:** `/api/offer` writes `pending_limits[pc_id]`; `start_session` reads it. A missing entry is capped at `ACCESS_MAX_ANSWERS`, never uncapped. The session is closed in a `finally`, so the checkpointer thread is released on every exit.
+- **Page events:** `session` adds `members` and `max_answers`; captions add `segment` and name the right speaker for a hand-off; `answers` (capped only) and `closing` come just before the line they belong to.
+- **Golden:** the UPSC board-line md5 changed from `826ef550...` to `e748940f...`, deliberately. The one debate hash that moved, `DEBATE_FACT_REQUESTS_SHA256`, did so only because the debate's librarian call is built from the UPSC kit and carries its persona pack; with that block masked all three debate request hashes equal their pre-P7 values (a test locks that).
+- **Known quirk, left alone:** that same librarian call uses the UPSC kit instead of the debate kit. Fixing it would move a debate hash for no behavioural gain.
 
 ## Consequences
 

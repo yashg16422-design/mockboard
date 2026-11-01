@@ -4,6 +4,8 @@ This guide explains how Mock Board works, in the order you would explain it to s
 
 Everything here describes the code as it is on October 26, 2026 (text mode only). Where a number is a placeholder that has not been measured yet, it is marked UNVERIFIED, as it is in the code.
 
+> **Update, November 1 (P7).** This guide was written for the single three-persona board. The UPSC interview is now a five-member panel run by a director (`brain/director.py`, ADR-010): an agenda built from the form, spoken hand-offs, candidate requests (change topic, repeat, skip, end) understood by rules and the listener, a rolling memory the actor reads, a close, and a 17-minute limit. The fast mouth, slow brain split, the session API, the fact-check graph and the guards below are unchanged and still describe how a turn works. The scripted run of the whole panel is in [tasks/P7_FAKE_TRANSCRIPT.md](tasks/P7_FAKE_TRANSCRIPT.md).
+
 ## 1. The big picture: fast mouth, slow brain
 
 A voice interview has one hard rule: when the candidate stops talking, the board must start talking within about two seconds, or the silence feels broken. But a good board also has to think: what did the candidate claim, is any figure wrong, was the answer one-sided, is the candidate nervous? Thinking takes several model calls, and each call to Amazon Nova Pro in Sydney takes real time.
