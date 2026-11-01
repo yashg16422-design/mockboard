@@ -5,7 +5,7 @@ to 200 words or phrases to favour, `topic` a free-text description fixed per con
 v3.0 keyterms can change mid-session through `update_settings`. On v2.5 nothing here is
 sent (`PrismaSTTService.set_keyterms` is a no-op there).
 
-The lists are ours, hand-written for the interview topics and built from the session's own
+The lists are ours, hand-written for the panel's segments and built from the session's own
 data: the application form (UPSC) or the motion's case-file keywords (debate). No names or
 identifiers are ever added (the form has none). Duck-typed on the session, so this module
 needs neither Pipecat nor the debate package.
@@ -21,19 +21,21 @@ UPSC_COMMON = [
     "UPSC", "IAS", "IPS", "IFS", "civil services", "Collector", "District Magistrate",
     "panchayat", "governance", "policy", "Constitution",
 ]
-# Per interview topic (Settings.topics plus the opener's background round).
+# Per agenda segment (the panel's segment ids, `brain/agenda.py`): the vocabulary of what that
+# member asks about. Nothing here is a fact; the interview's topics come from the candidate's form.
 UPSC_TOPICS: dict[str, list[str]] = {
-    "background": ["graduation", "optional subject", "hobbies", "district", "home state"],
-    "tourism": [
-        "tourism", "heritage", "ecotourism", "homestay", "foreign tourist arrivals", "GDP",
-        "hospitality", "pilgrimage", "carrying capacity", "Swadesh Darshan",
-    ],
-    "internal_security": [
-        "internal security", "Naxalism", "left wing extremism", "insurgency", "CRPF",
-        "NIA", "police reforms", "cyber security", "radicalisation", "border management",
+    "form_hr": ["motivation", "civil services", "graduation", "service", "career"],
+    "home_district": ["district", "home state", "local administration", "panchayat", "block"],
+    "degree": ["degree subject", "graduation", "project", "technology", "research"],
+    "interests": ["hobbies", "optional subject", "sports", "reading", "teamwork"],
+    "current_affairs": [
+        "current affairs", "District Magistrate", "Superintendent of Police", "law and order",
+        "disaster relief", "public service delivery",
     ],
 }
-UPSC_TOPIC_TEXT = "A UPSC civil services personality test interview in Hinglish"
+UPSC_TOPIC_TEXT = (
+    "A UPSC civil services personality test interview in Hinglish, with a panel of five"
+)
 
 
 def speech_context(session: Any) -> tuple[list[str], str]:
@@ -60,9 +62,7 @@ def speech_context(session: Any) -> tuple[list[str], str]:
             if value:
                 terms.append(str(value))
         terms.extend(getattr(form, "hobbies", []) or [])
-    topics = getattr(state, "topics", []) or []
-    named = ", ".join(t.replace("_", " ") for t in topics if t != "background")
-    return _clean(terms), f"{UPSC_TOPIC_TEXT} about {named}." if named else UPSC_TOPIC_TEXT
+    return _clean(terms), UPSC_TOPIC_TEXT
 
 
 def _clean(terms: list[str]) -> list[str]:

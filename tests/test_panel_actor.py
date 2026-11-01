@@ -26,7 +26,7 @@ from mockboard.brain.panel_actor import (
     undotted_titles,
     without_greeting,
 )
-from mockboard.brain.personas import PERSONA_DIR, load_personas
+from mockboard.brain.personas import load_personas
 from mockboard.brain.prompts import PROMPT_DIR, build_prompt_kit, load_prompt
 from mockboard.brain.schemas import (
     BoardMove,
@@ -39,12 +39,12 @@ from mockboard.brain.schemas import (
 )
 from mockboard.voice.lines import split_sentences
 
-PERSONAS = load_personas(PERSONA_DIR / "panel")
+PERSONAS = load_personas()
 
 
 @pytest.fixture
 def kit(settings, cards):
-    return build_prompt_kit(PERSONAS, cards, settings.panel_prompt_versions())
+    return build_prompt_kit(PERSONAS, cards, settings.prompt_versions())
 
 
 def panel(seed: str | None = "Aapko chess se kya seekh mili, aur woh kaam kaise aayegi?"):
@@ -88,13 +88,15 @@ def test_actor_v4_states_the_data_rule_and_the_new_blocks():
     assert "{{max_words}}" in body
 
 
-def test_panel_prompt_versions_differ_from_upsc_only_in_the_panels_own_prompts(settings):
-    upsc, panel_versions = settings.prompt_versions(), settings.panel_prompt_versions()
-    assert upsc["listener"] == 3 and upsc["actor"] == 3 and upsc["opener"] == 1
-    assert panel_versions["listener"] == 4 and panel_versions["actor"] == 5
-    assert panel_versions["opener"] == 2 and panel_versions["agenda_plan"] == 1
-    changed = {k: v for k, v in panel_versions.items() if upsc.get(k) != v}
-    assert changed == {"listener": 4, "actor": 5, "opener": 2, "agenda_plan": 1}
+def test_upsc_prompt_versions_are_the_panels_and_the_old_board_files_stay_on_disk(settings):
+    """P7: one version map for UPSC. The old board's v3, v3 and v1 files are never edited and never
+    deleted (the prompt rule), they are simply no longer named."""
+    versions = settings.prompt_versions()
+    assert versions["listener"] == 4 and versions["actor"] == 5
+    assert versions["opener"] == 2 and versions["agenda_plan"] == 1
+    for old in ("listener.v3.md", "actor.v3.md", "opener.v1.md"):
+        assert (PROMPT_DIR / old).exists(), old
+    assert "agenda_plan" not in settings.prompt_versions("debate")
 
 
 def test_changelog_lists_every_new_version():
@@ -149,7 +151,7 @@ async def test_an_instruction_in_a_hobby_changes_neither_the_system_prompt_nor_t
     )
     calls = []
     for form in (plain, hostile):
-        kit = build_prompt_kit(PERSONAS, cards, settings.panel_prompt_versions())
+        kit = build_prompt_kit(PERSONAS, cards, settings.prompt_versions())
         agenda = build_fallback_agenda(form)
         seed = agenda.segment("interests").seeds[0].text
         out, llm = await line_for_move(
@@ -467,6 +469,23 @@ async def test_the_stream_version_gives_the_same_text_however_it_is_chunked(size
     pieces[-1] = pieces[-1].rstrip()
     out = await collect(strip_greeting(chunks(*pieces)))
     assert " ".join(out.split()) == without_greeting(said)
+
+
+async def test_the_greeting_check_does_not_hold_the_first_sentence_back():
+    """P7: an ordinary line's first sentence must reach the sentence gate (and so Timbre) as soon
+    as it is complete, not after the eight-word greeting window has filled, which cost every
+    ordinary line about eight words of model time before its first audio."""
+    read: list[str] = []
+
+    async def source():
+        for piece in ("Achha. ", "Traffic ke alawa kya dekha? ", "Aur kuch bataiye jaldi."):
+            read.append(piece)
+            yield piece
+
+    stream = strip_greeting(source())
+    assert await anext(stream) == "Achha. "
+    assert read == ["Achha. "]  # released after one chunk
+    await stream.aclose()
 
 
 async def test_a_short_line_is_released_when_the_stream_ends():

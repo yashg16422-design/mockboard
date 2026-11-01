@@ -34,7 +34,7 @@ from mockboard.brain.personas import (
 from mockboard.speech.gnani_protocol import TIMBRE_V25_VOICES, TIMBRE_V30_VOICES
 from mockboard.voice.lines import split_sentences
 
-PANEL = load_personas(PERSONA_DIR / "panel")
+PANEL = load_personas()
 ALL_LINES = [(mix, line) for table in ALL_LINE_TABLES for mix, line in table.items()]
 SPOKEN_TEXT = [
     *(line for _, line in ALL_LINES),
@@ -58,8 +58,16 @@ def test_each_segment_maps_to_its_member(segment, member):
     assert member_for_topic(PANEL, segment).id == member
 
 
-def test_old_board_does_not_see_panel_personas():
-    assert set(load_personas()) == {"chairman", "economist", "ips_officer"}
+def test_the_persona_folder_holds_the_five_panel_members_and_no_second_copy():
+    """P7: the three old personas are gone and `panel/` moved up, so there is one table."""
+    assert set(load_personas()) == {
+        "chairman", "administrator", "economist", "humanities", "ips_officer",
+    }
+    assert sorted(p.name for p in PERSONA_DIR.glob("*.yaml")) == [
+        "administrator.yaml", "chairman.yaml", "economist.yaml", "humanities.yaml",
+        "ips_officer.yaml",
+    ]
+    assert not (PERSONA_DIR / "panel").exists()
 
 
 @pytest.mark.parametrize("persona", PANEL.values(), ids=lambda p: p.id)
@@ -68,7 +76,7 @@ def test_persona_is_complete_and_fictional(persona):
     assert persona.domain
     assert len(persona.fallback_lines) >= 2
     assert len(persona.filler_lines) >= 2
-    path = PERSONA_DIR / "panel" / f"{persona.id}.yaml"
+    path = PERSONA_DIR / f"{persona.id}.yaml"
     assert "Not modelled on any real person" in path.read_text(encoding="utf-8")
 
 

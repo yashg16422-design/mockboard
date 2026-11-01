@@ -202,30 +202,46 @@ def test_typed_forms_still_keep_the_first_three_hobbies():
 
 
 def test_answers_only_example_gives_the_same_board_lines_as_the_form_script(capsys):
+    """`fake_answers.txt` is `fake_session.txt` without its seven form lines, and the sample form
+    is that form: typing it and passing it as a file are the same interview (the golden's)."""
     assert "Uttar Pradesh" not in ANSWERS.read_text(encoding="utf-8").splitlines()
+    assert ANSWERS.read_text(encoding="utf-8") == "\n".join(
+        (REPO_ROOT / "examples" / "fake_session.txt").read_text(encoding="utf-8").split("\n")[7:]
+    )
     rc = cli.main(
-        ["--fake", "--form-file", str(SAMPLE_FORM), "--script", str(ANSWERS), "--no-trace"]
+        ["--fake", "--form-file", str(SAMPLE_FORM), "--script", str(ANSWERS), "--no-trace",
+         "--session-id", "golden-sess"]
     )
     out = capsys.readouterr().out
     board = "".join(line + "\n" for line in out.splitlines() if line.startswith("["))
     assert rc == 0
-    assert hashlib.md5(board.encode("utf-8")).hexdigest() == "826ef550999cc34d9018806dce1b665e"
+    assert hashlib.md5(board.encode("utf-8")).hexdigest() == "e748940f8faa2863b5891d3c71532a67"
 
 
 # --- Ruling 73 item 5: the panel's turn cap is its agenda, so --max-turns must not pretend ------
 
 
-def test_panel_refuses_an_explicit_max_turns(capsys):
+def test_upsc_refuses_an_explicit_max_turns(capsys):
+    """The panel's turn cap is its agenda (Ruling 73 item 5), and since P7 every UPSC run is the
+    panel, with or without the old `--panel` spelling."""
+    for extra in ([], ["--panel"]):
+        with pytest.raises(SystemExit):
+            cli.parse_args(["--fake", *extra, "--max-turns", "4"])
+        err = capsys.readouterr().err
+        assert "--max-turns" in err and "--max-answers" in err
+
+
+def test_max_turns_still_works_for_debate_and_defaults_to_nine():
+    assert cli.parse_args(["--mode", "debate", "--fake"]).max_turns == 9
+    assert cli.parse_args(["--mode", "debate", "--fake", "--max-turns", "4"]).max_turns == 4
+    assert cli.parse_args(["--fake"]).max_turns == 9  # unused: the agenda decides
+
+
+def test_panel_is_a_hidden_no_op_alias_since_the_cutover():
+    args = cli.parse_args(["--fake", "--panel"])
+    assert args.panel and args.mode == "upsc_interview"
     with pytest.raises(SystemExit):
-        cli.parse_args(["--fake", "--panel", "--max-turns", "4"])
-    err = capsys.readouterr().err
-    assert "--max-turns" in err and "--max-answers" in err
-
-
-def test_max_turns_still_works_without_the_panel_and_defaults_to_nine():
-    assert cli.parse_args(["--fake"]).max_turns == 9
-    assert cli.parse_args(["--fake", "--max-turns", "4"]).max_turns == 4
-    assert cli.parse_args(["--fake", "--panel"]).max_turns == 9  # unused: the agenda decides
+        cli.parse_args(["--mode", "debate", "--fake", "--panel"])
 
 
 def test_max_turns_help_states_the_default_and_keeps_the_panel_hidden(capsys):

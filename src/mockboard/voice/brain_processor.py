@@ -33,9 +33,19 @@ fix) and the output, and only the words actually heard are recorded (`PlaybackLe
 ADR-008 §3) with `interrupted=true`. A user turn that starts before the board's first audio
 reopens the same turn instead (ruling 31).
 
-The session opener (UPSC) or the Moderator's intro (debate) plays at start; the debate's
+The session opener (UPSC) or the Moderator's intro (debate) plays at start. The UPSC panel opens
+with the Chairperson's fixed ritual line, spoken while the opening question is still being made
+(`opening_ritual()` starts the agenda plan, `open()` runs under the ritual's audio). The debate's
 "The board will confer" and verdict play at the end; the report goes to the page and to
-`traces/`. UI messages go to the browser as `OutputTransportMessageUrgentFrame`s
+`traces/`.
+
+Time (panel): at the wrap-up (16 minutes) the session is asked to close with the next finished
+turn, so the candidate is never cut off mid-answer; at the hard stop (17 minutes) a silent
+candidate is closed at once with the Chairperson's time line, and one who is talking is treated
+as having stopped. Debate keeps its single 10-minute stop. The page's `answers` and `closing`
+events come from the session just before each line is spoken.
+
+UI messages go to the browser as `OutputTransportMessageUrgentFrame`s
 (`{"type": "mockboard", ...}`) over SmallWebRTC's data channel.
 """
 
@@ -100,6 +110,7 @@ class BrainProcessor(FrameProcessor):
         line_cap_s: float = 90.0,
         orphan_close_s: float = 1.5,
         session_max_s: float | None = None,
+        wrap_up_s: float | None = None,
         report_dir: Path | None = None,
         on_report: Callable[[Any, str], Awaitable[None]] | None = None,
         on_listen: Callable[[], Awaitable[None]] | None = None,
@@ -132,6 +143,7 @@ class BrainProcessor(FrameProcessor):
         self._line_cap_s = line_cap_s
         self._orphan_close_s = orphan_close_s
         self._session_max_s = session_max_s
+        self._wrap_up_s = wrap_up_s
         self._report_dir = report_dir
         self._on_report = on_report
         self._on_listen = on_listen  # e.g. per-topic Prisma keyterms (ruling 27)
@@ -143,6 +155,7 @@ class BrainProcessor(FrameProcessor):
         self._task: asyncio.Task | None = None  # the turn task (or opener / closing lines)
         self._end_task: asyncio.Task | None = None
         self._clock_task: asyncio.Task | None = None
+        self._open_task: asyncio.Task | None = None  # the panel's open(), running under the ritual
         self._orphan_task: asyncio.Task | None = None
         self._open_commits: set[int] = set()
         self._closed_commits: set[int] = set()
@@ -153,6 +166,7 @@ class BrainProcessor(FrameProcessor):
         self._pushed = 0  # TTSSpeakFrames pushed for the current line
         self._time_up = False
         self._ending = False
+        self._closing_sent = False  # the page has been told the interview is closing
         self.events: list[dict[str, Any]] = []
         self.outcomes: list[TurnOutcome] = []
         self.dropped: list[dict[str, Any]] = []
@@ -184,7 +198,8 @@ class BrainProcessor(FrameProcessor):
                 await self.begin()
             return
         if isinstance(frame, EndFrame | CancelFrame):
-            for task in (self._task, self._end_task, self._clock_task, self._orphan_task):
+            for task in (self._task, self._end_task, self._clock_task, self._orphan_task,
+                         self._open_task):
                 if task is not None:
                     await self.cancel_task(task)
             # A disconnect must not leave the panel's checkpointer thread behind.
@@ -224,6 +239,12 @@ class BrainProcessor(FrameProcessor):
         self.events.append(msg)
         await self.push_frame(OutputTransportMessageUrgentFrame(message=msg))
 
+    @staticmethod
+    def _segment_field(segment: str) -> dict[str, str]:
+        """The caption's `segment`, only when there is one (the panel's; debate captions are
+        exactly what they were)."""
+        return {"segment": segment} if segment else {}
+
     def events_of(self, event: str) -> list[dict[str, Any]]:
         return [e for e in self.events if e["event"] == event]
 
@@ -260,7 +281,8 @@ class BrainProcessor(FrameProcessor):
         if late:
             # Ruling 26 safety net: caused by the commit of a turn whose move is chosen.
             self.session.note_late_final(text, commit_id=cid)
-            await self.emit("caption", side="user", text=text, late=True)
+            await self.emit("caption", side="user", text=text, late=True,
+                            **self._segment_field(self.session.current_segment()))
             return
         if self.state in (USER, CLOSING, LISTENING) or (cid is not None
                                                         and cid in self._open_commits):
@@ -280,7 +302,8 @@ class BrainProcessor(FrameProcessor):
         self.session.submit_segment(text, segment_index=index)
         self._flush_marks()
         self.session.mark(f"final_transcript_{len(self.session.turn.segments) - 1}")
-        await self.emit("caption", side="user", text=text, turn=self.session.turn.turn_id)
+        await self.emit("caption", side="user", text=text, turn=self.session.turn.turn_id,
+                        **self._segment_field(self.session.current_segment()))
 
     def _mark(self, stage: str, at: float | None = None) -> None:
         if self.session.turn is not None:
@@ -407,6 +430,8 @@ class BrainProcessor(FrameProcessor):
         self._flush_marks()
         self._mark("turn_end")
         await self._set_state(THINKING_S)
+        if self._open_task is not None and not self._open_task.done():
+            await asyncio.shield(self._open_task)  # an answer given over the ritual: open first
         await self.session.end_of_turn(self._deadline_s)
         self._closed_commits |= self._open_commits
         self._open_commits.clear()
@@ -438,9 +463,14 @@ class BrainProcessor(FrameProcessor):
         self._reset_ledger()
         await self._set_state(BOARD)
         held: list[str] = []
+        for event, fields in self.session.turn_events():  # `answers`, then `closing`
+            if event == "closing":
+                self._closing_sent = True
+            await self.emit(event, **fields)
         async for sentence in self.session.speak_stream():
             await self.emit("caption", side="board", speaker=sentence.speaker,
-                            move=sentence.move, text=sentence.text, kind=sentence.kind)
+                            move=sentence.move, text=sentence.text, kind=sentence.kind,
+                            **self._segment_field(sentence.segment))
             await self._feed_sentence(sentence.text, held)
         if held:  # the whole guarded line (or its rest) as one Timbre request
             await self._speak(" ".join(held))
@@ -520,12 +550,13 @@ class BrainProcessor(FrameProcessor):
                 return
             await asyncio.sleep(0.02)
 
-    async def say(self, text: str, *, speaker: str, kind: str) -> None:
-        """A whole line that is not a turn's move (opener, confer, verdict)."""
+    async def say(self, text: str, *, speaker: str, kind: str, segment: str = "") -> None:
+        """A whole line that is not a turn's move (ritual, opener, confer, verdict)."""
         self._reset_ledger()
         held: list[str] = []
         for sentence in split_sentences(text):
-            await self.emit("caption", side="board", speaker=speaker, text=sentence, kind=kind)
+            await self.emit("caption", side="board", speaker=speaker, text=sentence, kind=kind,
+                            **self._segment_field(segment))
             await self._feed_sentence(sentence, held)
         if held:
             await self._speak(" ".join(held))
@@ -543,25 +574,56 @@ class BrainProcessor(FrameProcessor):
         if self._task is not None or self.state != STARTING:
             return
         self._task = self.create_task(self._open_session(delay_s), "brain-open")
-        if self._session_max_s:
+        if self._session_max_s or self._wrap_up_s:
             self._clock_task = self.create_task(self._session_timer(), "brain-timer")
 
     async def _open_session(self, delay_s: float = 0.0) -> None:
         if delay_s:
             await asyncio.sleep(delay_s)
-        await self.emit("session", mode=self.session.mode, session_id=self.session.session_id)
+        panel = {}
+        members = self.session.panel_members()
+        if members:  # the page labels its five seats before anyone speaks (WEB_REQUESTS.md)
+            panel = {"members": members, "max_answers": self.session.max_answers()}
+        await self.emit("session", mode=self.session.mode, session_id=self.session.session_id,
+                        **panel)
         await self._set_state(STARTING)
-        line = await self.session.open()
-        await self.say(line.text, speaker=self.chairman, kind="opener")
+        ritual = self.session.opening_ritual()  # starts the agenda plan; None in debate
+        segment = self.session.current_segment()
+        if not ritual:
+            line = await self.session.open()
+            await self.say(line.text, speaker=self.chairman, kind="opener", segment=segment)
+        else:
+            # The ritual is fixed text, so it plays while the plan and the opening question are
+            # made: the seconds it takes are the opener's head start. `open()` is shielded, so a
+            # candidate who talks over the ritual does not cancel it half way.
+            self._open_task = asyncio.ensure_future(self.session.open())
+            await self.say(ritual, speaker=self.chairman, kind="ritual", segment=segment)
+            line = await asyncio.shield(self._open_task)
+            text = line.text
+            if text.startswith(ritual):
+                text = text[len(ritual):].lstrip()
+            if text:
+                await self.say(text, speaker=self.chairman, kind="opener", segment=segment)
         if self.state == STARTING:
             await self._listen()
 
     async def _session_timer(self) -> None:
-        await asyncio.sleep(self._session_max_s)
+        """The wrap-up, then the hard stop (see the module docstring). Without a wrap-up (debate)
+        the hard stop ends the session at once, as it always did."""
+        wrap_up, hard = self._wrap_up_s, self._session_max_s
+        if wrap_up and hard and wrap_up < hard:
+            await asyncio.sleep(wrap_up)
+            if self.session.request_wrap_up():
+                await self.emit("wrap_up")
+            await asyncio.sleep(hard - wrap_up)
+        else:
+            await asyncio.sleep(hard or wrap_up)
         self._time_up = True
         await self.emit("time_up")
-        if self.state in (LISTENING, USER):
+        if self.state == LISTENING or (self.state == USER and not wrap_up):
             self._end_task = self.create_task(self._end_session(), "brain-end")
+        elif self.state == USER:
+            self._start_turn_task()  # a candidate still talking is treated as having stopped
 
     async def speech_lost(self, message: str) -> None:
         """Prisma gave up reconnecting (ruling 30): tell the candidate and end cleanly."""
@@ -640,6 +702,9 @@ class BrainProcessor(FrameProcessor):
             return
         self._ending = True
         await self._set_state(FINISHED)
+        if speak and self._time_up and not self._closing_sent and self.session.panel_members():
+            self._closing_sent = True  # time ran out with no close spoken yet
+            await self.emit("closing", reason="time")
         confer = self.session.closing_line() if speak else None
         if confer:
             await self.say(confer, speaker=self.chairman, kind="confer")

@@ -551,35 +551,51 @@ async def test_a_session_with_no_request_says_so(settings, cards, form, tmp_path
     assert "No candidate request was detected in this session." in report.notes
 
 
-# --- the old board is untouched ------------------------------------------------------------------
+# --- UPSC is the panel (P7) -----------------------------------------------------------------------
 
 
-async def test_a_session_without_a_panel_setup_has_no_hooks_and_keeps_its_old_topics(
+async def test_a_session_without_options_is_still_the_panel_uncapped(
+    settings, cards, form, tmp_path
+):
+    """No `PanelSetup` is the owner's own run: the same panel, with no answer cap."""
+    deps = build_deps(settings, make_fake_llm(cards), cards=cards)
+    session = InterviewSession(
+        deps=deps, form=form, recorder=TraceRecorder(tmp_path, "plain", enabled=False),
+        analyzer=TurnAnalyzer(deps),
+    )
+    assert session.hooks is not None and session.hooks.setup.max_answers is None
+    assert session.max_turns == session.hooks.agenda.total_budget + session.hooks.setup.free_turns
+    assert session.state.topics == SEGMENTS
+    assert session.max_answers() is None and session.panel_members() == [
+        "Chairperson Sharma", "Shrimati Menon", "Doctor Iyer", "Professor Sen", "Shri Rathore",
+    ]
+    assert session.opening_ritual() and session.request_wrap_up() is True
+    await session.close()
+    await session.close()  # idempotent
+
+
+def test_an_upsc_session_refuses_options_that_are_not_a_panel_setup(
     settings, cards, form, tmp_path
 ):
     deps = build_deps(settings, make_fake_llm(cards), cards=cards)
-    session = InterviewSession(
-        deps=deps, form=form, recorder=TraceRecorder(tmp_path, "old", enabled=False),
-        analyzer=TurnAnalyzer(deps),
-    )
-    assert session.hooks is None and session.max_turns == 9
-    assert session.state.topics == ["background", *settings.topics]
-    assert session.opening_ritual() is None and session.request_wrap_up() is False
-    await session.close()  # nothing to release
+    with pytest.raises(TypeError, match="PanelSetup"):
+        InterviewSession(
+            deps=deps, form=form, recorder=TraceRecorder(tmp_path, "bad", enabled=False),
+            analyzer=TurnAnalyzer(deps), mode_options={"max_answers": 3},
+        )
 
 
-def test_the_panel_flag_is_hidden_fake_only_and_not_for_debate(capsys):
-    with pytest.raises(SystemExit):
-        cli.parse_args(["--panel"])
-    assert "--fake" in capsys.readouterr().err
+def test_the_panel_flag_is_a_hidden_no_op_and_max_answers_is_for_upsc(capsys):
+    assert cli.parse_args(["--panel", "--fake"]).panel
+    assert not cli.parse_args(["--fake"]).panel
     with pytest.raises(SystemExit):
         cli.parse_args(["--panel", "--fake", "--mode", "debate"])
     with pytest.raises(SystemExit):
-        cli.parse_args(["--max-answers", "10"])
+        cli.parse_args(["--mode", "debate", "--fake", "--max-answers", "10"])
     with pytest.raises(SystemExit):
-        cli.parse_args(["--panel", "--fake", "--max-answers", "4"])
-    args = cli.parse_args(["--panel", "--fake", "--max-answers", "10"])
-    assert args.panel and args.max_answers == 10
+        cli.parse_args(["--fake", "--max-answers", "4"])
+    assert cli.parse_args(["--fake", "--max-answers", "10"]).max_answers == 10
+    assert cli.parse_args(["--fake"]).max_answers is None
 
 
 def test_the_help_text_does_not_advertise_the_panel(capsys):
@@ -634,19 +650,6 @@ def test_the_scripted_session_repeats_no_board_question(capsys):
         if line.startswith("[") and "(repeat_question" not in line and line.endswith("?"):
             asked.append(line.split(") ", 1)[-1] if ") " in line else line)
     assert len(asked) == len(set(asked)), "a question was asked twice"
-
-
-def test_the_old_answers_only_script_still_gives_todays_board_lines(capsys):
-    """Moved from examples/fake_panel.txt, unchanged, so the md5 of Ruling 46 still guards it."""
-    import hashlib
-
-    answers = REPO_ROOT / "examples" / "fake_answers.txt"
-    form = REPO_ROOT / "examples" / "forms" / "sample_form.json"
-    rc = cli.main(["--fake", "--form-file", str(form), "--script", str(answers), "--no-trace"])
-    out = capsys.readouterr().out
-    board = "".join(x + "\n" for x in out.splitlines() if x.startswith("["))
-    assert rc == 0
-    assert hashlib.md5(board.encode("utf-8")).hexdigest() == "826ef550999cc34d9018806dce1b665e"
 
 
 # --- more: reassure then repeat, a fuzz, and the director sim as the expected behaviour ---------

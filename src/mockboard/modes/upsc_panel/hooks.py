@@ -26,7 +26,7 @@ import time
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
-from mockboard.brain.actor import LineResult, language_mix
+from mockboard.brain.actor import FILLER_TEMPLATES, LineResult, language_mix
 from mockboard.brain.agenda import (
     NEUTRAL_SEEDS,
     build_fallback_agenda,
@@ -45,9 +45,8 @@ from mockboard.brain.panel_actor import (
     joined,
     question_part,
 )
-from mockboard.brain.panel_lines import RITUAL_LINES, line_for
-from mockboard.brain.personas import PERSONA_DIR, chairman, load_personas
-from mockboard.brain.prompts import build_prompt_kit, check_prefix_budget
+from mockboard.brain.panel_lines import RITUAL_LINES, WRAP_UP_CLOSE_LINES, line_for
+from mockboard.brain.personas import chairman
 from mockboard.brain.schemas import (
     Agenda,
     Analysis,
@@ -102,12 +101,10 @@ class PanelHooks:
         if s.form is None:
             raise ValueError("a panel session needs the candidate's application form")
         self.settings = s.deps.settings
-        self.personas = load_personas(PERSONA_DIR / "panel")
+        runtime = s.deps.mode(s.mode)  # the persona pack and prompt kit are built once per process
+        self.personas = runtime.personas
+        self.kit = runtime.kit
         self.chair_id = chairman(self.personas).id
-        self.kit = build_prompt_kit(
-            self.personas, s.deps.cards, self.settings.panel_prompt_versions()
-        )
-        check_prefix_budget(self.kit.shared_prefix, self.settings.cache_prefix_token_budget)
         self.agenda = build_fallback_agenda(s.form, capped_budgets(self.setup.max_answers))
         self.mix = language_mix(self.personas[self.chair_id], s.form)
         self.cfg = PanelSettings(
@@ -160,10 +157,71 @@ class PanelHooks:
         return True  # the fact checker itself skips a run with no real cards (Ruling 36)
 
     def prompt_versions(self) -> dict[str, int]:
-        return self.settings.panel_prompt_versions()
+        return self.settings.prompt_versions()
 
     def request_wrap_up(self) -> None:
         self.wrap_up_due = True
+
+    # -- what the page and the voice loop ask the panel (P7) -----------------------------------
+
+    def seat_names(self) -> list[str]:
+        """The members in seat order, for the page's five seats before anyone speaks: the
+        Chairperson first, then each later segment's member in agenda order, none twice."""
+        names: list[str] = []
+        for segment in self.agenda.segments:
+            name = self.speaker_name(segment.member)
+            if name not in names:
+                names.append(name)
+        return names[:5]
+
+    def max_answers(self) -> int | None:
+        """The answer cap of this interview; None means no cap."""
+        return self.setup.max_answers
+
+    def current_segment(self) -> str:
+        return self.session.state.topic
+
+    def segment_of(self, move: BoardMove) -> str:
+        """The agenda segment a spoken line belongs to: the segment of the question it asks (a
+        hand-off, said by the Chairperson, carries the segment it hands over to)."""
+        d = self.decision
+        return d.panel.segment_id if d is not None and move.for_turn == d.turn_id else ""
+
+    def turn_events(self) -> list[tuple[str, dict[str, Any]]]:
+        """Page events the voice loop sends just before this turn's line is spoken. `answers`
+        (capped interviews only) is the count including this turn when it counts, worked out from
+        the state `apply` has not touched yet, so a reopened turn says the same again. `closing`
+        comes before the Chairperson's close, whichever way it was reached."""
+        d = self.decision
+        if d is None:
+            return []
+        events: list[tuple[str, dict[str, Any]]] = []
+        cap = self.setup.max_answers
+        if cap is not None and d.counted:
+            used = self.answers_used + 1
+            events.append(("answers", {"used": used, "limit": cap, "left": max(cap - used, 0)}))
+        if d.finished:
+            events.append(("closing", {"reason": d.close_reason or "agenda"}))
+        return events
+
+    def template_line(self, move: BoardMove) -> str | None:
+        """The deterministic question the voice loop adds when a streamed line stopped early and
+        nothing said so far asks one (ADR-008 §2): the segment's own seed for a question that has
+        one, otherwise the move's generic question, as `compose_panel_line` does for a stopped
+        line."""
+        d = self.decision
+        if d is not None and move.for_turn == d.turn_id and d.panel.seed and move.move in (
+            Move.next_question, Move.move_on
+        ):
+            return d.panel.seed
+        return FILLER_TEMPLATES.get(move.move, FILLER_TEMPLATES[Move.probe])
+
+    def confer_line(self) -> str | None:
+        """The Chairperson's time line when the interview is ending and no close was spoken: the
+        wrap-up was asked for, the candidate had not answered since, and the hard stop came."""
+        if self.wrap_up_due and not self.session.state.finished:
+            return line_for(WRAP_UP_CLOSE_LINES, self.mix)
+        return None
 
     def ritual_line(self) -> str:
         """The Chairperson's first line. Asking for it starts the agenda plan, so the few seconds
@@ -266,7 +324,6 @@ class PanelHooks:
             update={
                 "last_move": self.last_move,
                 "challenged_claim_ids": sorted(closed),
-                "panel": True,  # the fast graph's listener is then the panel listener (P5)
             }
         )
 
@@ -276,6 +333,8 @@ class PanelHooks:
         """The ritual, then the first seed of the Chairperson's own segment, asked once."""
         s = self.session
         await self._await_plan()  # at most `agenda_plan_wait_s`; the templates stand if it is late
+        if self._plan_applied:  # the plan's model call is written with the opener's, none is lost
+            s.recorder.merge_calls("plan", "opener")
         first = self.agenda.segments[0]
         seed = first.seeds[0].text
         chair = self.chair_id
@@ -411,15 +470,22 @@ class PanelHooks:
         self._line = line
         return line
 
+    def _fixed_parts(self, move: BoardMove) -> list[PrefacePart]:
+        d = self.decision
+        if d is None or move.for_turn != d.turn_id:
+            return []
+        mix = language_mix(self.persona(move.member), self.session.form)
+        return fixed_parts(d.preface, move, mix, d.answered_member)
+
     def spoken_preface(self, move: BoardMove) -> str:
         """The fixed lines the voice loop says before the model's part, in order (`speak_stream`).
         Read before the model has answered, so it comes from the decision alone."""
-        d = self.decision
-        if d is None or move.for_turn != d.turn_id:
-            return ""
-        persona = self.persona(move.member)
-        mix = language_mix(persona, self.session.form)
-        return joined(fixed_parts(d.preface, move, mix, d.answered_member))
+        return joined(self._fixed_parts(move))
+
+    def spoken_preface_parts(self, move: BoardMove) -> list[tuple[str, str]]:
+        """The same lines with who says each (member id, text): the acknowledgement is the member
+        who heard the answer, the hand-off the Chairperson, so a caption names the right one."""
+        return [(p.member, p.text) for p in self._fixed_parts(move) if p.text]
 
     # -- state ----------------------------------------------------------------
 

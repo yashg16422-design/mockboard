@@ -21,6 +21,6 @@ filler_lines:
   - "Dilchasp."
 # Ruling 14: said instead of the actor's line when the actor call fails or is too slow.
 fallback_lines:
-  - "Ek pal. Aap apni baat jaari rakhiye, mujhe yeh jaanna hai ki isme aapko kya achha lagta hai."
+  - "Ek pal. Aap jaari rakhiye, isme aapko kya achha lagta hai?"
   - "Dilchasp. Isi baat ko thoda aur khol kar batayiye."
   - "Achha, ek pal. Aap aaram se apni baat poori kijiye."

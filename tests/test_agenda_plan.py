@@ -114,8 +114,8 @@ def test_the_planner_prompt_exists_and_says_what_it_may_not_do():
 
 def test_settings_name_the_planner_and_its_wait(settings):
     assert settings.agenda_plan_enabled and settings.agenda_plan_wait_s == 1.5
-    assert settings.panel_prompt_versions()["agenda_plan"] == 1
-    assert "agenda_plan" not in settings.prompt_versions()  # the UPSC board never plans
+    assert settings.prompt_versions()["agenda_plan"] == 1
+    assert "agenda_plan" not in settings.prompt_versions("debate")  # debate never plans
 
 
 # --- what makes a seed fit to ask ---------------------------------------------------------------
@@ -320,10 +320,10 @@ def test_upgrade_takes_only_the_segments_not_begun(form):
 async def run_plan(settings, cards, form, llm=None, **kw):
     llm = llm or make_fake_llm(cards)
     deps = build_deps(settings, llm, cards=cards)
-    from mockboard.brain.personas import PERSONA_DIR, load_personas
+    from mockboard.brain.personas import load_personas
 
     kit = build_prompt_kit(
-        load_personas(PERSONA_DIR / "panel"), deps.cards, settings.panel_prompt_versions()
+        load_personas(), deps.cards, settings.prompt_versions()
     )
     result = await plan_agenda(llm, kit, form, fallback_for(form), **kw)
     return result, llm

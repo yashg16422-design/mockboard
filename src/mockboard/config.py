@@ -50,6 +50,13 @@ class Settings(BaseSettings):
     # detected speech; a candidate thinking or a long board turn can hit that. 300 s is our
     # choice (documented range 5-900). UNVERIFIED: whether board audio echo counts as speech.
     stt_idle_timeout_s: int = Field(default=300, ge=5, le=900)
+    # Prisma closes a stream at 15 minutes, so the service moves to a fresh socket before that: at
+    # `stt_rotate_after_s` when the candidate is not speaking, and at `stt_rotate_hard_s` whatever
+    # they are doing. The panel's 17-minute interview (P7) is the first session long enough to need
+    # it. Lower both in `.env` to watch a rotation in a short session. UNVERIFIED: rotation has
+    # only run against our fake Prisma server, never a live one.
+    stt_rotate_after_s: float = Field(default=12 * 60.0, gt=0, lt=900)
+    stt_rotate_hard_s: float = Field(default=14 * 60.0, gt=0, lt=900)
     # Per-topic context for Prisma v3.0 (`keyterms`, `topic`); ignored on v2.5, where the
     # docs offer only single-word boosting, which stays off unless STT_BIAS_SCORE > 0
     # (probe rule P6: do not rely on boosting until `settings_updated` is seen).
@@ -118,8 +125,16 @@ class Settings(BaseSettings):
     # shorter threshold (ruling 31). UNVERIFIED: both are our choice until live runs.
     voice_barge_in_min_speech_ms: int = Field(default=500, ge=0)
     voice_resume_min_speech_ms: int = Field(default=150, ge=0)
-    # A hard stop per voice session, under Prisma's 15-minute cap (CTO_NOTES_03 V6).
-    voice_session_max_s: float = Field(default=600.0, gt=0)
+    # The UPSC panel's interview limit is 17 minutes (owner's decision, Ruling 47). At the wrap-up
+    # the session asks the director to close with the next finished turn (an in-flight question
+    # stands); at the hard stop it ends, with the Chairperson's time line if no close was spoken.
+    # Prisma's 15-minute cap is per socket, not per session: the stream rotates to a fresh socket
+    # at 12 to 14 minutes (`PrismaSTTService`), which this longer session now reaches.
+    # UNVERIFIED: rotation has never run in a live session.
+    voice_wrap_up_s: float = Field(default=960.0, gt=0)
+    voice_hard_stop_s: float = Field(default=1020.0, gt=0)
+    # Debate keeps the 10-minute stop it always had (ADR-009: debate is unchanged).
+    voice_debate_max_s: float = Field(default=600.0, gt=0)
     # Defect D: a WebRTC connection that is not `connected` within this time is closed and
     # gets no session (no Prisma or Timbre connection is ever opened for it). Localhost ICE
     # takes well under a second; our choice.
@@ -193,7 +208,6 @@ class Settings(BaseSettings):
     # Must be >= 1 (validated below): fact checks run in the background and the move never
     # waits for this turn's verdicts (ruling 9), so a same-turn challenge cannot exist.
     fact_challenge_min_delay_turns: int = 1
-    max_turns_per_topic: int = 4
     strong_streak_to_move_on: int = 3
     reassure_latency_s: float = 4.0
     interrupt_after_words: int = 150
@@ -233,16 +247,14 @@ class Settings(BaseSettings):
     cache_prefix_token_budget: int = 18000
 
     # --- Prompt versions (prompts/<id>.v<N>.md) ---
-    prompt_listener_version: int = 3  # Round 20: Devanagari, honest-unknown markers
+    # UPSC is the panel (P7). The old board's listener.v3, actor.v3 and opener.v1 stay on disk,
+    # never edited, and are no longer used.
+    prompt_listener_version: int = 4  # v3 + the candidate's request, English-only notes
     prompt_librarian_version: int = 1
-    prompt_actor_version: int = 3  # ruling 36/37: open-ended, no quiz, no quoting
+    prompt_actor_version: int = 5  # v4 + Namaste only at the first hand-off (Ruling 73)
     prompt_judge_version: int = 1
-    prompt_opener_version: int = 1
-    # The panel's prompts (P4, behind --panel only). The UPSC versions above stay until P7.
-    prompt_listener_panel_version: int = 4  # v3 + the candidate's request, English-only notes
+    prompt_opener_version: int = 2  # no greeting: the ritual line is said by code
     prompt_agenda_plan_version: int = 1  # Nova's seed questions for four segments (P6)
-    prompt_actor_panel_version: int = 5  # v4 + Namaste only at the first hand-off (Ruling 73)
-    prompt_opener_panel_version: int = 2  # no greeting: the ritual line is said by code
     # Debate mode (ADR-009, CTO_NOTES_04).
     prompt_shared_debate_version: int = 1
     prompt_listener_debate_version: int = 2  # Round 20: Devanagari
@@ -269,7 +281,6 @@ class Settings(BaseSettings):
 
     # --- Data locations ---
     cards_dir: Path = REPO_ROOT / "data" / "cards"
-    topics: list[str] = Field(default_factory=lambda: ["tourism", "internal_security"])
 
     # --- Feature flags: every innovation defaults to the safe setting (off). ---
     # None of these features is built in phase 1; the flags exist so later phases plug in
@@ -287,6 +298,18 @@ class Settings(BaseSettings):
     trace_dir: Path = Path("traces")  # per-turn JSONL traces (git-ignored)
     report_dir: Path = Path("runs/reports")
     langfuse_enabled: bool = False
+
+    @model_validator(mode="after")
+    def _rotation_order(self) -> Settings:
+        if self.stt_rotate_after_s > self.stt_rotate_hard_s:
+            raise ValueError("stt_rotate_after_s must not be above stt_rotate_hard_s")
+        return self
+
+    @model_validator(mode="after")
+    def _wrap_up_comes_before_the_hard_stop(self) -> Settings:
+        if self.voice_wrap_up_s >= self.voice_hard_stop_s:
+            raise ValueError("voice_wrap_up_s must be below voice_hard_stop_s")
+        return self
 
     @model_validator(mode="after")
     def _pools_cover_workers(self) -> Settings:
@@ -324,10 +347,16 @@ class Settings(BaseSettings):
             )
         return v
 
-    def prompt_versions(self, mode: str = "upsc_interview") -> dict[str, int]:
-        """The prompt id -> version map recorded in every trace line, for one mode.
+    def time_limits(self, mode: str = "upsc_interview") -> tuple[float | None, float]:
+        """(wrap-up seconds or None, hard stop seconds) of a voice session in this mode: the panel's
+        16 and 17 minutes, or debate's single 10-minute stop (debate has no wrap-up)."""
+        if mode == "debate":
+            return None, self.voice_debate_max_s
+        return self.voice_wrap_up_s, self.voice_hard_stop_s
 
-        The UPSC map is unchanged by modes (ADR-009); another mode lists its own prompts."""
+    def prompt_versions(self, mode: str = "upsc_interview") -> dict[str, int]:
+        """The prompt id -> version map recorded in every trace line, for one mode. Another mode
+        (ADR-009) lists its own prompts."""
         if mode != "upsc_interview":
             return self._mode_prompt_versions(mode)
         return {
@@ -336,16 +365,7 @@ class Settings(BaseSettings):
             "actor": self.prompt_actor_version,
             "judge": self.prompt_judge_version,
             "opener": self.prompt_opener_version,
-        }
-
-    def panel_prompt_versions(self) -> dict[str, int]:
-        """The UPSC map with the panel's listener, actor and opener, for a panel session's trace."""
-        return {
-            **self.prompt_versions(),
-            "listener": self.prompt_listener_panel_version,
             "agenda_plan": self.prompt_agenda_plan_version,
-            "actor": self.prompt_actor_panel_version,
-            "opener": self.prompt_opener_panel_version,
         }
 
     def _mode_prompt_versions(self, mode: str) -> dict[str, int]:

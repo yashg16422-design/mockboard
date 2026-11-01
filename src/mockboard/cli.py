@@ -5,6 +5,7 @@
     python -m mockboard.cli --fake --script answers.txt # scripted answers, one per line
     python -m mockboard.cli --mode debate --fake        # debate mode (curated motions)
     python -m mockboard.cli --fake --form-file examples/forms/sample_form.json
+    python -m mockboard.cli --fake --script examples/fake_panel.txt   # the UPSC panel, scripted
 
 Flow: application form (no names) -> opener -> typed answers -> fast analysis graph per
 segment (background fact checks) -> delayed fact challenge phrased as a question citing the
@@ -267,7 +268,7 @@ async def run(args: argparse.Namespace) -> int:
         print(f"\nApplication form from {args.form_file}")
     else:
         form = read_form(ask, use_defaults=use_defaults)
-    if args.panel:  # P4, hidden: the panel runs on the fake LLM only until P7
+    if args.mode != DEBATE_MODE:  # the UPSC panel (P7); --max-answers is a test user's cap
         options = PanelSetup(max_answers=args.max_answers)
     kwargs = {"session_id": session_id} if session_id else {}
     session = InterviewSession(
@@ -301,7 +302,7 @@ def _print_panel_line(session: InterviewSession, line, tag: str = "") -> None:
 
 async def _interview(args, settings, session, rt, ask, lines, recorder, cards) -> int:
     opener = await session.open()
-    if args.panel:
+    if args.mode != DEBATE_MODE:
         print(f"\n{session.hooks.agenda_note()}\n")
         _print_panel_line(session, opener)
     else:
@@ -319,7 +320,7 @@ async def _interview(args, settings, session, rt, ask, lines, recorder, cards) -
         await session.end_of_turn(args.deadline_s or settings.text_move_deadline_s)
         out = await session.speak()
         tag = f"{out.move.move.value}, {out.move.rule_id}"
-        if args.panel:
+        if args.mode != DEBATE_MODE:
             _print_panel_line(session, out.line, tag)
         else:
             print(f"[{session.speaker_name(out.move.member)}] ({tag}) {out.line.text}")
@@ -375,20 +376,22 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument(
         "--panel",
         action="store_true",
-        help=argparse.SUPPRESS,  # P4: the panel (agenda, director, five members); fake LLM only
+        help=argparse.SUPPRESS,  # a no-op since P7: the UPSC interview is always the panel
     )
     p.add_argument(
         "--max-answers",
         type=int,
-        help=argparse.SUPPRESS,  # panel only: the test-user cap; the agenda spends it (Ruling 49)
+        help="UPSC only: cap the interview at this many answers (at least 5, one question for "
+        "each member); the agenda spends the cap, so the panel still reaches a proper close. "
+        "Default: no cap, as for an owner or reviewer",
     )
     p.add_argument("--language", choices=["en", "hi"], help="report language (default: settings)")
     p.add_argument(
         "--max-turns",
         type=int,
         default=None,
-        help="hard cap on candidate turns (default 9; a panel session sets its own cap from its "
-        "agenda and refuses this flag)",
+        help="debate only: hard cap on candidate turns (default 9). The UPSC panel sets its own "
+        "cap from its agenda and refuses this flag (use --max-answers to shorten it)",
     )
     p.add_argument(
         "--think-s",
@@ -412,15 +415,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         p.error("--form-file is for the UPSC interview; debate has no application form")
     if args.panel and args.mode == DEBATE_MODE:
         p.error("--panel is for the UPSC interview; debate has no panel")
-    if args.panel and not args.fake:
-        p.error("--panel runs on the fake LLM only until the cutover (P7): add --fake")
-    if args.panel and args.max_turns is not None:
-        p.error("--max-turns does not apply to --panel: the agenda sets the turn cap "
+    if args.mode != DEBATE_MODE and args.max_turns is not None:
+        p.error("--max-turns does not apply to the UPSC panel: the agenda sets the turn cap "
                 "(use --max-answers to shorten it)")
     if args.max_turns is None:
         args.max_turns = 9
-    if args.max_answers is not None and not args.panel:
-        p.error("--max-answers is a panel setting: add --panel")
+    if args.max_answers is not None and args.mode == DEBATE_MODE:
+        p.error("--max-answers is for the UPSC interview; debate has no answer cap")
     if args.max_answers is not None and args.max_answers < 5:
         p.error("--max-answers must be at least 5, one question for each of the five members")
     return args

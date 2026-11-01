@@ -342,9 +342,6 @@ class StrategyContext(_Model):
     voice_signals: VoiceSignals = Field(default_factory=VoiceSignals)
     # Debate mode only (None in UPSC mode).
     debate: DebateContext | None = None
-    # Panel sessions only: the fast graph's listener then uses the panel listener (tool, prompt and
-    # candidate request) instead of the UPSC board's. Set by `PanelHooks.ctx`; False elsewhere.
-    panel: bool = False
 
 
 # ---------------------------------------------------------------------------

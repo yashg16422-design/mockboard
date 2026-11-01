@@ -21,8 +21,6 @@ from mockboard.brain.strategist import StrategyConfig
 from mockboard.config import Settings
 from mockboard.modes import DEFAULT_MODE, ModeProfile, get_profile, mode_ids
 
-BACKGROUND_TOPIC = "background"  # the form-driven opener's pseudo-topic (one turn)
-
 
 @dataclass(frozen=True)
 class ModeRuntime:

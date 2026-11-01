@@ -64,11 +64,14 @@ def _flag(env: Mapping[str, str], name: str, default: bool) -> bool:
     return value in _TRUE
 
 
-def _number(env: Mapping[str, str], name: str, default: int) -> int:
+def _number(env: Mapping[str, str], name: str, default: int, *, minimum: int | None = None) -> int:
     raw = env.get(name)
     if raw is None or not raw.strip():
         return default
-    return int(raw.strip())
+    value = int(raw.strip())
+    if minimum is not None and value < minimum:
+        raise ValueError(f"{name} must be at least {minimum}")
+    return value
 
 
 def new_visitor_id() -> str:
@@ -180,7 +183,9 @@ class AccessConfig:
             enabled=_flag(source, "ACCESS_ENABLED", False),
             free_sessions=_number(source, "ACCESS_FREE_SESSIONS", 5),
             ip_sessions=_number(source, "ACCESS_IP_SESSIONS", 15),
-            max_answers=_number(source, "ACCESS_MAX_ANSWERS", 10),
+            # The panel has five members and asks each at least once (`capped_budgets`): a smaller
+            # cap could not start a session, after it had been counted.
+            max_answers=_number(source, "ACCESS_MAX_ANSWERS", 10, minimum=5),
             daily_sessions=_number(source, "ACCESS_DAILY_SESSIONS", 30),
             secret=source.get("ACCESS_SECRET", "").strip(),
             codes=codes,

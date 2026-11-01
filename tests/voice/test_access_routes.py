@@ -72,7 +72,7 @@ def ran(monkeypatch, tmp_path):
     monkeypatch.setattr(FakeHandler, "connections", [])
     sessions: list[object] = []
 
-    async def fake_run(connection, cfg, form):
+    async def fake_run(connection, cfg, form, max_answers=None):
         sessions.append((connection, form))
 
     monkeypatch.setattr(server, "run_session", fake_run)
@@ -230,7 +230,7 @@ def test_pending_limits_holds_the_cap_during_a_session(ran, settings, monkeypatc
     app = app_for(settings)
     pending = app.state.pending["limits"]
 
-    async def peek(connection, cfg, form):
+    async def peek(connection, cfg, form, max_answers=None):
         seen.append(pending[connection.pc_id])
 
     monkeypatch.setattr(server, "run_session", peek)
@@ -241,6 +241,123 @@ def test_pending_limits_holds_the_cap_during_a_session(ran, settings, monkeypatc
         settle(client, lambda: len(seen) == 2)
         settle(client, lambda: not pending)
     assert seen == [10, None]
+
+
+# --- The answer cap reaches the panel (P7) -------------------------------------------------------
+
+
+def test_the_server_gives_the_session_the_admitted_cap_and_fails_closed(ran, settings, monkeypatch):
+    """A test user is capped at ACCESS_MAX_ANSWERS, an owner or reviewer (None) is not, and a
+    connection with no admission entry at all is capped, never left unlimited."""
+    import asyncio
+    from types import SimpleNamespace
+
+    caps: list[int | None] = []
+
+    async def run(connection, cfg, form, max_answers=None):
+        caps.append(max_answers)
+
+    monkeypatch.setattr(server, "run_session", run)
+    app = app_for(settings)
+    pending = app.state.pending
+
+    async def go() -> None:
+        for entry in (7, None, "missing"):
+            connection = FakeConnection("connected")
+            pending["counts"][connection.pc_id] = SimpleNamespace(commit=lambda: True)
+            if entry != "missing":
+                pending["limits"][connection.pc_id] = entry
+            await app.state.gate.run(connection)
+
+    asyncio.run(go())
+    assert caps == [7, None, 10]
+    assert not pending["limits"]  # nothing is kept after a session
+
+
+def test_a_test_user_is_admitted_with_the_cap_and_a_reviewer_without(ran, settings, monkeypatch):
+    caps: list[int | None] = []
+
+    async def run(connection, cfg, form, max_answers=None):
+        caps.append(max_answers)
+
+    monkeypatch.setattr(server, "run_session", run)
+    monkeypatch.setenv("ACCESS_MAX_ANSWERS", "6")
+    with TestClient(app_for(settings)) as client:
+        assert offer(client).status_code == 200
+        settle(client, lambda: caps)
+        assert offer(client, "reviewer", access_code=CODE).status_code == 200
+        settle(client, lambda: len(caps) == 2)
+    assert caps == [6, None]
+
+
+def test_make_session_builds_the_panel_with_the_cap_and_debate_ignores_it(settings):
+    cfg = server.parse_args(["--mode", "upsc", "--fake-llm", "--fake-speech"])
+    cfg.settings = settings
+    form = server.parse_form({}, allow_default=True)
+    capped = server.make_session(cfg, form, max_answers=7)
+    assert capped.mode == "upsc_interview" and capped.max_answers() == 7
+    assert server.make_session(cfg, form).max_answers() is None
+    debate = server.parse_args(["--mode", "debate", "--motion", "1", "--side", "for",
+                                "--fake-llm", "--fake-speech"])
+    debate.settings = settings
+    assert server.make_session(debate, None, max_answers=7).max_answers() is None
+
+
+async def test_run_session_closes_the_session_on_every_way_out(settings, monkeypatch):
+    """Ruling 73 item 6: a finished report, a failure, a cancelled task (a disconnect) and a
+    cleanup that itself fails all end with the session closed, once, and nothing hidden."""
+    import asyncio
+
+    cfg = server.parse_args(["--mode", "upsc", "--fake-llm", "--fake-speech"])
+    cfg.settings = settings
+    closed: list[str] = []
+
+    class Stub:
+        session_id = "stub"
+        fail_close = False
+
+        async def close(self):
+            closed.append("closed")
+            if self.fail_close:
+                raise RuntimeError("cleanup failed")
+
+    stub = Stub()
+    monkeypatch.setattr(server, "make_session", lambda cfg_, form, max_answers=None: stub)
+
+    async def returns(connection, cfg_, session):
+        return None
+
+    async def raises(connection, cfg_, session):
+        raise RuntimeError("the pipeline broke")
+
+    async def waits(connection, cfg_, session):
+        await asyncio.Event().wait()
+
+    monkeypatch.setattr(server, "_serve", returns)
+    await server.run_session(object(), cfg, None)
+    monkeypatch.setattr(server, "_serve", raises)
+    with pytest.raises(RuntimeError, match="pipeline broke"):
+        await server.run_session(object(), cfg, None)
+    monkeypatch.setattr(server, "_serve", waits)
+    task = asyncio.create_task(server.run_session(object(), cfg, None))
+    await asyncio.sleep(0.05)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    stub.fail_close = True
+    monkeypatch.setattr(server, "_serve", returns)
+    await server.run_session(object(), cfg, None)  # a failing close is logged, not raised
+    assert closed == ["closed"] * 4
+
+
+def test_the_page_is_told_the_panels_17_minutes_and_debates_10(settings):
+    upsc = server.parse_args(["--mode", "upsc", "--fake-llm", "--fake-speech"])
+    upsc.settings = settings
+    assert upsc.public()["max_minutes"] == 17.0
+    debate = server.parse_args(["--mode", "debate", "--motion", "1", "--side", "for",
+                                "--fake-llm", "--fake-speech"])
+    debate.settings = settings
+    assert debate.public()["max_minutes"] == 10.0
 
 
 # --- Static files and startup ------------------------------------------------------------------

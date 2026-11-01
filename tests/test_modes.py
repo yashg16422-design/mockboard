@@ -4,7 +4,13 @@ The golden transcripts lock today's behaviour: `make cli-fake` and `make cli-fak
 a fixed session id must print exactly `tests/golden/upsc_cli_fake.txt` and
 `tests/golden/debate_cli_fake.txt` (timings are not printed without --print-trace, and the
 repository path and the frozen cards folder are normalised, so both files still read
-`<repo>/data/cards`).
+`<repo>/data/cards`; the one planner timing in the agenda line reads `<n> ms`).
+
+The UPSC golden was replaced ON PURPOSE at P7 (the cutover): UPSC is now the five-member panel, so
+the old seven-answer transcript (board-line md5 826ef550...) no longer describes any behaviour. The
+new one is the full scripted panel session of `examples/fake_session.txt`, read line by line by a
+human before it was accepted. The debate golden and every debate hash below were not touched,
+with the one exception explained at `DEBATE_FACT_REQUESTS_SHA256`.
 
 The debate lock (CTO_NOTES_06 section 7, Ruling 44) also hashes the shared prefix on both the
 fake and the real path, the tool schemas, the prompt files, the debate's spoken templates, and
@@ -58,6 +64,9 @@ DEBATE_MODE = "debate"
 
 # md5 of `cli --mode debate --fake --script examples/fake_debate.txt | grep '^\['`.
 DEBATE_BOARD_LINES_MD5 = "f2a23f33b90df75103f505a2696e6944"
+# md5 of `cli --fake --script examples/fake_session.txt --session-id golden-sess | grep '^\['`, the
+# panel's board lines (P7). It replaces 826ef550999cc34d9018806dce1b665e, the old board's.
+UPSC_BOARD_LINES_MD5 = "e748940f8faa2863b5891d3c71532a67"
 # sha256 values taken at 7d94936, before any Panel phase code.
 DEBATE_PREFIX_SHA256 = "a36d6feb232b9f86209639a161be6a48465e1635140a7bf15a4a402659246555"
 DEBATE_TOOLS_SHA256 = {
@@ -77,7 +86,17 @@ DEBATE_TEMPLATES_SHA256 = "145ed67115387a42c421a24cfb3dba75650d2bc6b9b599909ff97
 # prove the run itself had not moved.
 DEBATE_REQUESTS_SHA256 = "60b1a1a5c618a7cf5dec88002263a96feacdc3773f975233be7a5912f8f48b32"
 DEBATE_REBUT_REQUESTS_SHA256 = "d02fe2d00435f3fafd3a9bc3d501a70ecf75ad1a72b5bf7f063098ebec6d1ebf"
-DEBATE_FACT_REQUESTS_SHA256 = "191eb84a7d80035487cf49ffef0284893dd0091e796e5ab77780e90426892373"
+# P7 changed this one value, from 191eb84a7d80035487cf49ffef0284893dd0091e796e5ab77780e90426892373.
+# Why: the shared fact-check graph builds its prompt from the default (UPSC) kit, so the debate's
+# single librarian call carries the UPSC persona pack in its system text, and P7 replaced that pack
+# (three old personas, now the five panel members). Nothing in debate moved: with that one block
+# masked, all three scripted-debate hashes equal what they were at 65b8a88, which is locked below
+# (`DEBATE_FACT_REQUESTS_MASKED_SHA256`, taken at 65b8a88 and again after P7) and checked by
+# `test_debate_requests_are_unchanged_except_the_librarians_persona_pack`.
+DEBATE_FACT_REQUESTS_SHA256 = "5a519b35e491501636f405771ea833034b759b4b72384d7ae606015a1242d389"
+DEBATE_FACT_REQUESTS_MASKED_SHA256 = (
+    "85fa5b76b198dc1d73905ceb3df2478f781ff259fb47c04ce778c9edb9d3b992"
+)
 LISTENER_TOOL_NAME = "record_debate_analysis"
 DEBATE_REQUEST_SHAPE = [
     ("listener", "t0", 1200),
@@ -94,7 +113,11 @@ DEBATE_REQUEST_SHAPE = [
 
 def normalise_paths(out: str) -> str:
     frozen_cards = str(Settings(_env_file=None).cards_dir)
-    return out.replace(frozen_cards, "<repo>/data/cards").replace(str(REPO_ROOT), "<repo>")
+    out = out.replace(frozen_cards, "<repo>/data/cards").replace(str(REPO_ROOT), "<repo>")
+    return PLAN_MS.sub(r"\1<n> ms)", out)  # the planner's own run time is not a transcript fact
+
+
+PLAN_MS = re.compile(r"(\bquestions written by the planner, \d+ replaced by templates, )\d+ ms\)")
 
 
 def run_upsc_cli(tmp_path, capsys, *extra: str) -> str:
@@ -202,6 +225,39 @@ def test_explicit_upsc_mode_flag_prints_the_same_transcript(tmp_path, capsys):
     )
 
 
+def test_upsc_golden_file_holds_the_recorded_board_lines():
+    """Regenerating the golden cannot quietly accept a change to what the panel says."""
+    lines = GOLDEN.read_text(encoding="utf-8").splitlines(keepends=True)
+    board = "".join(line for line in lines if line.startswith("["))
+    assert hashlib.md5(board.encode("utf-8")).hexdigest() == UPSC_BOARD_LINES_MD5
+
+
+def test_the_golden_session_shows_the_whole_panel():
+    """What a reader checks in the golden (CTO_NOTES_06 §10): the ritual, all five members in
+    order with four spoken hand-offs, a fact challenge and the acknowledgement after it, a repeat,
+    a topic change that never comes back, an honest unknown that is reassured, and the close."""
+    text = GOLDEN.read_text(encoding="utf-8")
+    board = [x for x in text.splitlines() if x.startswith("[")]
+    assert board[0] == "[Chairperson Sharma] Namaste. Please be seated."
+    speakers = []
+    for line in board:
+        who = line[1 : line.index("]")]
+        if who not in speakers:
+            speakers.append(who)
+    assert speakers == ["Chairperson Sharma", "Shrimati Menon", "Doctor Iyer", "Professor Sen",
+                        "Shri Rathore"]
+    assert sum("D-HANDOFF" in x for x in board) == 4
+    for needle in ("(fact_challenge, R4)", "Theek hai, yeh maanna achhi baat hai.",
+                   "(repeat_question, D-REPEAT)", "(reassure, R3)", "(next_question, D-SEED)"):
+        assert any(needle in x for x in board), needle
+    assert board[-1] == "[Chairperson Sharma] (move_on, D-CLOSE) Thank you, that will be all."
+    after = text[text.index("chess ke alawa kisi aur topic"):]
+    assert "chess" not in " ".join(x for x in after.split("REPORT")[0].splitlines()
+                                   if x.startswith("["))
+    challenge = next(x for x in board if "(fact_challenge, R4)" in x)
+    assert "test data" in challenge  # the fake run's synthetic card says what it is
+
+
 def test_debate_transcript_is_byte_identical_to_the_golden_file(capsys):
     assert run_debate_cli(capsys) == DEBATE_GOLDEN.read_text(encoding="utf-8")
 
@@ -290,6 +346,24 @@ def test_fact_challenge_script_reaches_fact_challenge_cross_question_and_rebut(
 def test_debate_fact_challenge_request_hash_is_locked(capsys, monkeypatch):
     rows = request_rows(scripted_debate_requests(capsys, monkeypatch, DEBATE_FACT_SCRIPT))
     assert sha256(json.dumps(rows)) == DEBATE_FACT_REQUESTS_SHA256
+
+
+PERSONA_PACK = re.compile(r"## The interview board \(persona pack\)\n.*?(?=\n\n## Fact cards)",
+                          re.DOTALL)
+
+
+def test_debate_requests_are_unchanged_except_the_librarians_persona_pack(capsys, monkeypatch):
+    """The proof behind the one re-derived debate hash (see `DEBATE_FACT_REQUESTS_SHA256`): with
+    the persona-pack block of the system text masked, the fact-challenge script's requests hash to
+    what they did at 65b8a88, and only the librarian's call has such a block at all."""
+    calls = scripted_debate_requests(capsys, monkeypatch, DEBATE_FACT_SCRIPT)
+    rows = [
+        [c.name, c.tag, sha256(PERSONA_PACK.sub("<PACK>", c.system)), sha256(c.user),
+         c.max_tokens, c.tool, c.temperature]
+        for c in calls
+    ]
+    assert sha256(json.dumps(rows)) == DEBATE_FACT_REQUESTS_MASKED_SHA256
+    assert [c.name for c in calls if PERSONA_PACK.search(c.system)] == ["librarian"]
 
 
 def test_debate_templates_hash_is_locked():

@@ -41,6 +41,8 @@ from mockboard.session import InterviewSession
 from test_board_invariants import ANSWERS, random_answers
 
 SEEDS = range(24)
+# Rules whose line is fixed text said by code, with no actor call (CTO_NOTES_12 §9.4).
+FIXED_LINE_RULES = {"D-CLOSE", "D-REPEAT", "D-RESUME", "D-END-CONFIRM"}
 # Share of Bedrock calls that fail, per lane. The background lane is hit harder because the
 # shared vote cache makes its calls rare, and a librarian or judge fallback needs every one
 # of its graph retries to fail.
@@ -128,7 +130,8 @@ async def run_session(seed: int, deps, form, tmp_path, cache: VoteCache) -> Run:
         # The shared planted claim is answered from the vote cache after its first real vote;
         # a per-seed variant makes every session ask the librarian at least once.
         variant = ANSWERS["planted"][0].replace("30 percent", f"{20 + seed} percent")
-        answers = [BACKGROUND, ANSWERS["planted"][0], variant, *random_answers(seed, 6)]
+        # The panel's agenda is 15 answers plus up to 4 free turns: enough to reach its close.
+        answers = [BACKGROUND, ANSWERS["planted"][0], variant, *random_answers(seed, 20)]
         for text in answers:
             if session.state.finished:
                 break
@@ -217,12 +220,20 @@ def violations(run: Run, answered_librarian_prompts: set[str], cache: VoteCache)
 
     # 4b / 5. Actor and opener: one attempt per turn (ruling 14: never retried), and a failed
     # stream is always a flagged, traced fallback line.
+    # The panel says some lines from code alone (the close, a repeat, an end confirmation): those
+    # turns make no actor call, and each such turn must be one of them. Every other turn makes one.
     actor_calls = run.stub.named("actor")
-    if len(actor_calls) != len(turns):
-        bad.append(f"{len(actor_calls)} actor calls for {len(turns)} turns")
+    with_actor = [
+        i for i, x in enumerate(turns) if any(c["name"] == "actor" for c in x["llm_calls"])
+    ]
+    for i, x in enumerate(turns):
+        if i not in with_actor and x["rule_id"] not in FIXED_LINE_RULES:
+            bad.append(f"{x['turn_id']}: no actor call and not a fixed line ({x['rule_id']})")
+    if len(actor_calls) != len(with_actor):
+        bad.append(f"{len(actor_calls)} actor calls for {len(with_actor)} turns that spoke")
     personas = run.session.deps.personas
-    for call, line, board, m in zip(actor_calls, turns, st.board_lines[1:], st.moves,
-                                    strict=False):
+    pairs = [(turns[i], st.board_lines[1:][i], st.moves[i]) for i in with_actor]
+    for call, (line, board, m) in zip(actor_calls, pairs, strict=False):
         if call.fault and not line["actor_fallback"]:
             bad.append(f"{line['turn_id']}: actor failed ({call.fault}) but no actor_fallback")
         if line["actor_fallback"] != board.is_fallback:
@@ -231,8 +242,13 @@ def violations(run: Run, answered_librarian_prompts: set[str], cache: VoteCache)
             actor_fbs = [f for f in line["fallbacks"] if f["stage"] == "actor"]
             if not line["actor_error"] or len(actor_fbs) != 1:
                 bad.append(f"{line['turn_id']}: actor failure not recorded in the trace")
+            # The panel's own fallbacks (P4): a question with a seed says the seed, a rephrase
+            # says the question again, a challenge keeps its template, anything else the
+            # speaking member's own line.
             expected = {Move.fact_challenge: "challenge_template",
-                        Move.move_on: "move_template"}.get(m.move, "persona_line")
+                        Move.move_on: "seed_template",
+                        Move.next_question: "seed_template",
+                        Move.rephrase_question: "repeat_verbatim"}.get(m.move, "persona_line")
             if line["actor_fallback_kind"] != expected:
                 bad.append(f"{line['turn_id']}: {m.move} fell back to "
                            f"{line['actor_fallback_kind']}, expected {expected}")

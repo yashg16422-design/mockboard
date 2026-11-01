@@ -91,9 +91,10 @@ def build_voice_pipeline(
 ) -> VoicePipeline:
     brain_ref: list[BrainProcessor] = []
     vad, user_turn, start, stop, tuner = build_turn_taking(settings, session, brain_ref)
+    wrap_up_s, hard_stop_s = session.time_limits()
     brain = BrainProcessor(
         session, stt=stt, ledger=ledger, tuner=tuner, report_dir=report_dir,
-        session_max_s=settings.voice_session_max_s, on_report=on_report, on_listen=on_listen,
+        session_max_s=hard_stop_s, wrap_up_s=wrap_up_s, on_report=on_report, on_listen=on_listen,
         autostart=autostart,
         tts_idle_cap_s=settings.tts_first_byte_timeout_s * 2 + 3,
     )

@@ -262,17 +262,20 @@ async def test_verdicts_of_turn_n_influence_turn_n_plus_1_and_never_turn_n(
     fake = slow_fake(cards)
     b = await board(deps, form, tmp_path, fake)
     try:
+        # The claim is made on turn 1 (the Chairperson's last question), so turn 2 is the first
+        # turn a challenge can come on: a spent budget hands off before any strategist rule.
+        await b.turn(NO_CLAIMS)
         b.session.submit_segment(CLAIMY, segment_index=0)
-        # Let the fact check finish BEFORE turn 0 ends: the verdict exists during turn 0.
+        # Let the fact check finish BEFORE turn 1 ends: the verdict exists during turn 1.
         await asyncio.sleep(0.05)
         assert await b.session.settle_fact_checks(2.0)
-        assert contradicted(b.session) == ["t0.s0.c0"]
-        move0 = await b.session.end_of_turn(DEADLINE_S)
+        assert contradicted(b.session) == ["t1.s0.c0"]
+        move1 = await b.session.end_of_turn(DEADLINE_S)
         await b.session.speak()
-        assert move0.move != Move.fact_challenge
+        assert move1.move != Move.fact_challenge
 
-        move1, _, _ = await b.turn(NO_CLAIMS)
-        assert (move1.move, move1.target) == (Move.fact_challenge, "t0.s0.c0")
+        move2, _, _ = await b.turn(NO_CLAIMS)
+        assert (move2.move, move2.target) == (Move.fact_challenge, "t1.s0.c0")
     finally:
         await b.close()
 

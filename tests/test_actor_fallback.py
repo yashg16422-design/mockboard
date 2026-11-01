@@ -157,10 +157,8 @@ async def test_the_session_traces_the_actor_fallback_and_carries_on(deps, form, 
         deps=d, form=form, recorder=recorder, analyzer=TurnAnalyzer(d), session_id="r14"
     )
     await session.open()
-    # Turn 0 is the one-question background topic; it ends with a topic change.
-    await answer(session, "Kanpur mein repair shops bahut hain. Training kam hai.")
-    llm.push("actor", LLMTransientError("throttled"))  # only turn 1's actor call fails
-    failed = await answer(session, "Tourism se rozgaar badhta hai, lekin pollution bhi.")
+    llm.push("actor", LLMTransientError("throttled"))  # only the first answer's actor call fails
+    failed = await answer(session, "Kanpur mein repair shops bahut hain. Training kam hai.")
     assert failed.move.move != Move.move_on
     persona = d.personas[failed.move.member]
     assert failed.line.text.endswith(tuple(persona.fallback_lines))
@@ -173,6 +171,6 @@ async def test_the_session_traces_the_actor_fallback_and_carries_on(deps, form, 
     ]
 
     # The interview carries on: the next turn is phrased by the actor as usual.
-    after = await answer(session, "Homestays se gaon ki aamdani badh sakti hai.")
+    after = await answer(session, "Tourism se rozgaar badhta hai, lekin pollution bhi.")
     assert not after.trace["actor_fallback"] and after.trace["actor_error"] is None
     await session.finish()

@@ -15,7 +15,7 @@ from typing import Any
 
 from mockboard.brain.agenda import build_fallback_agenda, capped_budgets
 from mockboard.brain.director import PanelDirector, compile_director_graph
-from mockboard.brain.personas import PERSONA_DIR, load_personas
+from mockboard.brain.personas import load_personas
 from mockboard.brain.requests import word_count
 from mockboard.brain.schemas import (
     PANEL_FREE_TURNS,
@@ -67,7 +67,7 @@ class Sim:
     def __post_init__(self) -> None:
         if self.agenda is None:
             self.agenda = build_fallback_agenda(FORM, capped_budgets(self.cap))
-        names = {p.id: p.name for p in load_personas(PERSONA_DIR / "panel").values()}
+        names = {p.id: p.name for p in load_personas().values()}
         self.settings = PanelSettings(
             chairman="chairman", names=names, max_answers=self.cap, free_turns=self.free_turns
         )

@@ -107,7 +107,7 @@ class AppConfig:
             "stt_model": self.settings.stt_model,
             "llm": "fake" if self.fake_llm else self.settings.nova_model_id,
             "region": None if self.fake_llm else self.settings.aws_region,
-            "max_minutes": round(self.settings.voice_session_max_s / 60, 1),
+            "max_minutes": round(self.settings.time_limits(self.mode)[1] / 60, 1),
             "record_audio": self.record_audio,
         }
         if self.motion is not None:
@@ -128,10 +128,14 @@ def parse_form(data: dict[str, Any] | None, *, allow_default: bool) -> Candidate
     return CandidateForm.model_validate(_form_values(raw))
 
 
-def make_session(cfg: AppConfig, form: CandidateForm | None) -> InterviewSession:
-    """The same session the text CLI builds (cli.run), with a fresh trace file."""
+def make_session(
+    cfg: AppConfig, form: CandidateForm | None, max_answers: int | None = None
+) -> InterviewSession:
+    """The same session the text CLI builds (cli.run), with a fresh trace file. `max_answers` is
+    the admission decision's cap for the UPSC panel (None: uncapped); debate ignores it."""
     from mockboard.modes.debate.motions import Side
     from mockboard.modes.debate.session import DebateSetup, Length, OpponentStyle
+    from mockboard.modes.upsc_panel.setup import PanelSetup
 
     s = cfg.settings
     cards, _origin = load_cards_or_builtin(s.cards_dir)
@@ -139,7 +143,7 @@ def make_session(cfg: AppConfig, form: CandidateForm | None) -> InterviewSession
     recorder = TraceRecorder(s.trace_dir, session_id)
     llm = build_llm(s, cfg.fake_llm, cards, recorder)
     deps = build_deps(s, llm, cards=cards)
-    options = None
+    options = PanelSetup(max_answers=max_answers)
     if cfg.mode == "debate":
         options = DebateSetup(motion=cfg.motion, user_side=Side(cfg.side),
                               length=Length(cfg.length), language=cfg.language,
@@ -172,8 +176,28 @@ def make_speech(cfg: AppConfig, session: InterviewSession, ledger: PlaybackLedge
     return stt, tts
 
 
-async def run_session(webrtc_connection, cfg: AppConfig, form: CandidateForm | None) -> None:
-    """One browser connection, until it disconnects or the session ends."""
+async def run_session(
+    webrtc_connection, cfg: AppConfig, form: CandidateForm | None, max_answers: int | None = None
+) -> None:
+    """One browser connection, until it disconnects or the session ends. `max_answers` is the
+    answer cap the server's admission decision gave this connection (None: uncapped).
+
+    The session is closed on every way out of here (the report done, a disconnect, a failure while
+    the pipeline is being built), so the panel's checkpointer thread is never left behind: the saver
+    is shared by every session, and one that is never closed leaks for the life of the server
+    (Ruling 73 item 6)."""
+    session = make_session(cfg, form, max_answers)
+    try:
+        await _serve(webrtc_connection, cfg, session)
+    finally:
+        try:
+            await session.close()
+        except Exception as e:  # never let a cleanup problem hide how the session ended
+            logger.warning(f"[voice] closing session {session.session_id} failed: "
+                           f"{type(e).__name__}: {e}")
+
+
+async def _serve(webrtc_connection, cfg: AppConfig, session: InterviewSession) -> None:
     from pipecat.transports.base_transport import TransportParams
     from pipecat.workers.runner import WorkerRunner
 
@@ -183,7 +207,6 @@ async def run_session(webrtc_connection, cfg: AppConfig, form: CandidateForm | N
     ensure_cv2()  # before the transport's module-level `import cv2` (defect E)
     from pipecat.transports.smallwebrtc.transport import SmallWebRTCTransport
 
-    session = make_session(cfg, form)
     ledger = PlaybackLedger()
     stt, tts = make_speech(cfg, session, ledger)
     transport = SmallWebRTCTransport(
@@ -325,8 +348,8 @@ def create_app(cfg: AppConfig) -> FastAPI:
     handler = SmallWebRTCRequestHandler()
     pending_forms: dict[str, CandidateForm | None] = {}
     pending_counts: dict[str, Any] = {}  # access: Decisions, committed once connected
-    # access: pc_id to `decision.max_answers`. Only `on_connection` writes it; the panel reads it
-    # at P7. A missing entry means capped.
+    # access: pc_id to `decision.max_answers`. Only `on_connection` writes it; `start_session`
+    # reads it and passes it to the panel. A missing entry means capped.
     pending_limits: dict[str, int | None] = {}
     offer_ips: dict[str, str] = {}  # access: pc_id to IP hash, for in-flight offers
     offers_by_ip: Counter[str] = Counter()  # access: includes offers still being answered
@@ -361,10 +384,13 @@ def create_app(cfg: AppConfig) -> FastAPI:
             except Exception:
                 logger.warning("[access] could not close a connection past the limit")
             return
+        # access: the cap this connection was admitted with. None is uncapped (a reviewer, or limits
+        # off). No entry at all means capped, never uncapped: the server fails closed (Ruling 49).
+        cap = pending_limits.get(pc_id, book.config.max_answers)
         try:
-            await run_session(connection, cfg, pending_forms.pop(pc_id, None))
+            await run_session(connection, cfg, pending_forms.pop(pc_id, None), max_answers=cap)
         finally:
-            pending_limits.pop(pc_id, None)  # access: the panel has read it by now (P7)
+            pending_limits.pop(pc_id, None)  # access: the session has read it
 
     gate = PageSessions(start_session, connect_timeout_s=cfg.settings.voice_connect_timeout_s,
                         on_unstarted=forget_offer)  # access: on_unstarted
@@ -479,7 +505,7 @@ def create_app(cfg: AppConfig) -> FastAPI:
             # a newer offer from the same page replaces it.
             pending_forms[connection.pc_id] = form
             pending_counts[connection.pc_id] = decision  # access: commit once it connects
-            pending_limits[connection.pc_id] = decision.max_answers  # access: read at P7
+            pending_limits[connection.pc_id] = decision.max_answers  # access: read in start_session
             offer_ips[connection.pc_id] = ip_hash  # access:
             claimed.append(connection.pc_id)  # access:
             await gate.offer(connection, page_id)

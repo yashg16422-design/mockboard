@@ -1,4 +1,4 @@
-Mock Board (text mode) | LLM: FAKE offline (-) | cards: data:<repo>/data/cards (6, version b702455ad97a) | prefix ~929 tokens (approx)
+Mock Board (text mode) | LLM: FAKE offline (-) | cards: data:<repo>/data/cards (6, version b702455ad97a) | prefix ~1151 tokens (approx)
 All fact cards are SYNTHETIC TEST CARDS. Nothing the board cites is a real fact.
 
 == Application form (no names, roll numbers, phone numbers or colleges) ==
@@ -6,35 +6,67 @@ Home state: Uttar Pradesh
 District (optional, Enter to skip): Kanpur Nagar
 Degree subject: Electronics
 Hobbies, up to 3, comma-separated (optional): chess, cycling
-UPSC optional subject (optional): 
+UPSC optional subject (optional): Public Administration
 Work experience in one line (optional): 
 Interview language [hinglish/hindi/english] (default hinglish): hinglish
 
-[Chairperson Sharma] Namaste, baithiye. Aap Kanpur Nagar se hain aur Electronics padha hai. Aapke hisaab se Electronics ki samajh Kanpur Nagar ki kis ek samasya ko suljhane mein kaise madad kar sakti hai?
+Agenda: nova (11 questions written by the planner, 0 replaced by templates, <n> ms)
+
+[Chairperson Sharma] Namaste. Please be seated.
+[Chairperson Sharma] Kanpur Nagar se hone aur Electronics padhne ke baad, aapko civil services kyun sahi raasta laga?
 
 You: Kanpur mein maine dekha ki small electronics repair shops bahut hain, lekin skilled training kam hai. Main ITI ke saath tie-up karke repair skilling badhaunga.
-[Dr. Iyer] (move_on, R5) Theek hai, shukriya. Ab tourism par aate hain: is kshetra mein aapko kaunsi chunauti sabse zaroori lagti hai, aur kyun?
+[Chairperson Sharma] (probe, R8) Ji. Agar aap khud is sthiti mein hote, to pehla qadam kya uthate, aur kyun?
 
 You: Exampleland mein tourism GDP ka 30 percent hai in 2023, isliye tourism hi growth ka main engine hai and jobs bhi wahi deta hai.
-[Dr. Iyer] (counter, R6) Lekin kai log kehte hain iska nuksaan bhi hai. Us paksh ko aap kaise dekhenge?
+[Chairperson Sharma] Dhanyavaad. Shrimati Menon, please.
+[Shrimati Menon] (move_on, D-HANDOFF) Shukriya. Namaste. Kanpur Nagar mein rehkar aapne logon ki kaunsi dikkat kareeb se dekhi, aur use door karne ke liye aap kya karenge?
 
 You: Mujhe lagta hai tourism se local logon ko rozgaar milta hai. Lekin environment par bhi asar padta hai, so carrying capacity rules zaroori hain.
-[Dr. Iyer] (fact_challenge, R4) Aapne 30 percent kaha. Exampleland test data ke 2023 ke figure ke hisaab se yeh 12 percent hai. Aapka figure kahan se hai?
+[Shrimati Menon] (fact_challenge, R4) Aapne 30 percent kaha. Exampleland test data ke 2023 ke figure ke hisaab se yeh 12 percent hai. Aapka figure kahan se hai?
    show-your-work: R4: claim t1.s0.c0 contradicts card test_tourism_gdp_share (model + numeric check agree)
 
 You: Haan, shayad mera figure galat tha. Main card wala data check karunga, lekin mera point ki tourism important hai abhi bhi valid hai.
-[Dr. Iyer] (probe, R8) Theek hai, yeh maanna achhi baat hai. Achha. Aap jo keh rahe hain, uska zameeni asar kaise dikhega?
+[Shrimati Menon] Theek hai, yeh maanna achhi baat hai.
+[Shrimati Menon] (probe, R8) Achha. Is par aapko sabse badi dikkat kahan dikhti hai?
 
 You: Homestays aur local guides ko train karna chahiye. Saath hi waste management par cess lagana chahiye.
-[Shri Rathore] (move_on, R5) Theek hai, shukriya. Ab internal security par aate hain: is kshetra mein aapko kaunsi chunauti sabse zaroori lagti hai, aur kyun?
+[Chairperson Sharma] Shukriya. Ab Doctor Iyer ki baari hai.
+[Doctor Iyer] (move_on, D-HANDOFF) Aabhaar. Electronics padhte hue aapne kaunsa ek vichar seekha jo aam logon ki zindagi se jud sakta hai, aur kaise?
 
-You: Exampleland ne 37 districts ko affected list kiya tha in 2024. Community policing aur development dono saath chalne chahiye, lekin rights ka dhyan rakhna zaroori hai.
-[Shri Rathore] (probe, R8) Achha. Aap jo keh rahe hain, uska zameeni asar kaise dikhega?
+You: Electronics padhne se mujhe system ki tarah sochna aaya, har cheez ke input aur output hote hain.
+[Doctor Iyer] (counter, R6) Samajh mein aata hai. Lekin doosra paksh kehta hai ki isse nuksaan bhi ho sakta hai. Aap use kaise tolenge?
 
-You: Mujhe exact pata nahi hai, but I think intelligence sharing improve karni chahiye.
-[Chairperson Sharma] (reassure, R3) Koi baat nahi, aaram se. Aap apne anubhav se kya kehna chahenge?
+You: please repeat
+[Doctor Iyer] Zaroor, sawal phir se suniye.
+[Doctor Iyer] (repeat_question, D-REPEAT) Lekin doosra paksh kehta hai ki isse nuksaan bhi ho sakta hai. Aap use kaise tolenge?
 
-You: 
+You: Mujhe lagta hai ki technology se sarkari daftaron mein kaam tez ho sakta hai, lekin logon ki training bhi zaroori hai.
+[Doctor Iyer] (pressure, R7) Aapki baat mein dum hai. Koi ek thos udaharan dijiye, jisse yeh aur saaf ho.
+
+You: Digital system sab jagah kaam nahi karta, isliye pehle kuch gaon mein try karna chahiye.
+[Chairperson Sharma] Dhanyavaad. Professor Sen, aap aage badhaiye.
+[Professor Sen] (move_on, D-HANDOFF) Aabhaar. Chess ne aapke sochne ki aadat ko kaise badla, aur woh aapke kaam mein kaise dikhegi?
+
+You: Mera hobby chess hai, usse maine seekha ki jaldbaazi mein faisla nahi lena chahiye.
+[Professor Sen] (counter, R6) Ji. Is soch ke khilaaf sabse vazandar baat kya ho sakti hai, aur uska aap kya karenge?
+
+You: chess ke alawa kisi aur topic pe baat karte hain
+[Professor Sen] Zaroor, koi baat nahi.
+[Chairperson Sharma] Dhanyavaad. Shri Rathore, please.
+[Shri Rathore] (move_on, D-HANDOFF) Aabhaar. Haal ke samay mein aapne kis rashtriya mudde ko dhyan se follow kiya hai, aur kyun?
+
+You: Public administration mujhe isliye pasand hai kyunki usme niti aur zameeni kaam dono hain.
+[Shri Rathore] (counter, R6) Samajh mein aata hai. Agar yeh tareeka na chale, to aapka doosra raasta kya hoga?
+
+You: Mujhe exact pata nahi hai, but I think local logon se baat karke pehle samasya samajhni chahiye.
+[Shri Rathore] (reassure, R3) Koi baat nahi. Chaliye ise aasaan karte hain: is par aapka pehla khayal kya aata hai?
+
+You: Pehle rahat samagri ki list banakar sabse zaroorat mand logon tak pahunchaunga, aur gaon ke pradhan se baat karunga.
+[Shri Rathore] (next_question, D-SEED) Theek hai. Maan lijiye aap DM hain aur ek factory ke theke ke mazdoor hadtaal par hain. Dono pakshon se baat karke aap kaise aage badhenge?
+
+You: Main dono pakshon se baat karunga, lekin kaam rokne ka asar bhi dekhunga.
+[Chairperson Sharma] (move_on, D-CLOSE) Thank you, that will be all.
 
 ======================================================================
 REPORT  (session golden-sess, language en)
@@ -57,9 +89,11 @@ Mock Board practice indicators (our own, not UPSC criteria):
     evidence [variety_depth_of_interest / t0]: "Kanpur mein maine dekha ki small"
     evidence [intellectual_moral_integrity / t0]: "Kanpur mein maine dekha ki small"
     evidence [factual_accuracy / t0]: "Kanpur mein maine dekha ki small"
-    evidence [composure / t6]: "Mujhe exact pata nahi hai, but"
+    evidence [composure / t14]: "Main dono pakshon se baat karunga,"
 Claims checked against fact cards:
   [contradicted     ] Exampleland mein tourism GDP ka 30 percent hai in 2023, isliye tourism  <- card test_tourism_gdp_share (SYNTHETIC TEST CARD (no real source))
-  [supported        ] Exampleland ne 37 districts ko affected list kiya tha in 2024.  <- card test_security_affected_districts (SYNTHETIC TEST CARD (no real source))
 NOTE: every fact card in this run is a SYNTHETIC TEST CARD, not a real fact.
 Model answer: Rule-based offline stand-in score from the session transcript (not a model judgement).
+note: Request at t6: repeat, found by the board's rules (repeat_bare).
+note: Request at t10: change_topic, found by the board's rules (change_other_baat).
+note: Listed request sentences work every time, in our tests, with the listener up or down, in Latin and Devanagari. Rephrased requests are caught less often: 0.75 on held-out synthetic lines by rules alone. Accuracy on real speech has not been measured yet.

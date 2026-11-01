@@ -26,6 +26,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from mockboard.brain.actor import (
+    _SENTENCE_BREAK,  # the sentence gate's own break: held text is released where it would pass
     FILLER_TEMPLATES,
     PLACE_FACT_PATTERNS,
     ActorBudgetExceeded,
@@ -115,34 +116,52 @@ _GREETING = re.compile(
 GREETING_WINDOW_WORDS = 8
 
 
+def _strip_window(text: str, window: int) -> str:
+    """The greeting removed from the first `window` words of `text` (none left: untouched)."""
+    if window <= 0:
+        return text
+    words = text.split(" ")
+    head = " ".join(words[:window])
+    cleaned = _GREETING.sub("", head).strip()
+    tail = " ".join(words[window:])
+    return (f"{cleaned} {tail}" if cleaned and tail else cleaned or tail).strip()
+
+
 def without_greeting(text: str) -> str:
     """Remove a greeting from the start of a line ("Shukriya. Namaste. Aapko ..." becomes
     "Shukriya. Aapko ..."). Only the first words are read: a line is a thanks, then a question, so a
     greeting later in it would be part of what the member is asking about."""
-    words = text.split(" ")
-    head = " ".join(words[:GREETING_WINDOW_WORDS])
-    cleaned = _GREETING.sub("", head).strip()
-    tail = " ".join(words[GREETING_WINDOW_WORDS:])
-    return (f"{cleaned} {tail}" if cleaned and tail else cleaned or tail).strip()
+    return _strip_window(text, GREETING_WINDOW_WORDS)
 
 
 async def strip_greeting(chunks: AsyncIterator[str]) -> AsyncIterator[str]:
-    """`without_greeting` on a stream. The first `GREETING_WINDOW_WORDS` words are held until they
-    are all in (or the line ends), then released with the greeting gone; the rest passes through.
-    On a hand-off the Chairperson's fixed line is playing meanwhile, so the wait is not heard."""
+    """`without_greeting` on a stream, one whole sentence at a time. A sentence inside the first
+    `GREETING_WINDOW_WORDS` words is held only until it is complete, which is also when the sentence
+    gate downstream could pass it, so the check adds no wait to the first audio of an ordinary line
+    (holding the whole window would have: about eight words of model text before anything is
+    said). A greeting that makes a sentence empty ("Namaste.") drops it. Past the window the stream
+    passes through untouched. The text joined is what `without_greeting` gives."""
     held = ""
-    released = False
+    used = 0  # words of the window already read
     async for chunk in chunks:
-        if released:
+        if used >= GREETING_WINDOW_WORDS:
             yield chunk
             continue
         held += chunk
-        if len(held.split()) > GREETING_WINDOW_WORDS:
-            released = True
-            lead = without_greeting(held)
-            yield lead + (" " if held.endswith(" ") and lead else "")
-    if not released and held:
-        yield without_greeting(held)
+        while used < GREETING_WINDOW_WORDS and (m := _SENTENCE_BREAK.search(held)) is not None:
+            sentence, held = held[: m.end()], held[m.end() :]
+            room = GREETING_WINDOW_WORDS - used
+            used += len(sentence.split())
+            clean = _strip_window(sentence.strip(), room)
+            if clean:
+                yield clean + " "
+        if used >= GREETING_WINDOW_WORDS and held:
+            yield held
+            held = ""
+    if held:
+        tail = _strip_window(held.strip(), GREETING_WINDOW_WORDS - used)
+        if tail:
+            yield tail
 
 
 class _TitleDotLLM:

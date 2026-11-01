@@ -1,8 +1,10 @@
-"""`upsc_interview`: today's UPSC Personality Test board, wrapped as a profile (the default).
+"""`upsc_interview`: the UPSC Personality Test panel (the default mode).
 
-Nothing here changes behaviour: the rule table is `strategist.decide_move`, and the deadline
-fallback and turn cap are the exact rules the session applied before modes existed. The
-`make cli-fake` transcript is byte-identical with and without this wrapper (ADR-009).
+Since P7 the interview is always the panel: five members, an agenda built from the candidate's
+form, a director that understands requests, hand-offs and a close (ADR-010). The rule table is still
+`strategist.decide_move`, the move policy inside a segment; the director (`brain/director.py`) has
+the last word on each turn. The deadline fallback and the turn cap below are the rules the session
+applied before modes existed.
 """
 
 from __future__ import annotations
@@ -10,6 +12,7 @@ from __future__ import annotations
 from mockboard.brain.personas import PERSONA_DIR
 from mockboard.brain.schemas import BoardMove, Dimension, Move, StrategyContext
 from mockboard.brain.strategist import CLOSE_TARGET, PRESSURE, StrategyConfig, decide_move
+from mockboard.brain.tools import PANEL_LISTENER_TOOL, PanelListenerOutput
 from mockboard.modes.registry import ModeProfile, register
 
 # The nine UPSC board moves (PLAN_v2_DELTA §7), plus the three the panel director emits and the
@@ -70,13 +73,17 @@ def upsc_cap_move(
 
 
 def panel_session_hooks(session, options):
-    """The panel's hooks when the session was given a `PanelSetup` (`--panel`), otherwise None, so
-    today's UPSC code paths run unchanged until P7 (CTO_NOTES_06 §7). Imported here because the
-    panel imports the graphs, which import this registry."""
+    """The panel's hooks for every UPSC session. No options means a default `PanelSetup`, which is
+    uncapped: a caller that must cap answers (the server, for a test user) passes its own. Imported
+    here because the panel imports the graphs, which import this registry."""
     from mockboard.modes.upsc_panel.hooks import PanelHooks
     from mockboard.modes.upsc_panel.setup import PanelSetup
 
-    return PanelHooks(session, options) if isinstance(options, PanelSetup) else None
+    if options is None:
+        options = PanelSetup()
+    if not isinstance(options, PanelSetup):
+        raise TypeError(f"the UPSC panel takes a PanelSetup, not {type(options).__name__}")
+    return PanelHooks(session, options)
 
 
 UPSC_PROFILE = register(
@@ -97,6 +104,7 @@ UPSC_PROFILE = register(
         persona_dir=PERSONA_DIR,
         persona_heading="## The interview board (persona pack)",
         rubric=tuple(d.value for d in Dimension),
+        listener_tool=(PANEL_LISTENER_TOOL, PanelListenerOutput),
         session_hooks=panel_session_hooks,
     )
 )

@@ -26,7 +26,7 @@ from mockboard.brain.director import (
     opening_memory,
 )
 from mockboard.brain.fake_responders import listener_responder, make_fake_llm
-from mockboard.brain.listener import panel_listener_wiring, to_analysis
+from mockboard.brain.listener import to_analysis
 from mockboard.brain.prompts import PROMPT_DIR, load_prompt
 from mockboard.brain.requests import _WEAK_CHANGE, detect_request, word_count
 from mockboard.brain.schemas import Analysis, CompletedTurn, Segment
@@ -126,17 +126,16 @@ def test_listener_v4_exists_names_the_field_and_v3_stays():
     assert "| listener | 4 |" in (PROMPT_DIR / "CHANGELOG.md").read_text(encoding="utf-8")
 
 
-def test_the_panel_wiring_changes_only_the_listener_prompt_tool_and_model(settings, cards):
+def test_the_upsc_profile_wires_the_panel_listener_prompt_tool_and_model(settings, cards):
+    """P7: the panel listener is the UPSC listener. The profile carries the tool and model, and the
+    default kit's `listener` prompt is v4, so no per-session wiring is left."""
     from mockboard.brain.deps import build_deps
+    from mockboard.modes import get_profile
 
     deps = build_deps(settings, make_fake_llm(cards), cards=cards)
-    kit, kwargs = panel_listener_wiring(deps.kit, settings.prompt_listener_panel_version)
-    assert kit.versions["listener"] == 4 and deps.kit.versions["listener"] == 3
-    assert kit.shared_prefix == deps.kit.shared_prefix
-    assert kwargs == {
-        "prompt_id": "listener", "tool": PANEL_LISTENER_TOOL, "output_model": PanelListenerOutput,
-    }
-    assert "candidate_request" in kit.system("listener")[1].text
+    assert get_profile(None).listener_tool == (PANEL_LISTENER_TOOL, PanelListenerOutput)
+    assert deps.kit.versions["listener"] == settings.prompt_listener_version == 4
+    assert "candidate_request" in deps.kit.system("listener")[1].text
 
 
 # --- merging the segments of one turn -----------------------------------------------------------
@@ -320,21 +319,15 @@ async def test_a_panel_session_listens_with_the_panel_tool_and_prompt(
 
 
 async def test_the_panel_tool_is_not_used_outside_the_panel(settings, cards, form, tmp_path):
-    from mockboard.brain.deps import build_deps
-    from mockboard.brain.graphs import TurnAnalyzer
-    from mockboard.obs.trace import TraceRecorder
-    from mockboard.session import InterviewSession
+    """Before P7 this ran a plain UPSC session and saw the old tool. Now every UPSC session is the
+    panel, so the same invariant is asked of the one other mode: debate keeps its own listener."""
+    from mockboard.brain.tools import DEBATE_LISTENER_TOOL
+    from mockboard.modes import get_profile
 
-    llm = make_fake_llm(cards)
-    deps = build_deps(settings, llm, cards=cards)
-    session = InterviewSession(
-        deps=deps, form=form, recorder=TraceRecorder(tmp_path, "plain"),
-        analyzer=TurnAnalyzer(deps), session_id="plain-upsc",
-    )
-    await session.open()
-    await answer(session, PLAIN[0], think_s=0)
-    call = llm.calls_named("listener")[0]
-    assert call.tool == "record_analysis" and "candidate_request" not in call.system
+    debate = get_profile("debate")
+    assert debate.listener_tool[0] is DEBATE_LISTENER_TOOL
+    assert debate.listener_tool[0].name == "record_debate_analysis" != PANEL_LISTENER_TOOL.name
+    assert debate.prompt_id("listener") == "listener_debate"
 
 
 async def test_only_the_listener_hears_a_wider_request_and_the_board_moves_on(

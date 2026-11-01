@@ -268,6 +268,50 @@ async def test_rotation_before_the_cap_waits_for_a_pause_and_keeps_the_last_tran
     assert "aakhri baat" in [f.text for f in h.collector.of_type(TranscriptionFrame)]
 
 
+def test_the_service_built_from_settings_rotates_inside_the_panels_17_minutes():
+    """P7: the old 10-minute stop came before the 12-minute rotation, so rotation never ran in a
+    session. The panel's 17 minutes crosses Prisma's 15-minute cap, so the service the server
+    builds must rotate before it, and the owner can shorten it in `.env` to see one (UNVERIFIED:
+    rotation has only ever run against the fake server above)."""
+    from mockboard.config import Settings
+
+    defaults = Settings(_env_file=None, gnani_api_key="k")
+    stt = PrismaSTTService.from_settings(defaults)
+    assert (stt._rotate_after_s, stt._rotate_hard_s) == (720.0, 840.0)
+    assert stt._rotate_hard_s < defaults.voice_wrap_up_s < defaults.voice_hard_stop_s
+    short = Settings(_env_file=None, gnani_api_key="k", stt_rotate_after_s=90,
+                     stt_rotate_hard_s=120)
+    stt = PrismaSTTService.from_settings(short, service_kwargs={"rotation_check_s": 0.5})
+    assert (stt._rotate_after_s, stt._rotate_hard_s, stt._rotation_check_s) == (90, 120, 0.5)
+
+
+async def test_a_long_session_keeps_transcribing_across_a_rotation():
+    """Turns before and after a rotation: the words of each arrive, in order, on the right
+    socket, and the interview does not notice the switch (fake server, shortened times)."""
+    async with FakePrisma() as server:
+        stt = make_stt(server.url, rotate_after_s=0.3, rotate_hard_s=5.0,
+                       rotation_check_s=0.05, rotation_grace_s=0.3)
+        async with Harness(stt) as h:
+            first = await server.wait_for_conns(1)
+            await h.queue(VADUserStartedSpeakingFrame())
+            await h.feed_audio(0.2)
+            await h.queue(VADUserStoppedSpeakingFrame(stop_secs=0.2))
+            await server.send(first, prisma_processing())
+            await server.send(first, prisma_transcript("pehla jawab", 1))
+            second = await server.wait_for_conns(2, timeout=2)  # rotated between the turns
+            await h.queue(VADUserStartedSpeakingFrame())
+            await h.feed_audio(0.3)
+            await h.queue(VADUserStoppedSpeakingFrame(stop_secs=0.2))
+            await server.send(second, prisma_processing())
+            await server.send(second, prisma_transcript("doosra jawab", 2))
+            await asyncio.sleep(0.4)
+    assert stt.stats["rotations"] >= 1
+    said = [f.text for f in h.collector.of_type(TranscriptionFrame)]
+    # (the fake answers the rotation's commit on the old socket with its own "committed N" text)
+    assert [t for t in said if not t.startswith("committed")] == ["pehla jawab", "doosra jawab"]
+    assert len(second.frames) >= 4  # the second turn's audio went to the new socket
+
+
 async def test_the_api_key_never_reaches_the_logs():
     lines: list[str] = []
     sink = logger.add(lambda m: lines.append(str(m)), level="TRACE")

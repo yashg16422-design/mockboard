@@ -94,9 +94,13 @@ def test_real_speech_services_get_session_ids_and_context(settings):
 def test_speech_context_per_topic_and_for_a_motion(settings, cards, fake_llm, form, tmp_path):
     s = upsc_session(settings, cards, fake_llm, form, tmp_path)
     terms, topic = speech_context(s)
-    assert "Kanpur Nagar" in terms and "tourism" in topic
-    s.state.topic_index = s.state.topics.index("internal_security")
-    assert "Naxalism" in speech_context(s)[0]
+    assert "Kanpur Nagar" in terms and topic.startswith("A UPSC")
+    assert "panchayat" in terms and "Superintendent of Police" not in terms  # form_hr
+    s.state.topic_index = s.state.topics.index("current_affairs")
+    later = speech_context(s)[0]
+    assert "Superintendent of Police" in later and "Kanpur Nagar" in later
+    # P7: the words follow the panel's segments, and no old fixed topic is in them.
+    assert not {"Naxalism", "tourism", "heritage"} & set(later + terms)
     deb = server.make_session(cfg_for(settings, ["--mode", "debate", "--motion", "1",
                                                  "--side", "for", "--fake-llm"]), None)
     terms, topic = speech_context(deb)

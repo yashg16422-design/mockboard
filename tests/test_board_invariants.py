@@ -79,8 +79,11 @@ SCRIPTS: dict[str, list[str]] = {
         ANSWERS["balanced"][1],
         ANSWERS["honest_unknown"][0],
     ],
+    # Two balanced answers first: the Chairperson's segment has two questions, so the honest
+    # unknowns that follow open a fresh three-question segment instead of landing on a last one.
     "honest_streak": [
         ANSWERS["balanced"][0],
+        ANSWERS["balanced"][1],
         ANSWERS["honest_unknown"][0],
         ANSWERS["honest_unknown"][1],
         ANSWERS["honest_unknown"][2],
@@ -96,13 +99,13 @@ SCRIPTS: dict[str, list[str]] = {
         ANSWERS["thin"][2],
     ],
     "balanced_only": [ANSWERS["balanced"][i % 2] for i in range(9)],
-    # Ruling 12: honest unknowns on a topic's last question (the one-question background
-    # topic, then tourism's fourth question) move on instead of reassuring.
+    # Ruling 12: honest unknowns on a topic's last question (the Chairperson's second question,
+    # then the third of home and district) move on instead of reassuring.
     "honest_at_budget": [
+        ANSWERS["thin"][0],
         ANSWERS["honest_unknown"][1],
         ANSWERS["one_sided"][0],
-        ANSWERS["thin"][0],
-        ANSWERS["one_sided"][1],
+        ANSWERS["thin"][1],
         ANSWERS["honest_unknown"][2],
     ],
 }
@@ -290,9 +293,11 @@ async def test_honest_unknown_on_a_topics_last_question_moves_on(deps, form, tmp
         for a, m, topic, last in zip(p.analyses, p.moves, p.topics, p.last_in_topic, strict=True)
         if a.honest_unknown and last
     ]
-    # Both honest unknowns fell on a last question: background (1 question) and tourism (4th).
-    assert [t for t, _ in at_budget] == ["background", "tourism"]
-    assert all((m.move, m.rule_id) == (Move.move_on, "R3b") for _, m in at_budget)
+    # Both honest unknowns fell on a last question: the form segment's 2nd and home and district's
+    # 3rd. The director owns the hand-off at a spent budget (D-HANDOFF), where the strategist's own
+    # row was R3b before the panel.
+    assert [t for t, _ in at_budget] == ["form_hr", "home_district"]
+    assert all((m.move, m.rule_id) == (Move.move_on, "D-HANDOFF") for _, m in at_budget)
     assert Move.reassure not in [m.move for m in p.moves]
 
 
