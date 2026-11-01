@@ -10,7 +10,7 @@ Work in this order, one commit per group, and report what you ran and its result
 - **M2. Route-level tests.** Removing `decision.commit()` and the lab check passed every test. Add tests through the `/api/offer` and static routes, so that both of those mutations fail. Show that they fail.
 - **M3. True copy.** Replace "The microphone stays on this page": audio goes to our server and to Gnani, and the page should say so. Replace "Saved on this computer at {path}", which is untrue on a server.
 
-- **M4. The presence ring (commit 2770c84): ON HOLD, owner's decision pending.** Do not remove or recolour the ring. Replace only the sentence "It reads where you are", which sounds like tracking.
+- **M4. The presence ring: closed by the owner, Nov 1.** He approved it, including the ring effects. Keep it as built. Only reword "It reads where you are".
 
 ## Should-fix
 

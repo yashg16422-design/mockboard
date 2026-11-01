@@ -300,3 +300,9 @@ Orchestrator read trace voice-32a441f916 and the server log from the owner's Mac
 - **Ruling 67:** the hook gains `pre-merge-commit` and a voice-extra check, and may skip tests for commits touching only an explicit path allowlist of docs (never `*.md`). Builders never use `--no-verify`; that is in every brief until the owner agrees to add it to `.claude/agents/builder.md`.
 - **Ruling 68:** suite time is 88% voice waiting. Parameters are not trimmed. One time-boxed voice teardown chunk may follow P3.
 
+## Round 36 — Nov 1, 2026 (owner: keep the ring, merge, finish; credits are short)
+
+- **Ruling 69 (owner, direct, supersedes Ruling 65):** the owner approved Arena's work including the ring effects. M4 is closed. Fixes M1 to M3 stay required for the reasons already logged, and are made by our builder, since Arena is finished.
+- **Ruling 70 (owner told the orchestrator to run this and said credits are being overspent):** work moves to larger chunks with one CTO review per milestone, not per chunk: merge plus web fixes; P0.2 plus P4 to P6; P7; P8 to P11. The orchestrator still runs tests, a fake session and logs a ruling at each. Reviews are narrow, with no mutation sweeps or tuning rounds, and cut order in CTO_NOTES_06 section 14 applies early: `summary.v1`, page buttons for Utility A and replay, then P8 if needed.
+- Ruling 41 stands: real calls still need the owner's explicit yes.
+
