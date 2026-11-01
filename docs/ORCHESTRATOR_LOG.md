@@ -286,3 +286,8 @@ Orchestrator read trace voice-32a441f916 and the server log from the owner's Mac
 - **Ruling 64:** panel side takes the `WEB_REQUESTS.md` items: `work_experience` now, `members` on `session`, `segment` on captions, report `members` and `practice_plan`. Likely-questions spends Nova credits, so it goes through admission. `answer_cap` is declined as superseded by `closing`.
 - **Deployment gate (V8):** no STUN or TURN exists, so WebRTC will not connect from real networks on EC2 until added. CTO_NOTES_13 section 8 lists the checks. Limits are not public until they pass.
 
+## Round 34 — Nov 1, 2026 (PR #1 and the presence ring)
+
+- PR #1 (`web-frontend` into `panel-phase`) is open at 2770c84 and conflicting. The orchestrator confirmed the head and read `presence.js`: mint and violet, a radial glow, up to 2,800 points per frame. CTO_NOTES_13's review covers e16a665 only; 2770c84 was read, not run.
+- **Ruling 65:** the ring leaves the interview room. On the home page it stays only in the warm accent with no glow. This is M4 of `docs/tasks/WEB_FIX_01.md`; the owner may overrule it, since design is his call. PR #1 merges into `panel-phase` before P7, which edits the same `server.py` lines; nothing merges until M1 to M4 pass review.
+

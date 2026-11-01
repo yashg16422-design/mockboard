@@ -10,6 +10,8 @@ Work in this order, one commit per group, and report what you ran and its result
 - **M2. Route-level tests.** Removing `decision.commit()` and the lab check passed every test. Add tests through the `/api/offer` and static routes, so that both of those mutations fail. Show that they fail.
 - **M3. True copy.** Replace "The microphone stays on this page": audio goes to our server and to Gnani, and the page should say so. Replace "Saved on this computer at {path}", which is untrue on a server.
 
+- **M4. The presence ring (commit 2770c84).** Remove it from the interview room and keep the existing voice bar: up to 2,800 points redrawn every frame competes with the live audio, and the canvas pushes captions down. On the home page it may stay only if it uses the one warm accent, with no mint, no violet and no radial glow, and stops when `prefers-reduced-motion` is set. Replace "It reads where you are": it sounds like tracking. If `presence.js` stays, add it to the S1 allowlist.
+
 ## Should-fix
 
 - **S1.** `_static_path` uses an allowlist of `app.js`, `site.css` and `tokens.css`.
@@ -35,6 +37,7 @@ Work in this order, one commit per group, and report what you ran and its result
 5. Delete the `answer_cap` case from `app.js`. That event will never arrive. Move its copy to the `closing` path.
 6. Add one line of copy: repeats and clarifying questions do not count, up to 4.
 7. Rewrite the last section of `WEB_REQUESTS.md` to match this.
+8. Update the PR #1 description: remove `answer_cap`, and state what was and was not opened in a browser.
 
 ## Do not do
 
