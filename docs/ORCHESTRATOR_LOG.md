@@ -204,3 +204,9 @@ Orchestrator read trace voice-32a441f916 and the server log from the owner's Mac
 - Ruling 37: honest-unknown markers checked on the raw transcript in both scripts; Devanagari supported in word counts, numbers ("१५ लाख"), the garbled check and listener prompts.
 - Builder choices accepted: "baad mein" counts as a deflection only in short answers or "I'll tell you later" phrasing; the eval runners keep the synthetic cards (evals are not user-facing and stay labelled synthetic).
 - Defect D fixed (no pipeline for a connection that never connects); Defect E fixed (OpenCV removed from the voice extra). The voice builder's `test_cv2_shim` is reported flaky in a subprocess; the voice builder fixes it in its current chunk.
+
+## Round 22 — Nov 1, 2026 (Rulings 34, 35, 38 and Defect F delivered)
+
+- **Accepted** (2054d23, 9f98ea1, 2d1aa75, 6461022, c91c7c1, da4d917, 58480d1). Orchestrator re-ran: 722 passed / 9 skipped, lint clean, UPSC `cli-fake` byte-identical (md5 826ef55…). Voice builder reports 141 voice tests passing in its venv. Timbre v3.0 is available through the API as `model: "timbre-v3.0"` (13 voices, all 10 languages; sources: Gnani TTS websocket/SSE/voice-catalog docs, read Oct 31); the SDK refuses it, so our service builds the request itself.
+- Builder kept `TTS_REQUEST_UNIT=sentence` as default (a whole line waits for the full actor text and may push first audio past 3 s); `first_rest` is available as a middle option.
+- **Ruling 39:** TTS defaults (model, voice, language, script, request unit, sample rate) and STT language mode are decided by the owner's ears and eyes, from `make voice-lab` and `make stt-ab` on his own voice, then set as defaults with the evidence recorded here. If `hi-en` wins in the lab, Ruling 25 is revisited then. Whether the board writes Devanagari or Latin follows the same decision (brain prompts change only after it).
