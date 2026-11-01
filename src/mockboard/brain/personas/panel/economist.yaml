@@ -1,7 +1,7 @@
 # Fictional persona. Not modelled on any real person. Panel version of ../economist.yaml; it
 # replaces that file at P7. The old style's "Asks for numbers" contradicts Ruling 36, and is gone.
 id: economist
-name: "Dr. Iyer"
+name: "Doctor Iyer"
 title: "Academic and former professor (fictional)"
 role: member
 topics: ["degree"]

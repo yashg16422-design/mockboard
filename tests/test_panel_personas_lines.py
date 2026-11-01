@@ -26,6 +26,7 @@ from mockboard.brain.personas import (
     render_persona_pack,
 )
 from mockboard.speech.gnani_protocol import TIMBRE_V25_VOICES, TIMBRE_V30_VOICES
+from mockboard.voice.lines import split_sentences
 
 PANEL = load_personas(PERSONA_DIR / "panel")
 ALL_LINES = [(mix, line) for table in ALL_LINE_TABLES for mix, line in table.items()]
@@ -125,8 +126,32 @@ def test_no_gendered_first_person_verb(mix, line):
 
 
 def test_handoff_names_the_member():
-    assert handoff_line("Smt. Menon", "hi-en") == "Dhanyavaad. Smt. Menon, please."
+    assert handoff_line("Shrimati Menon", "hi-en") == "Dhanyavaad. Shrimati Menon, please."
     assert all("{name}" in line for line in HANDOFF_LINES.values())
+
+
+def test_panel_names_are_the_spoken_forms():
+    assert {p.name for p in PANEL.values()} == {
+        "Chairperson Sharma",
+        "Shrimati Menon",
+        "Doctor Iyer",
+        "Professor Sen",
+        "Shri Rathore",
+    }
+
+
+@pytest.mark.parametrize("persona", PANEL.values(), ids=lambda p: p.id)
+@pytest.mark.parametrize(("mix", "thanks", "ask"), [
+    ("hi-en", "Dhanyavaad.", "{name}, please."),
+    ("en", "Thank you.", "{name}, please."),
+    ("hi", "धन्यवाद।", "{name}, कृपया।"),
+])  # fmt: skip
+def test_handoff_stays_whole(persona, mix, thanks, ask):
+    """CTO_NOTES_12 M1: a stop in a title made Timbre speak a one-word request, "Smt."."""
+    assert split_sentences(handoff_line(persona.name, mix)) == [
+        thanks,
+        ask.format(name=persona.name),
+    ]
 
 
 def test_unknown_mix_falls_back_to_hinglish():
