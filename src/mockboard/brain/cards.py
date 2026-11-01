@@ -31,7 +31,8 @@ class CardSet:
 
     @property
     def all_synthetic(self) -> bool:
-        return all(c.synthetic_example for c in self.cards.values())
+        # An empty set is not "all synthetic": a real run with no cards must not say so.
+        return bool(self.cards) and all(c.synthetic_example for c in self.cards.values())
 
 
 def without_synthetic(card_set: CardSet) -> CardSet:

@@ -212,6 +212,19 @@ async def test_requests_are_serialised_one_at_a_time(timbre):
     assert [round(u.audio_ms) for u in ledger.units] == [1000, 1000]  # 20 x 1,600 bytes
 
 
+async def test_timbres_second_complete_does_not_cancel_the_next_line(monkeypatch):
+    """Live Timbre sends a status complete after is_final. It must not end the next line."""
+    async with FakeTimbre(chunks=5, chunk_gap_s=0.01, trailing_complete=True) as server:
+        monkeypatch.setattr(plugin_tts, "GNANI_TTS_WS_URL", server.url)
+        tts = make_tts()
+        async with Harness(tts) as h:
+            await h.queue(TTSSpeakFrame("Pehla vaakya.", append_to_context=False))
+            await h.queue(TTSSpeakFrame("Doosra vaakya?", append_to_context=False))
+            await h.wait_until(lambda: len(h.collector.of_type(TTSAudioRawFrame)) >= 10, timeout=4)
+    assert [r["text"] for r in server.conns[0].requests] == ["Pehla vaakya.", "Doosra vaakya?"]
+    assert len(h.collector.of_type(TTSAudioRawFrame)) >= 10
+
+
 async def test_a_barge_in_between_two_sentences_leaves_no_stale_audio(timbre):
     tts = make_tts()
     async with Harness(tts) as h:

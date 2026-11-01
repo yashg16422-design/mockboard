@@ -40,6 +40,10 @@ def real_card() -> FactCard:
                     source_url="https://example.org/placeholder")
 
 
+def test_an_empty_card_set_is_not_called_synthetic():
+    assert CardSet(cards={}, version="empty").all_synthetic is False
+
+
 def test_offline_marker_follows_the_fake_and_its_wrappers(cards):
     class Wrapper:  # like the voice tests' SlowActor: delegates attribute lookups
         def __init__(self, inner):

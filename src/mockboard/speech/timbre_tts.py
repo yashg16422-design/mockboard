@@ -56,9 +56,11 @@ Five things are ours:
    never uses a voice set after the request. The voice persists until the next update: the voice
    loop sends one at the start of every line, so a frame that survived an interruption (it is
    uninterruptible, the line after it is not) cannot leak into a later line.
-   # UNVERIFIED: that the real Timbre honours a different `voice` on the same socket per request
-   # (the plugin's docstring says voice changes apply to the next request without a reconnect;
-   # fake server only). It is Milestone E item 1.
+   # Measured Nov 2, 2026 on one live socket: a second request with a different catalog
+   # voice is accepted and returns audio, after a status `complete` ("Streaming completed")
+   # that follows the documented is_final complete. That status complete is ignored here,
+   # or it ends the next line. The server does not echo the voice name, so whether the
+   # audio is actually the named speaker is still for the ear (voice lab).
 
 The language is checked against gnani-vachana 0.7.9's own list before anything is sent,
 because ruling 25 asks for a value both the SDK and Timbre accept (the SDK refuses `hi-en`,
@@ -390,6 +392,15 @@ class TimbreTTSService(GnaniTTSService):
                     if audio_b64:
                         await self._handle_audio_chunk(base64.b64decode(audio_b64))
                 elif msg_type == "complete":
+                    # Live Timbre (measured Nov 2, 2026, one socket) sends two completes
+                    # per request: the documented is_final payload, then
+                    # {"type":"complete","message":"Streaming completed","request_id":...}.
+                    # Ending on that second message cancels the next request, which the
+                    # sender has often already started. The status complete carries no audio.
+                    if data.get("message") and not audio_b64 and not (
+                        isinstance(nested, dict) and nested.get("is_final")
+                    ):
+                        continue
                     if audio_b64:
                         await self._handle_audio_chunk(base64.b64decode(audio_b64))
                     self._bot_speaking = False
