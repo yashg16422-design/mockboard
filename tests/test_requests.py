@@ -1,6 +1,7 @@
 """The request detector (CTO_NOTES_06 section 3) and acceptance A1b over the labelled corpus.
 
-The corpus is synthetic. Its recall says nothing about real Prisma text.
+The corpus is synthetic. Its recall says nothing about real Prisma text. No split in it is an
+unseen holdout: see the `# corpus history` note at the top of the corpus file.
 Run `pytest -s tests/test_requests.py -k corpus` to print the table.
 """
 
@@ -38,7 +39,9 @@ FILLER = "the district has good roads and many small farms near the river "
 
 def _load_corpus() -> list[dict]:
     with CORPUS_PATH.open(encoding="utf-8") as handle:
-        return [json.loads(line) for line in handle if line.strip()]
+        return [
+            json.loads(line) for line in handle if line.strip() and not line.startswith("#")
+        ]
 
 
 CORPUS = _load_corpus()
@@ -114,7 +117,10 @@ def test_brief_and_design_sentences_hit(text, kind):
 def test_request_corpus():
     """Zero false `end`, zero false `change_topic` on negatives, recall reported."""
     _print_table("request corpus, dev split", [r for r in CORPUS if r["split"] == "dev"])
-    _print_table("request corpus, holdout split", [r for r in CORPUS if r["split"] == "holdout"])
+    _print_table(
+        "request corpus, t rows: P1 holdout, SPENT, no longer unseen",
+        [r for r in CORPUS if r["split"] == "spent_holdout"],
+    )
     _print_table("request corpus, all", CORPUS)
 
     false_end = [r["id"] for r in CORPUS if r["expect"] != "end" and _got(r["text"]) == "end"]
@@ -126,6 +132,17 @@ def test_request_corpus():
     dev = _table([r for r in CORPUS if r["split"] == "dev"])
     for kind, (lines, hit, _false_hits) in dev.items():
         assert hit / lines >= DEV_RECALL_FLOOR, kind
+
+
+def test_corpus_history_is_labelled_honestly():
+    assert CORPUS_PATH.read_text(encoding="utf-8").startswith("# corpus history")
+    assert {row["split"] for row in CORPUS} == {"dev", "spent_holdout"}
+    earlier = [row for row in CORPUS if row["id"].startswith("h")]
+    assert len(earlier) == 75
+    assert all(r["split"] == "dev" and r["history"] == "earlier_holdout" for r in earlier)
+    spent = [row for row in CORPUS if row["split"] == "spent_holdout"]
+    assert len(spent) == 75
+    assert all(r["id"].startswith("t") and r["history"] == "p1_holdout_spent" for r in spent)
 
 
 def test_corpus_negatives_fire_no_kind():
