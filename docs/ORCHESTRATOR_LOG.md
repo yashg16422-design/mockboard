@@ -242,3 +242,13 @@ Orchestrator read trace voice-32a441f916 and the server log from the owner's Mac
 - **Ruling 48 (owner, resolves D5, amends Ruling 5):** replay is text-only now, built behind a pluggable interface so audio replay can be added at any time without changing callers. No audio cache is built.
 - **Ruling 49 (owner, amends Ruling 43's defaults):** test users get 10 candidate messages per interview, 5 interviews and the daily cap. The owner and reviewers, via access code, have no limit. Limits are shown up front and explained politely and truthfully. The cap is enforced on the agent side: the Chairperson closes courteously at the cap, never mid-line. Consequence: a capped interview cannot reach all five segments at the design's 15 answers, so the panel must shorten the agenda or budgets for a capped session, so that it still reaches a proper close. The CTO designs this before P4.
 - D9 and D10 are done: CLAUDE.md and `.claude/agents/builder.md` now carry Ruling 41, and the stale test count is corrected, with the owner's approval.
+
+## Round 28 — Nov 1, 2026 (P1 rejected; P1.1 required)
+
+- **Rejected** P1 (613c162); review in `docs/CTO_NOTES_09.md`. Orchestrator reproduced the failures: "public administration ke alawa kisi aur topic pe baat karte hain" returns None; "parliament ka session band karo" and "campus placements mein hum interview khatam karte hain" return end; "corruption ko chhodiye asli samasya gareebi hai" returns change_topic and bans corruption; "agla sawal puch lijiye" returns repeat. The builder's 913 tests, lint and md5 claims were confirmed; the code is unwired, so no user impact.
+- **Ruling 50:** P1.1 fixes M1 to M5 and the note's should-fixes. Priority order: end > strong change > skip > weak change > repeat > clarify.
+- **Ruling 51 (amends A1 of PANEL_PHASE.md):** "every time" applies only to listed request sentences in tests. Any public wording uses the CTO_NOTES_09 section 4 text until P12 gives a real figure. The session report lists each detected request and its source.
+- **Ruling 52 (reverses D7's "no confirmation"):** `end` gets a one-line spoken confirmation; only a clear yes closes, anything else resumes uncounted. Built in P3 with `pending_end`.
+- **Ruling 53:** a healthy listener may veto weak-pattern hits on turns over 8 words, traced as `request_disagree`. Built in P5. Strong patterns and listener failure are unchanged.
+- **Ruling 54:** the phrase that always works is taught as a hint on the form screen, not a spoken ritual line, until the owner hears both. The orchestrator writes a third holdout, kept out of the repo until P1.1 is scored, so no builder sees it. Real recall is measured once at P12 with owner approval.
+
