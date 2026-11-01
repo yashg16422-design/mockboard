@@ -12,8 +12,16 @@ board writes its own words ("tourism", "paryatan"). So a refusal widens, with no
 
 Matching is per token or phrase, never by substring, on a phonetic key: Devanagari goes to Latin
 by a character table and coarse spellings fold together ("tourism", "turism", "टूरिज्म"). Vowels
-are kept, so "tourism" never bans "terrorism". A multi-word term also matches its last content
-word ("rural tourism" bans "tourism"). Edit distance 1 applies only to keys of 6 or more letters.
+are kept, so "tourism" never bans "terrorism". A multi-word term also matches its head word, which
+`_head_word` picks ("rural tourism" bans "tourism"; "Kanpur Nagar" bans a bare "Kanpur", because
+"Nagar" only says what kind of place it is). Some words are too general to stand for a term:
+"Public Administration" does not ban a bare "administration" (`_GENERIC_HEADS`), since the board
+says that word in unrelated lines. Edit distance 1 applies only to keys of 6 or more letters.
+
+What a refusal covers (Ruling 73 items 1 and 2): `topics_in_play` keeps from a segment's aliases
+only those the conversation is about, that is, named in the question just asked or in the
+candidate's own words, so asking to leave chess does not also ban cycling and the optional subject.
+When none is named, the segment's whole list is refused.
 
 # UNVERIFIED: a refused topic that is not the current segment, in a script unlike the actor's, and
 # in no alias group can still return. The key is best effort: Devanagari inherent vowels make it
@@ -138,6 +146,41 @@ def _within_one_edit(a: str, b: str) -> bool:
     return any(long_[:i] + long_[i + 1 :] == short for i in range(len(long_)))
 
 
+# Trailing words that only say what kind of place a name is. A term ending in one (and with
+# at least `_MIN_PLACE_HEAD_LETTERS` letters of name before it) is matched by the name alone.
+_PLACE_SUFFIXES = frozenset(
+    {"nagar", "pradesh", "district", "state", "zila", "zile", "city", "ilaka", "ilaake"}
+)
+_MIN_PLACE_HEAD_LETTERS = 6  # so "Uttar Pradesh" does not ban "uttar", which also means "answer"
+# General nouns that end many subject names. A term ending in one is matched as a phrase only.
+_GENERIC_HEADS = frozenset(
+    {
+        "administration", "management", "studies", "science", "sciences", "engineering",
+        "policy", "affairs", "services", "development", "systems", "technology",
+    }
+)  # fmt: skip
+
+
+def _head_word(words: list[str]) -> str | None:
+    """The one word that stands for a multi-word term on its own, or None when only the whole
+    phrase counts. Trailing place suffixes are set aside first ("Kanpur Nagar" -> "Kanpur"); a
+    generic or stop word never stands alone ("Public Administration" -> None)."""
+    kept = list(words)
+    trimmed = False
+    while len(kept) > 1 and kept[-1].casefold() in _PLACE_SUFFIXES:
+        kept.pop()
+        trimmed = True
+    if len(words) < 2:
+        return None
+    head = kept[-1]
+    low = head.casefold()
+    if low in _STOP or low in _GENERIC_HEADS:
+        return None
+    if len(head) < (_MIN_PLACE_HEAD_LETTERS if trimmed else 5):
+        return None
+    return head
+
+
 def _same_key(a: str, b: str) -> bool:
     if a == b:
         return True
@@ -224,15 +267,21 @@ def find_avoided(text: str, terms: Iterable[str]) -> str | None:
             continue
         if _contains_run(tokens, keys):
             return term
-        content = [w for w in words if w.casefold() not in _STOP and len(w) >= 5]
-        if (
-            len(words) > 1
-            and content
-            and words[-1] == content[-1]
-            and _contains_run(tokens, [term_key(content[-1])])
-        ):
+        head = _head_word(words)
+        if head is not None and _contains_run(tokens, [term_key(head)]):
             return term
     return None
+
+
+def topics_in_play(aliases: Iterable[str], texts: Iterable[str]) -> tuple[str, ...]:
+    """The aliases the conversation is about: those said in any of `texts` (the question just
+    asked, the candidate's own words). The whole list when none is, because a request that names
+    nothing ("aage badhte hain") still leaves the segment as a whole. A refusal is for what was
+    being discussed, never for every word the form holds."""
+    listed = tuple(aliases)
+    said = [t for t in texts if t and t.strip()]
+    named = tuple(a for a in listed if any(find_avoided(t, [a]) is not None for t in said))
+    return named or listed
 
 
 def prompt_terms(terms: Iterable[str]) -> tuple[str, ...]:

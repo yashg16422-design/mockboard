@@ -32,7 +32,7 @@ from mockboard.brain.agenda import (
     capped_budgets,
     seed_alternatives,
 )
-from mockboard.brain.avoid_terms import expand_terms, find_avoided
+from mockboard.brain.avoid_terms import expand_terms, find_avoided, topics_in_play
 from mockboard.brain.director import PanelDirector, opening_memory
 from mockboard.brain.graphs import generate_report
 from mockboard.brain.panel_actor import (
@@ -247,7 +247,11 @@ class PanelHooks:
         """Terms this turn's topic change refuses: the candidate's, widened, plus the segment's own
         aliases, because "aage badhte hain" carries no term at all."""
         segment = self.agenda.segment(d.answered_segment)
-        return expand_terms(d.avoid_terms, segment.aliases)
+        # Only the aliases the conversation is about: named in the question just asked or in the
+        # candidate's own words, so leaving chess does not also ban cycling or the optional
+        # subject (Ruling 73 item 1). None named: the segment's whole list.
+        in_play = topics_in_play(segment.aliases, (self.director.memory.last_question, self._raw))
+        return expand_terms(d.avoid_terms, in_play)
 
     def avoid_for(self, d: PanelDecision) -> tuple[str, ...]:
         extra = self._refusal_terms(d) if d.request_kind == "change_topic" else ()

@@ -13,6 +13,7 @@ from mockboard.brain.avoid_terms import (
     expand_terms,
     find_avoided,
     term_key,
+    topics_in_play,
 )
 
 TOURISM = ["tourism", "turism", "टूरिज्म", "टूरिज़्म"]
@@ -64,7 +65,60 @@ def test_a_multi_word_term_also_bans_its_last_content_word():
 
 def test_generic_last_words_of_a_place_do_not_ban_other_places():
     assert find_avoided("Lucknow Nagar Nigam ke baare mein?", ["Kanpur Nagar"]) is None
-    assert find_avoided("Kanpur mein aapne kya dekha?", ["Kanpur Nagar"]) is None  # phrase only
+    assert find_avoided("Is nagar ke baare mein bataiye", ["Kanpur Nagar"]) is None
+
+
+def test_a_place_alias_bans_the_bare_name_ruling_73_item_2():
+    """"Nagar" only says what kind of place it is; the board says "Kanpur" on its own."""
+    assert find_avoided("Kanpur mein aapne kya dekha?", ["Kanpur Nagar"]) == "Kanpur Nagar"
+    widened = expand_terms([], ["Kanpur Nagar"])
+    assert find_avoided("Kanpur mein aapne kya dekha?", widened) is not None
+    assert find_avoided("Kanpur Nagar mein aapne kya dekha?", widened) is not None
+    assert find_avoided("Lucknow mein aapne kya dekha?", widened) is None
+
+
+def test_a_state_alias_does_not_ban_a_word_that_also_means_something_else():
+    """"uttar" is also "answer", and only 5 letters long, so the name alone is not enough."""
+    widened = expand_terms([], ["Uttar Pradesh"])
+    assert find_avoided("Is sawal ka uttar kaise denge?", widened) is None
+    assert find_avoided("Uttar Pradesh mein aapne kya dekha?", widened) is not None
+    assert find_avoided("Madhya mein aapne kya dekha?", expand_terms([], ["Madhya Pradesh"]))
+
+
+@pytest.mark.parametrize(
+    "subject", ["Public Administration", "Computer Science", "Business Management"]
+)
+def test_a_subject_alias_bans_the_phrase_but_not_its_general_last_word(subject):
+    """Ruling 73 item 2: "Public Administration" must not ban "administration" elsewhere."""
+    widened = expand_terms([], [subject])
+    last = subject.split()[-1].lower()
+    assert find_avoided(f"{subject} ke baare mein aapki raay?", widened) is not None
+    assert find_avoided(f"In what way would your subject help you in {last}?", widened) is None
+    assert find_avoided(f"Sarkari {last} mein aap kya badlenge?", widened) is None
+
+
+def test_a_spoken_term_still_bans_its_topic_word_unless_that_word_is_general():
+    assert find_avoided("Tourism par kya sochte hain?", ["rural tourism"]) == "rural tourism"
+    assert find_avoided("Indian history ke baare mein?", ["world history"]) == "world history"
+    assert find_avoided("Prashasan ki administration par?", ["public administration"]) is None
+
+
+def test_topics_in_play_keeps_only_the_aliases_the_conversation_is_about():
+    aliases = ["chess", "cycling", "History"]
+    asked = "Aapko chess se kya seekh mili, aur woh aapke kaam kaise aayegi?"
+    assert topics_in_play(aliases, [asked, "aage badhiye"]) == ("chess",)
+    said = ["generic sawal", "Cycling ke baare mein bolna chahta hoon"]
+    assert topics_in_play(aliases, said) == ("cycling",)
+    assert topics_in_play(aliases, [asked, "mujhe chess aur cycling dono pasand hain"]) == (
+        "chess", "cycling",
+    )
+
+
+def test_topics_in_play_falls_back_to_the_whole_list_when_nothing_is_named():
+    aliases = ["Kanpur Nagar", "Uttar Pradesh"]
+    assert topics_in_play(aliases, ["Aap khud kya karenge?", ""]) == tuple(aliases)
+    assert topics_in_play((), ["anything"]) == ()
+    assert topics_in_play(aliases, []) == tuple(aliases)
 
 
 def test_edit_distance_one_applies_only_to_long_keys():
