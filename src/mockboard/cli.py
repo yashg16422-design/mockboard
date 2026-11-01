@@ -46,6 +46,7 @@ from mockboard.config import Settings, get_settings
 from mockboard.modes import DEFAULT_MODE, mode_ids
 from mockboard.modes.debate.report_format import format_debate_report
 from mockboard.modes.debate.setup_cli import read_debate_setup
+from mockboard.modes.upsc_panel.setup import PanelSetup
 from mockboard.obs.trace import TraceRecorder
 from mockboard.obs.tracing import langfuse_callbacks
 from mockboard.session import SEGMENT_MARK, InterviewSession
@@ -266,6 +267,8 @@ async def run(args: argparse.Namespace) -> int:
         print(f"\nApplication form from {args.form_file}")
     else:
         form = read_form(ask, use_defaults=use_defaults)
+    if args.panel:  # P4, hidden: the panel runs on the fake LLM only until P7
+        options = PanelSetup(max_answers=args.max_answers)
     kwargs = {"session_id": session_id} if session_id else {}
     session = InterviewSession(
         deps=deps,
@@ -281,8 +284,28 @@ async def run(args: argparse.Namespace) -> int:
     recorder.session_id = session.session_id
     recorder.path = recorder.path.with_name(f"{session.session_id}.jsonl")
 
+    try:
+        return await _interview(args, settings, session, rt, ask, lines, recorder, cards)
+    finally:
+        await session.close()  # the panel's checkpointer thread, on every exit path
+
+
+def _print_panel_line(session: InterviewSession, line, tag: str = "") -> None:
+    """One `[Name] text` row per speaker, so a hand-off reads as the Chairperson's own line and
+    the question as the next member's. The (move, rule) tag sits on the last row."""
+    parts = list(line.parts)
+    for i, part in enumerate(parts):
+        label = f"({tag}) " if tag and i == len(parts) - 1 else ""
+        print(f"[{session.speaker_name(part.member)}] {label}{part.text}")
+
+
+async def _interview(args, settings, session, rt, ask, lines, recorder, cards) -> int:
     opener = await session.open()
-    print(f"\n[{session.speaker_name(rt.strategy.chairman)}] {opener.text}")
+    if args.panel:
+        print()
+        _print_panel_line(session, opener)
+    else:
+        print(f"\n[{session.speaker_name(rt.strategy.chairman)}] {opener.text}")
     while not session.state.finished:
         if lines is not None and args.think_s > 0:
             # A scripted candidate answers instantly; a real one takes seconds to think and
@@ -296,7 +319,10 @@ async def run(args: argparse.Namespace) -> int:
         await session.end_of_turn(args.deadline_s or settings.text_move_deadline_s)
         out = await session.speak()
         tag = f"{out.move.move.value}, {out.move.rule_id}"
-        print(f"[{session.speaker_name(out.move.member)}] ({tag}) {out.line.text}")
+        if args.panel:
+            _print_panel_line(session, out.line, tag)
+        else:
+            print(f"[{session.speaker_name(out.move.member)}] ({tag}) {out.line.text}")
         if out.move.move == Move.fact_challenge:
             print(f"   show-your-work: {out.move.reason}")
         if out.fallback_reason:
@@ -344,7 +370,17 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--form-file",
         help="application form as JSON (see examples/forms/sample_form.json); UPSC mode only. "
         "With it, --script holds only the answers, no form lines "
-        "(see examples/fake_panel.txt)",
+        "(see examples/fake_answers.txt)",
+    )
+    p.add_argument(
+        "--panel",
+        action="store_true",
+        help=argparse.SUPPRESS,  # P4: the panel (agenda, director, five members); fake LLM only
+    )
+    p.add_argument(
+        "--max-answers",
+        type=int,
+        help=argparse.SUPPRESS,  # panel only: the test-user cap; the agenda spends it (Ruling 49)
     )
     p.add_argument("--language", choices=["en", "hi"], help="report language (default: settings)")
     p.add_argument("--max-turns", type=int, default=9, help="hard cap on candidate turns")
@@ -368,6 +404,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     args = p.parse_args(argv)
     if args.form_file and args.mode == DEBATE_MODE:
         p.error("--form-file is for the UPSC interview; debate has no application form")
+    if args.panel and args.mode == DEBATE_MODE:
+        p.error("--panel is for the UPSC interview; debate has no panel")
+    if args.panel and not args.fake:
+        p.error("--panel runs on the fake LLM only until the cutover (P7): add --fake")
+    if args.max_answers is not None and not args.panel:
+        p.error("--max-answers is a panel setting: add --panel")
+    if args.max_answers is not None and args.max_answers < 5:
+        p.error("--max-answers must be at least 5, one question for each of the five members")
     return args
 
 

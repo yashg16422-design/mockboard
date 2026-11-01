@@ -134,7 +134,8 @@ class Sim:
         self.answers_used += decision.counted
         self.free_used += decision.free
         self.turns_in_topic += decision.counted
-        self.last_move = decision.move.move
+        if decision.move.move not in (Move.repeat_question, Move.rephrase_question, Move.clarify):
+            self.last_move = decision.move.move  # a fixed line leaves it alone (CTO_NOTES_15 §9.2)
         self.finished = decision.finished
         self.strong_streak = self.strong_streak + 1 if analysis.is_strong else 0
         self.honest_unknowns += analysis.honest_unknown

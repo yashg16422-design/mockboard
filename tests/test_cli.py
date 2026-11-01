@@ -13,7 +13,7 @@ from mockboard.config import REPO_ROOT
 from mockboard.session import split_segments
 
 SCRIPT = REPO_ROOT / "examples" / "fake_session.txt"
-ANSWERS = REPO_ROOT / "examples" / "fake_panel.txt"
+ANSWERS = REPO_ROOT / "examples" / "fake_answers.txt"
 
 
 def test_split_segments():

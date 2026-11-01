@@ -709,6 +709,9 @@ class SessionReport(_Model):
     notes: list[str] = Field(default_factory=list)
     feature_flags: dict[str, bool] = Field(default_factory=dict)
     prompt_versions: dict[str, int] = Field(default_factory=dict)
+    # The panel's detected candidate requests and how each was found (Ruling 51). Empty for the
+    # old board, so its report is unchanged.
+    requests: list[PanelRequest] = Field(default_factory=list)
 
     @field_validator("scores")
     @classmethod

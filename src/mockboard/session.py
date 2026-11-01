@@ -263,6 +263,8 @@ class InterviewSession:
         factory = self.profile.session_hooks
         if factory is not None:
             self.hooks = factory(self, self.mode_options)
+        if getattr(self.hooks, "max_turns", None) is not None:
+            self.max_turns = self.hooks.max_turns()  # the panel's own cap (CTO_NOTES_12 §9.5)
         topics = (
             self.hooks.topics()
             if self.hooks is not None
@@ -336,6 +338,27 @@ class InterviewSession:
             barge_in_min_speech_ms=s.voice_barge_in_min_speech_ms,
             resume_min_speech_ms=s.voice_resume_min_speech_ms,
         )
+
+    def request_wrap_up(self) -> bool:
+        """The interview's time is nearly up: the next finished turn closes with the time line
+        (panel only; CTO_NOTES_12 §10). Returns False when this mode has no wrap-up."""
+        hook = getattr(self.hooks, "request_wrap_up", None)
+        if hook is None:
+            return False
+        hook()
+        return True
+
+    def opening_ritual(self) -> str | None:
+        """The fixed line the Chairperson says before the first question (panel only)."""
+        hook = getattr(self.hooks, "ritual_line", None)
+        return hook() if hook is not None else None
+
+    async def close(self) -> None:
+        """Release what a mode holds for the session. Idempotent, and meant for a `finally` on
+        every exit path (a disconnect included), whether or not `finish()` ran."""
+        hook = getattr(self.hooks, "aclose", None)
+        if hook is not None:
+            await hook()
 
     def mark(self, stage: str, at: float | None = None) -> None:
         """Voice mode: record a stage (e.g. `vad_end`, `commit_sent`, `tts_first_byte`) on
@@ -575,6 +598,14 @@ class InterviewSession:
         )
         return line
 
+    def _prompt_versions(self) -> dict[str, int]:
+        """The versions recorded in the trace. A mode's hooks may name their own (the panel runs
+        actor.v4 and opener.v2 while the UPSC board stays on v3 and v1)."""
+        versions = getattr(self.hooks, "prompt_versions", None)
+        if versions is not None:
+            return versions()
+        return self.deps.settings.prompt_versions(self.mode)
+
     async def _open_with_hooks(self) -> LineResult:
         s = self.deps.settings
         line, move, extra = await self.hooks.open()
@@ -594,7 +625,7 @@ class InterviewSession:
             card_set_version=self.deps.cards.version,
             cards_all_synthetic=self.deps.cards.all_synthetic,
             feature_flags=s.feature_flags(),
-            prompt_versions=s.prompt_versions(self.mode),
+            prompt_versions=self._prompt_versions(),
             **extra,
         )
         return line
@@ -729,6 +760,12 @@ class InterviewSession:
             turn.analysis = merge_analyses([r.analysis for r in fresh])
         else:  # silence is a real (empty) answer; a missing analysis is a fallback
             turn.analysis = Analysis(turn_id=turn.turn_id, is_fallback=bool(turn.tasks))
+        decide = getattr(self.hooks, "decide_turn", None)
+        if decide is not None:
+            # The panel's director: the last, instant step on top of the strategist's move. It
+            # sees the move after the hard cap has had its say, and writes nothing but its decision.
+            move = await decide(turn, move, turn.analysis)
+            tr.mark("director_done")
         st.turns.append(
             CandidateTurn(
                 turn_id=turn.turn_id,
@@ -782,7 +819,7 @@ class InterviewSession:
         """Counters, board line and trace line after the line is said. `voice` (voice mode
         only) holds what was really heard; then `line.text` is the spoken text, and an empty
         line (nothing heard) leaves `last_question` and `board_lines` as they were."""
-        st, s = self.state, self.deps.settings
+        st = self.state
         move, tr, analysis = turn.move, turn.trace, turn.analysis or Analysis()
         if line.error:  # ruling 14: the actor failed or missed its budget
             turn.fallbacks.append(
@@ -850,7 +887,7 @@ class InterviewSession:
             late_listener=self._late_trace(),
             stale_analyses=self._stale_trace(),
             fallbacks=turn.fallbacks,
-            prompt_versions=s.prompt_versions(self.mode),
+            prompt_versions=self._prompt_versions(),
         )
         if self.hooks is not None:
             tr.set(**self.hooks.trace_fields(move, line))
@@ -870,6 +907,9 @@ class InterviewSession:
 
     def _preface(self, move: BoardMove) -> str:
         """The code-side acknowledgement said before the model's part (ruling 11)."""
+        spoken = getattr(self.hooks, "spoken_preface", None)
+        if spoken is not None:  # the panel's fixed lines, in order (acknowledgement, hand-off)
+            return spoken(move)
         if move.preface is None:
             return ""
         mix = getattr(self.hooks, "mix", None)

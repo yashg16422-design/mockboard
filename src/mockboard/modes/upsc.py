@@ -69,6 +69,16 @@ def upsc_cap_move(
     )
 
 
+def panel_session_hooks(session, options):
+    """The panel's hooks when the session was given a `PanelSetup` (`--panel`), otherwise None, so
+    today's UPSC code paths run unchanged until P7 (CTO_NOTES_06 §7). Imported here because the
+    panel imports the graphs, which import this registry."""
+    from mockboard.modes.upsc_panel.hooks import PanelHooks
+    from mockboard.modes.upsc_panel.setup import PanelSetup
+
+    return PanelHooks(session, options) if isinstance(options, PanelSetup) else None
+
+
 UPSC_PROFILE = register(
     ModeProfile(
         id="upsc_interview",
@@ -87,6 +97,7 @@ UPSC_PROFILE = register(
         persona_dir=PERSONA_DIR,
         persona_heading="## The interview board (persona pack)",
         rubric=tuple(d.value for d in Dimension),
+        session_hooks=panel_session_hooks,
     )
 )
 

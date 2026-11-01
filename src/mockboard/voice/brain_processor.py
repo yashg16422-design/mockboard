@@ -187,6 +187,9 @@ class BrainProcessor(FrameProcessor):
             for task in (self._task, self._end_task, self._clock_task, self._orphan_task):
                 if task is not None:
                     await self.cancel_task(task)
+            # A disconnect must not leave the panel's checkpointer thread behind.
+            with contextlib.suppress(Exception):
+                await self.session.close()
             await self.push_frame(frame, direction)
             return
         if isinstance(frame, TranscriptionFrame):
