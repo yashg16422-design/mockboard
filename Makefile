@@ -6,7 +6,7 @@ VENV_PY := .venv/bin/python
 PYTHON ?= $(if $(wildcard $(VENV_PY)),$(VENV_PY),python3)
 export PYTHONPATH := src:.
 
-.PHONY: help venv install test lint format cli cli-fake cli-fake-hi cli-real cli-fake-debate cli-debate cli-real-debate eval eval-gate eval-motions eval-debate clean-traces voice-install voice-fake voice-upsc voice-debate voice-summary voice-record stt-ab
+.PHONY: help venv install test lint format cli cli-fake cli-fake-hi cli-real cli-fake-debate cli-debate cli-real-debate eval eval-gate eval-motions eval-debate clean-traces voice-install voice-fake voice-upsc voice-debate voice-summary voice-record stt-ab voice-lab voice-lab-fake
 
 help:
 	@echo "venv         create .venv and install everything (run this first on macOS)"
@@ -30,6 +30,8 @@ help:
 	@echo "voice-summary    timings of the newest voice session (safe to paste: no text)"
 	@echo "voice-record     voice-upsc that also saves YOUR mic audio to traces/<session>.mic.wav"
 	@echo "stt-ab           replay a recording through 3 Prisma settings: make stt-ab WAV=traces/x.mic.wav"
+	@echo "voice-lab        http://localhost:7861: hear board lines per Timbre model/voice/setting (credits)"
+	@echo "voice-lab-fake   the same page with tones instead of Timbre (free)"
 
 venv:
 	python3 -m venv .venv
@@ -116,6 +118,14 @@ voice-record:
 WAV ?=
 stt-ab:
 	$(PYTHON) -m mockboard.voice.stt_ab $(WAV)
+
+# Ruling 38: pick the board's voice by ear. Each new render spends Timbre credits; renders are
+# cached under traces/voice_lab/, so replays are free.
+voice-lab:
+	$(PYTHON) -m mockboard.voice.lab
+
+voice-lab-fake:
+	$(PYTHON) -m mockboard.voice.lab --fake
 
 clean-traces:
 	rm -rf traces

@@ -1,0 +1,262 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mock Board voice lab</title>
+<link rel="icon" href="data:,">
+<style>
+  :root {
+    --bg: #f7f6f2; --panel: #ffffff; --fg: #1c1c1a; --muted: #6a6a64; --line: #deddd5;
+    --accent: #2f5d86; --accent-fg: #ffffff; --warn: #8a5a00; --warn-bg: #fff4dc; --bad: #9b2c2c;
+    --pick: #e7f0e4;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #151514; --panel: #1d1d1b; --fg: #ecebe5; --muted: #a09f97; --line: #34332f;
+      --accent: #86b4dc; --accent-fg: #10202e; --warn: #f0c46b; --warn-bg: #2f2716; --bad: #f19a9a;
+      --pick: #1f2b1d;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg);
+         font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 1100px; margin: 0 auto; padding: 24px 16px 48px; }
+  h1 { font-size: 1.3rem; margin: 0 0 4px; }
+  h2 { font-size: 1.05rem; margin: 0 0 4px; }
+  p.sub { color: var(--muted); margin: 0 0 12px; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+           padding: 14px 16px; margin-bottom: 16px; }
+  .notice { background: var(--warn-bg); color: var(--warn); border-radius: 8px; padding: 10px 12px;
+            margin-bottom: 16px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 8px 12px; }
+  label { display: flex; flex-direction: column; font-size: .82rem; color: var(--muted); gap: 3px; }
+  select { font: inherit; color: var(--fg); background: var(--bg); border: 1px solid var(--line);
+           border-radius: 6px; padding: 5px 6px; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; vertical-align: top; padding: 7px 6px; border-top: 1px solid var(--line); }
+  th { font-size: .8rem; color: var(--muted); font-weight: 500; }
+  td.setting { width: 34%; }
+  td.setting .what { font-weight: 600; }
+  td.setting .env { font: 11px/1.4 ui-monospace, Menlo, monospace; color: var(--muted); word-break: break-all; }
+  tr.base td.setting .what::after { content: " (baseline)"; color: var(--muted); font-weight: 400; }
+  button { font: inherit; padding: 5px 12px; border-radius: 7px; border: 1px solid var(--line);
+           background: transparent; color: var(--fg); cursor: pointer; }
+  button.play.done { border-color: var(--accent); color: var(--accent); }
+  button.play.playing { background: var(--accent); color: var(--accent-fg); }
+  button:disabled { opacity: .5; cursor: default; }
+  .meta { display: block; font-size: .75rem; color: var(--muted); margin-top: 3px; }
+  .err { color: var(--bad); font-size: .8rem; }
+  .lines li { margin-bottom: 6px; }
+  .lines .alt { color: var(--muted); font-size: .88rem; display: block; }
+  #chars { font-variant-numeric: tabular-nums; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Mock Board voice lab</h1>
+  <p class="sub">The same three board lines with different Timbre settings, so you can choose the
+    board's voice by ear (ruling 38). Each section changes one setting from the baseline. Nothing is
+    rendered until you press a play button, and a rendered clip is saved and replays for free.</p>
+
+  <div class="notice" id="fake" hidden>Fake mode: you will hear tones, not Timbre. This checks the
+    page for free. Restart without <code>--fake</code> to hear the real voices.</div>
+  <div class="notice" id="real" hidden>Real Timbre: each new render spends Gnani credits (billed per
+    character). Characters sent this session: <span id="chars">0</span>.</div>
+
+  <section class="panel">
+    <h2>The three lines</h2>
+    <ol class="lines" id="lines"></ol>
+  </section>
+
+  <section class="panel">
+    <h2>Baseline</h2>
+    <p class="sub">Starts at what the board sends today. Change it to compare around another point;
+      every table below follows it. The grey line under each setting is what to put in
+      <code>.env</code> to make the board sound like that row (the script is the brain's choice, not
+      a setting).</p>
+    <div class="grid" id="baseline"></div>
+    <p class="sub" id="board"></p>
+  </section>
+
+  <div id="sections"></div>
+  <p id="error" class="err"></p>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+let cfg = null;
+let base = {};
+const audio = new Audio();
+let playingBtn = null;
+
+function voiceKey(v) { return `${v.model}|${v.voice}`; }
+function label(kind, value) {
+  if (kind === "voice") return `${value.voice} (${value.model === "timbre-v3.0" ? "v3.0" : "v2.5"})`;
+  if (kind === "rate") return `${value / 1000} kHz`;
+  return ({language: cfg.languages, script: cfg.scripts, unit: cfg.units}[kind] || {})[value] || value;
+}
+
+function select(name, options, current, onChange) {
+  const l = document.createElement("label");
+  l.textContent = name;
+  const s = document.createElement("select");
+  for (const [value, text] of options) {
+    const o = document.createElement("option");
+    o.value = value; o.textContent = text; if (value === current) o.selected = true;
+    s.appendChild(o);
+  }
+  s.onchange = () => onChange(s.value);
+  l.appendChild(s);
+  return l;
+}
+
+function buildBaseline() {
+  const box = $("baseline");
+  box.innerHTML = "";
+  box.appendChild(select("Voice", cfg.voices.map((v) => [voiceKey(v), label("voice", v)]),
+    `${base.model}|${base.voice}`, (val) => { [base.model, base.voice] = val.split("|"); render(); }));
+  box.appendChild(select("Language", Object.entries(cfg.languages), base.language,
+    (val) => { base.language = val; render(); }));
+  box.appendChild(select("Script", Object.entries(cfg.scripts), base.script,
+    (val) => { base.script = val; render(); }));
+  box.appendChild(select("Requests", Object.entries(cfg.units), base.unit,
+    (val) => { base.unit = val; render(); }));
+  box.appendChild(select("Sample rate", cfg.rates.map((r) => [String(r), label("rate", r)]),
+    String(base.rate), (val) => { base.rate = Number(val); render(); }));
+}
+
+function sections() {
+  return [
+    {title: "Model and voice", sub: "Every available model (timbre-v2.5 and timbre-v3.0) with voices suited to a Hindi/Hinglish board.",
+     rows: cfg.voices.map((v) => ({...base, model: v.model, voice: v.voice, _note: v.note}))},
+    {title: "Language", sub: "The language field Timbre gets with the same text.",
+     rows: Object.keys(cfg.languages).map((l) => ({...base, language: l}))},
+    {title: "Script", sub: "The same words written in Latin or Devanagari.",
+     rows: Object.keys(cfg.scripts).map((s) => ({...base, script: s}))},
+    {title: "Whole line or per sentence", sub: "Per sentence is what the board does today: each sentence is its own request, played back to back.",
+     rows: Object.keys(cfg.units).map((u) => ({...base, unit: u}))},
+    {title: "Sample rate", sub: "Timbre's output rate (headphones help to hear the difference).",
+     rows: cfg.rates.map((r) => ({...base, rate: r}))},
+  ];
+}
+
+function same(a, b) {
+  return ["model", "voice", "language", "script", "unit", "rate"].every((k) => a[k] === b[k]);
+}
+
+function describe(v) {
+  return `${label("voice", v)} · ${v.language} · ${cfg.scripts[v.script]} · ${cfg.units[v.unit]} · ${v.rate / 1000} kHz`;
+}
+function envLine(v) {
+  return `TTS_MODEL=${v.model} TTS_VOICE=${v.voice} TTS_LANGUAGE=${v.language} TTS_SAMPLE_RATE=${v.rate} TTS_REQUEST_UNIT=${v.unit}`;
+}
+
+function render() {
+  buildBaseline();
+  const root = $("sections");
+  root.innerHTML = "";
+  for (const sec of sections()) {
+    const panel = document.createElement("section");
+    panel.className = "panel";
+    panel.innerHTML = `<h2>${sec.title}</h2><p class="sub">${sec.sub}</p>`;
+    const table = document.createElement("table");
+    table.innerHTML = `<tr><th>Settings</th>${cfg.lines.map((l, i) => `<th>Line ${i + 1}: ${l.speaker}</th>`).join("")}</tr>`;
+    for (const row of sec.rows) {
+      const tr = document.createElement("tr");
+      if (same(row, base)) tr.className = "base";
+      const td = document.createElement("td");
+      td.className = "setting";
+      td.innerHTML = `<span class="what"></span><span class="meta"></span><span class="env"></span>`;
+      td.querySelector(".what").textContent = describe(row);
+      td.querySelector(".meta").textContent = row._note || "";
+      td.querySelector(".env").textContent = envLine(row);
+      if (row.language === "hi-en") td.querySelector(".meta").textContent += " The board cannot send hi-en yet (needs a ruling).";
+      tr.appendChild(td);
+      cfg.lines.forEach((_, i) => tr.appendChild(cell({...row, line: i})));
+      table.appendChild(tr);
+    }
+    panel.appendChild(table);
+    root.appendChild(panel);
+  }
+}
+
+const cache = new Map();  // settings JSON -> render result
+
+function cell(variant) {
+  const td = document.createElement("td");
+  const btn = document.createElement("button");
+  btn.className = "play";
+  const meta = document.createElement("span");
+  meta.className = "meta";
+  const keyOf = JSON.stringify(["line", "script", "model", "voice", "language", "unit", "rate"].map((k) => variant[k]));
+  const known = cache.get(keyOf);
+  btn.textContent = known ? "▶ play" : "▶ render";
+  if (known) { btn.classList.add("done"); meta.textContent = summary(known); }
+  btn.onclick = async () => {
+    if (playingBtn === btn && !audio.paused) { audio.pause(); return; }
+    let r = cache.get(keyOf);
+    if (!r) {
+      btn.disabled = true; btn.textContent = "rendering…"; meta.textContent = "";
+      try {
+        const body = Object.fromEntries(["line", "script", "model", "voice", "language", "unit", "rate"].map((k) => [k, variant[k]]));
+        const resp = await fetch("/api/render", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)});
+        r = await resp.json();
+        if (!resp.ok || r.error) throw new Error(r.error || `HTTP ${resp.status}`);
+        cache.set(keyOf, r);
+        if (r.chars_sent !== undefined) $("chars").textContent = r.chars_sent;
+      } catch (e) {
+        btn.disabled = false; btn.textContent = "▶ retry";
+        meta.innerHTML = ""; const err = document.createElement("span"); err.className = "err";
+        err.textContent = String(e.message || e); meta.appendChild(err);
+        return;
+      }
+      btn.disabled = false; btn.classList.add("done"); btn.textContent = "▶ play";
+      meta.textContent = summary(r);
+    }
+    play(btn, r.url);
+  };
+  td.appendChild(btn); td.appendChild(meta);
+  return td;
+}
+
+function summary(r) {
+  const fb = r.requests.map((q) => q.first_byte_ms).filter((x) => x !== null);
+  const reqs = r.requests.length;
+  return `${r.seconds} s · ${reqs} request${reqs > 1 ? "s" : ""}` + (fb.length && !r.fake ? ` · first byte ${fb.join(", ")} ms` : "") + (r.cached ? " · saved earlier" : "");
+}
+
+function play(btn, url) {
+  if (playingBtn) playingBtn.classList.remove("playing");
+  playingBtn = btn;
+  btn.classList.add("playing");
+  audio.src = url;
+  audio.play().catch((e) => { $("error").textContent = `Could not play: ${e}`; });
+}
+audio.onended = audio.onpause = () => { if (playingBtn) playingBtn.classList.remove("playing"); };
+
+async function init() {
+  try {
+    cfg = await (await fetch("/api/config")).json();
+  } catch (e) { $("error").textContent = `Could not load the lab: ${e}`; return; }
+  base = {...cfg.baseline};
+  $("fake").hidden = !cfg.fake;
+  $("real").hidden = cfg.fake;
+  $("chars").textContent = cfg.chars_sent;
+  const b = cfg.board;
+  $("board").textContent = `Your .env now: TTS_MODEL=${b.model}, TTS_VOICE=${b.voice}, TTS_LANGUAGE=${b.language}, TTS_SAMPLE_RATE=${b.rate}, TTS_REQUEST_UNIT=${b.unit}.`;
+  const ol = $("lines");
+  cfg.lines.forEach((l) => {
+    const li = document.createElement("li");
+    li.innerHTML = `<strong></strong> <span class="t"></span><span class="alt"></span>`;
+    li.querySelector("strong").textContent = `${l.speaker}:`;
+    li.querySelector(".t").textContent = l.latin;
+    li.querySelector(".alt").textContent = l.deva_mixed;
+    ol.appendChild(li);
+  });
+  render();
+}
+init();
+</script>
+</body>
+</html>
