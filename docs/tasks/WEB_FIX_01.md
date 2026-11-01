@@ -10,11 +10,11 @@ Work in this order, one commit per group, and report what you ran and its result
 - **M2. Route-level tests.** Removing `decision.commit()` and the lab check passed every test. Add tests through the `/api/offer` and static routes, so that both of those mutations fail. Show that they fail.
 - **M3. True copy.** Replace "The microphone stays on this page": audio goes to our server and to Gnani, and the page should say so. Replace "Saved on this computer at {path}", which is untrue on a server.
 
-- **M4. The presence ring (commit 2770c84).** Remove it from the interview room and keep the existing voice bar: up to 2,800 points redrawn every frame competes with the live audio, and the canvas pushes captions down. On the home page it may stay only if it uses the one warm accent, with no mint, no violet and no radial glow, and stops when `prefers-reduced-motion` is set. Replace "It reads where you are": it sounds like tracking. If `presence.js` stays, add it to the S1 allowlist.
+- **M4. The presence ring (commit 2770c84): ON HOLD, owner's decision pending.** Do not remove or recolour the ring. Replace only the sentence "It reads where you are", which sounds like tracking.
 
 ## Should-fix
 
-- **S1.** `_static_path` uses an allowlist of `app.js`, `site.css` and `tokens.css`.
+- **S1.** `_static_path` uses an allowlist of `app.js`, `presence.js`, `site.css` and `tokens.css`.
 - **S2.** Keep the cookie limit at 5. The IP hash gets its own higher limit, `ACCESS_IP_SESSIONS`, default 15, because many people in India share one address. A first-time visitor must never be told they have used their interviews.
 - **S3.** A second route is allowed: `POST /api/access` checks a code before the interview. A wrong code must never spend an interview. During a lockout, say "Please try again in a few minutes."
 - **S4.** Reviewer tokens have an expiry and a short hash of the redeeming code, checked against the current list, so removing a code revokes it. Reject an `ACCESS_SECRET` under 32 characters.

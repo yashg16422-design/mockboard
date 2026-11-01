@@ -291,3 +291,5 @@ Orchestrator read trace voice-32a441f916 and the server log from the owner's Mac
 - PR #1 (`web-frontend` into `panel-phase`) is open at 2770c84 and conflicting. The orchestrator confirmed the head and read `presence.js`: mint and violet, a radial glow, up to 2,800 points per frame. CTO_NOTES_13's review covers e16a665 only; 2770c84 was read, not run.
 - **Ruling 65:** the ring leaves the interview room. On the home page it stays only in the warm accent with no glow. This is M4 of `docs/tasks/WEB_FIX_01.md`; the owner may overrule it, since design is his call. PR #1 merges into `panel-phase` before P7, which edits the same `server.py` lines; nothing merges until M1 to M4 pass review.
 
+- **Ruling 65 on hold:** the CTO subagent reports that the owner wants the ring kept and the other problems fixed later. That reached the orchestrator second-hand, so M4 is paused, not reversed, until the owner confirms. M1 stays required before any public deployment, and M3 before submission (contest honesty rule).
+
