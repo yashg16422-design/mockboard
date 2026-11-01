@@ -293,3 +293,10 @@ Orchestrator read trace voice-32a441f916 and the server log from the owner's Mac
 
 - **Ruling 65 on hold:** the CTO subagent reports that the owner wants the ring kept and the other problems fixed later. That reached the orchestrator second-hand, so M4 is paused, not reversed, until the owner confirms. M1 stays required before any public deployment, and M3 before submission (contest honesty rule).
 
+## Round 35 — Nov 1, 2026 (P2.1 accepted; P3 starts)
+
+- **Accepted** P2.1 (effefa9, bc800c1, cadca61, 9a09569); review in `docs/CTO_NOTES_14.md`. Orchestrator re-ran: `make verify-range BASE=b3e9c4a` exit 0 on every commit (1685 passed at the tip), `make lint` exit 0, UPSC and form-file md5 826ef550..., debate f2a23f33..., `capped_budgets(10)` is 1/2/2/2/3.
+- **Ruling 66 (narrow exception to Ruling 52):** if an `end` turn would spend the last budget unit with no free turn left, close at once with `end_request` and no confirmation, since nothing is left to resume. Elsewhere the confirmation stands.
+- **Ruling 67:** the hook gains `pre-merge-commit` and a voice-extra check, and may skip tests for commits touching only an explicit path allowlist of docs (never `*.md`). Builders never use `--no-verify`; that is in every brief until the owner agrees to add it to `.claude/agents/builder.md`.
+- **Ruling 68:** suite time is 88% voice waiting. Parameters are not trimmed. One time-boxed voice teardown chunk may follow P3.
+
