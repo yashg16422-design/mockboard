@@ -453,8 +453,12 @@ _PATTERNS: tuple[tuple[str, RequestKind, str], ...] = (
     ("change_kuch_baat", RequestKind.CHANGE_TOPIC,
      rf"{_SOMETHING_ELSE} {_BAAT_VERB}{_NO_KI_CLAUSE}"),
     ("change_other_topic", RequestKind.CHANGE_TOPIC,
-     rf"(?<!mera )(?<!meri )(?<!hamara ){_OTHER} (?:topic|sawal|cheez)"
+     rf"(?<!mera )(?<!meri )(?<!hamara ){_OTHER} (?:topic|sawal)"
      rf"(?: par| ke bare mein| ka sawal)?(?: {_ASK_VERB}| {_GO_VERB})?" + _END),
+    # "cheez" means thing, not topic, so it can close an answer: it needs a real imperative.
+    ("change_other_cheez", RequestKind.CHANGE_TOPIC,
+     rf"(?<!mera )(?<!meri )(?<!hamara ){_OTHER} cheez(?: par| ke bare mein)?"
+     rf" {_ASK_IMPERATIVE}" + _END),
     ("change_kuch_aur", RequestKind.CHANGE_TOPIC,
      rf"(?:kuch {_AUR}|kuch dusra)(?: sawal)? {_ASK_IMPERATIVE}" + _END),
     ("change_alawa_tail", RequestKind.CHANGE_TOPIC,

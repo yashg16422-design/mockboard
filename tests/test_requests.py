@@ -1065,6 +1065,47 @@ def test_the_position_rule_uses_the_same_count():
     assert _got(text.replace("kisiaur", "kisi")) == "repeat"
 
 
+# ---------------------------------------------------------------------------
+# F4 (CTO_NOTES_11, Ruling 58): "cheez" means thing, not topic, so it needs an imperative
+# ---------------------------------------------------------------------------
+
+_LONG_ANSWER = "gaon mein sadak aur bijli ki halat kaafi kharab hai sir "
+
+
+@pytest.mark.parametrize(
+    "ending",
+    [
+        "isliye hamein koi aur cheez chahiye",
+        "chahe paani ho ya koi aur cheez",
+        "pehli cheez shiksha hai aur dusri cheez",
+        "subsidy ki jagah hum koi aur cheez le sakte hain",
+        "ab hum dusri cheez par aa sakte hain",
+    ],
+)
+def test_cheez_closing_an_answer_is_not_a_request(ending):
+    assert _got(_LONG_ANSWER + ending) == NONE
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "koi aur cheez puchiye",
+        "dusri cheez bataiye",
+        "kisi aur cheez ke bare mein baat karte hain",
+    ],
+)
+def test_cheez_with_an_imperative_is_a_strong_request(text):
+    hit = detect_request(text)
+    assert hit is not None
+    assert hit.kind is RequestKind.CHANGE_TOPIC
+    assert hit.strength is ChangeStrength.STRONG
+
+
+def test_kuch_baat_mid_sentence_is_not_a_request():
+    """Pins change_kuch_baat in _MUST_CLOSE: the phrase does not close its clause here."""
+    assert _got("hum kuch aur baat karte hain aur phir ghar jaate hain") == NONE
+
+
 @pytest.mark.parametrize(
     "token", ["sir", "ko", "kisi aur", "please", "topic", "can we", "ko chhod"]
 )
