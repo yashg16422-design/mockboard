@@ -42,7 +42,7 @@ def test_sample_form_agenda_prints():
     text = render_agenda(agenda)
     print("\n" + text)
     assert agenda_violations(agenda, form) == []
-    for word in ("Kanpur Nagar", "Electronics", "chess", "cycling", "Public Administration"):
+    for word in ("Kanpur Nagar", "Electronics", "chess", "Cycling", "Public Administration"):
         assert word in text
 
 
