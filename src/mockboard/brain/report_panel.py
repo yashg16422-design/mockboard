@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from mockboard.brain.actor import PLACE_FACT_PATTERNS, count_words
+from mockboard.brain.panel_actor import question_part
 from mockboard.brain.schemas import (
     UPSC_QUALITIES,
     Analysis,
@@ -153,11 +154,12 @@ def pick_weakest(
     member = ""
     if names:
         member = names.get(turn.topic, turn.topic)
+    asked = question_part(turn.question) or turn.question
     return WeakestMoment(
         turn_id=turn.turn_id,
         segment=turn.topic,
         member=member,
-        question=turn.question,
+        question=asked,
         answer=turn.transcript,
         outline=list(outline),
         score=scored,

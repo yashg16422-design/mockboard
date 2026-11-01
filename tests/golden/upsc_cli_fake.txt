@@ -105,7 +105,7 @@ By panel member:
     Candidate spoke about seekha, jaldbaazi, chahiye. Candidate spoke about chess, alawa, topic. The candidate asked to change topic.
   Shri Rathore (current_affairs)
     Candidate spoke about public, administration, zameeni. Candidate spoke about samasya, samajhni, chahiye. Candidate spoke about samagri, zaroorat, pahunchaunga. Candidate spoke about pakshon, karunga, dekhunga.
-    Weakest question: Samajh mein aata hai. Agar yeh tareeka na chale, to aapka doosra raasta kya hoga?
+    Weakest question: Agar yeh tareeka na chale, to aapka doosra raasta kya hoga?
       - Define the terms you will use, in one sentence.
       - Name two sides of the question and who is affected.
       - Say what you would do first, and why.
@@ -114,7 +114,7 @@ Practice plan:
   - Practise answering in two breaths: the point, then one reason.
   - Take one claim you made and name the strongest objection to it.
   - Say the same answer once more, in three short sentences only.
-Replay this moment (text): Samajh mein aata hai. Agar yeh tareeka na chale, to aapka doosra raasta kya hoga?
+Replay this moment (text): Agar yeh tareeka na chale, to aapka doosra raasta kya hoga?
 note: Request at t6: repeat, found by the board's rules (repeat_bare).
 note: Request at t10: change_topic, found by the board's rules (change_other_baat).
 note: Listed request sentences work every time, in our tests, with the listener up or down, in Latin and Devanagari. Rephrased requests are caught less often: 0.75 on held-out synthetic lines by rules alone. Accuracy on real speech has not been measured yet.

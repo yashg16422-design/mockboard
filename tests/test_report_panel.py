@@ -52,6 +52,17 @@ def test_garbled_silent_fallback_and_request_turns_are_never_weakest():
     assert weakest is not None and weakest.turn_id == "t4"
 
 
+def test_weakest_question_drops_a_leading_acknowledgement():
+    turn = _turn(
+        "t0", "current_affairs",
+        "Samajh mein aata hai. Agar yeh tareeka na chale, to aapka doosra raasta kya hoga?",
+        "I do not know yet.",
+    )
+    weakest = pick_weakest([turn])
+    assert weakest is not None
+    assert weakest.question == "Agar yeh tareeka na chale, to aapka doosra raasta kya hoga?"
+
+
 def test_honest_unknown_beats_a_full_answer():
     unknown = _turn(
         "t0", "current_affairs", "What issue?", "I do not know yet.",

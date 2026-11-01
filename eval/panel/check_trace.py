@@ -1,7 +1,9 @@
 """P11: check a panel session trace. No secrets, no invented facts.
 
-A good trace has a session_start, every turn names its agenda item and member, hand-offs
-happen, a refused topic does not return, counts stay inside the cap, and a close is present.
+A good trace has a session_start, every turn names its agenda item and member, a hand-off
+when the sitting leaves its first segment, a refused topic does not return, counts stay
+inside the cap, and a close is present. A one-segment sitting (an early end, a replay)
+needs no hand-off.
 A debate trace is skipped (exit 0) because this checker is for the panel.
 
 Usage, from the repo folder, inside .venv:
@@ -47,6 +49,7 @@ def check_trace(path: Path) -> list[str]:
         return ["no turns"]
     problems: list[str] = []
     handoffs = 0
+    segments: set[str] = set()
     closed = False
     avoid: list[str] = []
     answers = 0
@@ -57,6 +60,9 @@ def check_trace(path: Path) -> list[str]:
             problems.append(f"{row['turn_id']}: no agenda item")
         if not panel.get("member"):
             problems.append(f"{row['turn_id']}: no member")
+        segment_id = str(panel.get("segment_id") or "")
+        if segment_id:
+            segments.add(segment_id)
         if panel.get("route") == "handoff":
             handoffs += 1
         if panel.get("route") == "close" or panel.get("close_reason"):
@@ -78,7 +84,7 @@ def check_trace(path: Path) -> list[str]:
                     problems.append(
                         f"{row['turn_id']}: refused term {term!r} returned after a topic change"
                     )
-    if handoffs < 1:
+    if len(segments) > 1 and handoffs < 1:
         problems.append("no spoken hand-off")
     if not closed and not any(r.get("event") == "report" for r in rows):
         problems.append("no close and no report")

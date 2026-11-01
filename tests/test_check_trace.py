@@ -69,6 +69,25 @@ def test_over_the_cap_fails(tmp_path):
     assert any("cap" in p for p in check_trace(path))
 
 
+def test_a_one_segment_close_needs_no_handoff(tmp_path):
+    path = _write(tmp_path / "short.jsonl", [
+        {"event": "session_start", "mode": "upsc_interview"},
+        _turn("t0", "form_hr", "chairman", route="close", close_reason="end_request"),
+        {"event": "report"},
+    ])
+    assert check_trace(path) == []
+
+
+def test_two_segments_without_a_handoff_fail(tmp_path):
+    path = _write(tmp_path / "jump.jsonl", [
+        {"event": "session_start", "mode": "upsc_interview"},
+        _turn("t0", "form_hr", "chairman"),
+        _turn("t1", "degree", "economist", route="close", close_reason="agenda"),
+        {"event": "report"},
+    ])
+    assert any("hand-off" in p for p in check_trace(path))
+
+
 def test_a_debate_trace_is_skipped(tmp_path):
     path = _write(tmp_path / "deb.jsonl", [
         {"event": "session_start", "mode": "debate", "prompt_versions": {"listener_debate": 1}},
