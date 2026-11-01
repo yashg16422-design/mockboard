@@ -358,3 +358,11 @@
 {"id": "d208", "text": "public administration ke alawa kisi aur topic pe baat karte hain", "expect": "change_topic", "lang": "hinglish", "split": "dev", "synthetic": true, "avoid": ["public administration"]}
 {"id": "d209", "text": "government ke alawa kisi aur topic pe baat karte hain", "expect": "change_topic", "lang": "hinglish", "split": "dev", "synthetic": true, "avoid": ["government"]}
 {"id": "d210", "text": "foreign ministers ke alawa kuch aur puchiye", "expect": "change_topic", "lang": "hinglish", "split": "dev", "synthetic": true, "avoid": ["foreign ministers"]}
+{"id": "d211", "text": "campus placements mein hum interview khatam karte hain", "expect": "none", "lang": "hinglish", "split": "dev", "synthetic": true}
+{"id": "d212", "text": "company mein hum interview band kar dete hain", "expect": "none", "lang": "hinglish", "split": "dev", "synthetic": true}
+{"id": "d213", "text": "hamare yahan interview band karte hain", "expect": "none", "lang": "hinglish", "split": "dev", "synthetic": true}
+{"id": "d214", "text": "pradhan mantri ka interview band kijiye", "expect": "none", "lang": "hinglish", "split": "dev", "synthetic": true}
+{"id": "d215", "text": "parliament ka session band karo", "expect": "none", "lang": "hinglish", "split": "dev", "synthetic": true}
+{"id": "d216", "text": "sansad ka session khatam karte hain", "expect": "none", "lang": "hinglish", "split": "dev", "synthetic": true}
+{"id": "d217", "text": "we want to end the session", "expect": "none", "lang": "english", "split": "dev", "synthetic": true}
+{"id": "d218", "text": "as the opposition we want to end the session", "expect": "none", "lang": "english", "split": "dev", "synthetic": true}

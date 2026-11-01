@@ -74,6 +74,7 @@ _VARIANTS: dict[str, tuple[str, ...]] = {
     "par": ("pe", "pr", "पर", "पे"),
     "ke": ("kay", "के"),
     "ka": ("का",),
+    "ki": ("की", "कि"),
     "ko": ("को",),
     "se": ("से",),
     "is": ("इस",),
@@ -349,12 +350,18 @@ _REWORD = r"(?:rephrase|clarify|simplify|explain|elaborate|put)"
 _NOT_DID = r"(?:did not|didnt|dont|do not|could not|couldnt|cant|cannot)"
 _NOT_GOT = r"(?:aaya|aa raha|aa rahi|paya|payi)"
 
+_END_VERB = r"(?:end|stop|finish|close|conclude|quit)"
+
 _PATTERNS: tuple[tuple[str, RequestKind, str], ...] = (
     # end: must name the interview, so "I will stop here" (the end of an answer) is not an end.
+    # "we" with a bare "session" is how a party or a house speaks, so only "I" may say it.
     ("end_en", RequestKind.END,
-     r"(?:(?:i|we) (?:want|wish|would like|need) to|id like to|can we|could we|shall we"
-     r"|lets|let us|please)(?: please)? (?:end|stop|finish|close|conclude|quit)"
-     r" (?:the|this|my|our)(?: mock)? (?:interview|session)(?: here| now)?" + _END),
+     r"(?:i (?:want|wish|would like|need) to|id like to|please)(?: please)?"
+     rf" {_END_VERB} (?:the|this|my|our)(?: mock)? (?:interview|session)(?: here| now)?" + _END),
+    ("end_en_we", RequestKind.END,
+     r"(?:we (?:want|wish|would like|need) to|can we|could we|shall we|lets|let us)(?: please)?"
+     rf" {_END_VERB} (?:the|this|my|our) (?:mock )?(?:interview|mock session)(?: here| now)?"
+     + _END),
     ("end_en_bare", RequestKind.END,
      _START + r"(?:end|stop|finish) (?:the|this)(?: mock)? (?:interview|session)(?: here| now)?"
      + _END),
@@ -570,6 +577,12 @@ _AFTER_TOKENS = 3
 _AFTER_BLOCK = frozenset({"said", "says", "kaha", "kehte", "mat", "log", "students", "bola"})
 _RESULT_WORDS = frozenset({"toh", "then", "tab"})  # "...aage badhte hain to log..." is an "if"
 _BEFORE_WINDOW = 6
+# An interview or session that is someone else's, or a description of how a place works.
+_OWNER_WORDS = frozenset({"ka", "ki", "ke", "hum"})
+_DESCRIBES_A_PLACE = frozenset({
+    "yahan", "company", "campus", "office", "placements", "parliament", "sansad", "assembly",
+    "court",
+})
 
 # ---------------------------------------------------------------------------
 # Avoid terms: the topic the candidate refused, in the words spoken
@@ -679,6 +692,13 @@ def _not_a_request(tokens: _Tokens, start: int, end: int, strong_change: bool) -
     return any(word in _AFTER_BLOCK for word in after)
 
 
+def _end_describes_something(tokens: _Tokens, start: int) -> bool:
+    """True when end_hi's "interview ... band" is not this interview ("sansad ka session...")."""
+    if start > 0 and tokens.canon[start - 1] in _OWNER_WORDS:
+        return True
+    return any(word in _DESCRIBES_A_PLACE for word in _clause_before(tokens, start))
+
+
 def _position_ok(start: int, total: int) -> bool:
     return total <= SHORT_ANSWER_WORDS or start >= total - TAIL_WORDS
 
@@ -704,6 +724,8 @@ def detect_request(text: str) -> RequestHit | None:
             if not _position_ok(start, total) or _not_a_request(
                 tokens, start, end, strong_change
             ):
+                continue
+            if pattern_id == "end_hi" and _end_describes_something(tokens, start):
                 continue
             avoid = _avoid_terms(tokens) if kind is RequestKind.CHANGE_TOPIC else ()
             return RequestHit(kind, avoid, pattern_id)

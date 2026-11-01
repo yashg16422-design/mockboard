@@ -372,3 +372,41 @@ def test_strong_change_keeps_the_negator_and_reported_speech_checks(text):
 
 def test_third_person_guard_still_blocks_weak_phrases():
     assert _got("The government failed aage badhiye") == NONE
+
+
+# ---------------------------------------------------------------------------
+# P1.1: `end` is the one kind the candidate cannot undo (M2)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "campus placements mein hum interview khatam karte hain",
+        "company mein hum interview band kar dete hain",
+        "hamare yahan interview band karte hain",
+        "pradhan mantri ka interview band kijiye",
+        "parliament ka session band karo",
+        "sansad ka session khatam karte hain",
+        "we want to end the session",
+        "as the opposition we want to end the session",
+    ],
+)
+def test_describing_an_interview_or_session_is_not_end(text):
+    assert _got(text) == NONE
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "I want to end the session",
+        "we want to end the interview",
+        "can we end the mock session",
+        "let's end the interview here",
+        "interview yahin khatam karte hain",
+        "sir session band kijiye",
+        "इंटरव्यू यहीं खत्म करते हैं",
+    ],
+)
+def test_real_end_requests_still_fire(text):
+    assert _got(text) == "end"
