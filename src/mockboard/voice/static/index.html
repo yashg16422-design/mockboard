@@ -95,7 +95,12 @@
         <p>Not available in this version. The board does not send a list of likely questions yet.</p>
       </fieldset>
       <p class="hint" id="topic-hint">To leave a subject at any time, say: kisi aur topic pe baat karte hain.</p>
-      <div id="access-slot"></div>
+      <div id="access-slot" hidden>
+        <p class="notice limit-notice" id="access-note"></p>
+        <label class="field" id="access-code-label">Access code, if you are reviewing this project
+          <input id="access-code" autocomplete="off" spellcheck="false" maxlength="200">
+        </label>
+      </div>
       <div class="actions">
         <button type="submit" class="primary" id="enter">Enter the room</button>
       </div>

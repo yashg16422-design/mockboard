@@ -213,6 +213,9 @@ function onMessage(raw) {
     case "time_up":
       caption("note", "", "Time is up. The board is wrapping up.");
       break;
+    case "answer_cap":
+      caption("note", "", "This interview has reached its answer limit. The board will close here. Thank you for trying Mock Board.");
+      break;
     case "preparing_report":
       $("status").textContent = "Preparing the report.";
       break;
@@ -352,6 +355,94 @@ function readForm() {
   return { form: out };
 }
 
+let access = null;
+
+function codeValue() {
+  const el = $("access-code");
+  return el ? el.value.trim() : "";
+}
+
+function copyFree(limit, answers) {
+  return "Thank you for trying Mock Board. Every spoken interview uses paid speech and AI services, "
+    + "and this is a student project, so test access is limited to " + limit + " interviews of "
+    + answers + " answers each. You have used yours. If you are reviewing this project, please "
+    + "enter your access code.";
+}
+
+function copyDaily() {
+  let text = "Today's test interviews are all taken. They open again tomorrow. Thank you for your patience.";
+  if (access && access.resets_at) text += " The next opening is " + access.resets_at + " UTC.";
+  return text;
+}
+
+function showLimitReached(body) {
+  const answers = access && access.answers_per_interview ? access.answers_per_interview : 10;
+  const limit = (body && body.limit) || (access && access.limit) || 5;
+  let text = body && body.reason === "daily_full" ? copyDaily() : copyFree(limit, answers);
+  if (codeValue()) text += " That access code was not recognised.";
+  $("access-slot").hidden = false;
+  $("access-note").textContent = text;
+  $("access-code-label").hidden = false;
+  $("problem").textContent = "";
+  show(cfg && cfg.mode === "upsc" ? "form" : "room");
+}
+
+function refusedLocally() {
+  if (!access || !access.enabled || access.reviewer || codeValue()) return false;
+  if (access.daily_remaining === 0) {
+    showLimitReached({ reason: "daily_full" });
+    return true;
+  }
+  if (access.remaining === 0) {
+    showLimitReached({ reason: "free_used", limit: access.limit });
+    return true;
+  }
+  return false;
+}
+
+function renderAccess() {
+  const slot = $("access-slot");
+  if (!access || !access.enabled) {
+    slot.hidden = true;
+    return;
+  }
+  slot.hidden = false;
+  if (cfg && cfg.mode !== "upsc") {
+    const room = $("view-room");
+    room.insertBefore(slot, room.querySelector(".actions"));
+  }
+  $("access-code-label").hidden = !!access.reviewer;
+  if (access.reviewer) {
+    $("access-note").textContent = "Reviewer access. No interview limit on this browser.";
+    return;
+  }
+  if (access.daily_remaining === 0) {
+    $("access-note").textContent = copyDaily();
+    return;
+  }
+  if (access.remaining === 0) {
+    $("access-note").textContent = copyFree(access.limit, access.answers_per_interview);
+    return;
+  }
+  $("access-note").textContent = "This is a student project. Every spoken interview uses paid speech "
+    + "and AI services, so test access is limited to " + access.limit + " interviews of "
+    + access.answers_per_interview + " answers each. You have " + access.remaining + " left. "
+    + access.daily_remaining + " test interviews remain for everyone today.";
+}
+
+async function loadAccess() {
+  try {
+    access = await (await fetch("/api/access")).json();
+  } catch (e) {
+    access = null;
+  }
+  renderAccess();
+  if (access && access.enabled && !access.reviewer && typeof access.remaining === "number") {
+    $("duration").textContent += " Test access: " + access.remaining + " of " + access.limit
+      + " interviews left.";
+  }
+}
+
 async function start() {
   if (connecting || pc) return;
   $("problem").textContent = "";
@@ -368,6 +459,9 @@ async function start() {
     if (!pendingForm) { show("form"); return; }
     bodyData = { ...pendingForm, page_id: PAGE_ID };
   }
+  const code = codeValue();
+  if (code) bodyData.access_code = code;
+  if (refusedLocally()) return;
   $("start").disabled = true;
   connecting = true;
   resetSeats();
@@ -420,6 +514,11 @@ async function start() {
     });
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
+      if (res.status === 429 && body.reason) {
+        const limit = new Error("limit");
+        limit.detail = body;
+        throw limit;
+      }
       if (body.problems) throw new Error("The form needs a small change: " + body.problems.join("; "));
       throw new Error("The room did not open (" + res.status + ").");
     }
@@ -434,6 +533,10 @@ async function start() {
     const denied = err && (err.name === "NotAllowedError" || err.name === "SecurityError"
       || err.name === "NotFoundError");
     stop();
+    if (err && err.detail && err.detail.reason) {
+      showLimitReached(err.detail);
+      return;
+    }
     if (denied) {
       setNote("permission");
       setMic("Microphone not available");
@@ -497,6 +600,7 @@ async function init() {
   }
   $("duration").textContent = "A session stops at " + cfg.max_minutes + " minutes.";
   armClock();
+  await loadAccess();
   $("recording").hidden = !cfg.record_audio;
   $("debate-panel").hidden = upsc;
   if (!upsc) {

@@ -28,6 +28,7 @@ import sys
 import uuid
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -43,6 +44,16 @@ from pipecat.transports.smallwebrtc.request_handler import (
 )
 from pydantic import ValidationError
 
+from mockboard.access import (
+    COOKIE,
+    AccessConfig,
+    Identity,
+    Limits,
+    hash_ip,
+    new_visitor_id,
+    read_token,
+    sign_token,
+)
 from mockboard.brain.cards import load_cards_or_builtin
 from mockboard.brain.deps import build_deps
 from mockboard.brain.graphs import TurnAnalyzer
@@ -275,12 +286,53 @@ def _write_session_log(cfg: AppConfig, session, vp, stt, tts, mic=None) -> None:
         logger.warning(f"[voice] could not write the session log: {e}")
 
 
+def _client_ip(request: Request) -> str:
+    client = request.client
+    return client.host if client is not None and client.host else "unknown"
+
+
+def _stamp_cookie(response: Response, token: str | None, request: Request) -> Response:
+    if not token:
+        return response
+    response.set_cookie(
+        COOKIE, token, max_age=60 * 60 * 24 * 180, httponly=True, samesite="lax",
+        secure=request.url.scheme == "https", path="/",
+    )
+    return response
+
+
+def _identity(request: Request, book: Limits) -> tuple[Identity, str | None]:
+    """The visitor, and a cookie to set when they do not have a valid one yet."""
+    cfg = book.config
+    parsed = read_token(request.cookies.get(COOKIE, ""), cfg.secret) if cfg.secret else None
+    token = None
+    if parsed is None:
+        visitor_id, reviewer = new_visitor_id(), False
+        if cfg.enabled and cfg.secret:
+            token = sign_token(visitor_id, False, cfg.secret)
+    else:
+        visitor_id, reviewer = parsed
+    ip_hash = hash_ip(_client_ip(request), cfg.secret or "disabled")
+    return Identity(visitor_id, ip_hash, reviewer), token
+
+
 def create_app(cfg: AppConfig) -> FastAPI:
     # Localhost only, so no STUN/TURN servers: host candidates are enough (V1b adds them).
     handler = SmallWebRTCRequestHandler()
     pending_forms: dict[str, CandidateForm | None] = {}
+    pending_counts: dict[str, Any] = {}
+    book = Limits(AccessConfig.from_env())
 
     async def start_session(connection) -> None:  # only for connections that connected
+        # access: count only after the peer connection is up. A reload that never
+        # connects is not in this function, so it is not counted.
+        decision = pending_counts.pop(getattr(connection, "pc_id", ""), None)
+        if decision is not None and not decision.commit():
+            try:
+                await connection.disconnect()
+            except Exception:
+                logger.warning("[access] could not close a connection past the limit")
+            return
         await run_session(connection, cfg, pending_forms.pop(connection.pc_id, None))
 
     gate = PageSessions(start_session, connect_timeout_s=cfg.settings.voice_connect_timeout_s)
@@ -290,6 +342,7 @@ def create_app(cfg: AppConfig) -> FastAPI:
         yield
         await gate.close_all()
         await handler.close()
+        book.close()
 
     app = FastAPI(lifespan=lifespan)
     app.state.gate = gate  # for tests
@@ -314,6 +367,13 @@ def create_app(cfg: AppConfig) -> FastAPI:
     async def config():
         return cfg.public()
 
+    @app.get("/api/access")
+    async def access_status(request: Request):
+        # access: remaining interviews, answers per interview, and reviewer status
+        identity, token = _identity(request, book)
+        decision = book.admit(identity, datetime.now(UTC))
+        return _stamp_cookie(JSONResponse(decision.public()), token, request)
+
     @app.post("/api/offer")
     async def offer(request: Request):
         body = await request.json()
@@ -325,6 +385,21 @@ def create_app(cfg: AppConfig) -> FastAPI:
             except ValidationError as e:
                 problems = [f"{'.'.join(map(str, x['loc']))}: {x['msg']}" for x in e.errors()]
                 return JSONResponse({"error": "form", "problems": problems}, status_code=400)
+        # access: admission hook, before any WebRTC work
+        now = datetime.now(UTC)
+        identity, token = _identity(request, book)
+        code = data.get("access_code")
+        if isinstance(code, str) and book.redeem(identity.ip_hash, code, now):
+            identity = Identity(identity.visitor_id, identity.ip_hash, True)
+            token = sign_token(identity.visitor_id, True, book.config.secret)
+        decision = book.admit(identity, now)
+        if book.config.enabled and not decision.allowed:
+            refused = JSONResponse(
+                {"error": "limit", "reason": decision.reason, "used": decision.used,
+                 "limit": decision.limit},
+                status_code=429,
+            )
+            return _stamp_cookie(refused, token, request)
         webrtc_request = SmallWebRTCRequest.from_dict(
             {k: body.get(k) for k in ("sdp", "type", "pc_id", "restart_pc")}
         )
@@ -335,11 +410,13 @@ def create_app(cfg: AppConfig) -> FastAPI:
             # Defect D: no pipeline (and no Gnani connection) until this connection connects;
             # a newer offer from the same page replaces it.
             pending_forms[connection.pc_id] = form
+            pending_counts[connection.pc_id] = decision  # access: commit once it connects
             await gate.offer(connection, page_id)
 
-        return await handler.handle_web_request(
+        answer = await handler.handle_web_request(
             request=webrtc_request, webrtc_connection_callback=on_connection
         )
+        return _stamp_cookie(JSONResponse(answer), token, request)
 
     @app.patch("/api/offer")
     async def ice_candidates(request: Request):

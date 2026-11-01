@@ -33,6 +33,12 @@ The `report` event is `text`, `path`, and `trace`. The page shows `text`. When t
 
 Leave `text` in place either way, so a page that does not understand the new fields still has the report.
 
+## Counting a connected session
+
+Done on this branch, inside `src/mockboard/voice/server.py`. `POST /api/offer` only checks the quota. `Decision.commit()` runs in `start_session`, which `PageSessions` calls after the peer connection is actually up. `gate.py` did not need a change. A reload that never connects is not counted. Covered by `tests/test_access.py`.
+
+The reviewer flag is on the signed cookie and in `GET /api/access`. It is not passed into `make_session`. That part is still open, below.
+
 ## The answer cap belongs to the Chairperson
 
 This branch does not count candidate messages and does not close the interview. Real sessions need both, on the agent side, so a line is never cut off.

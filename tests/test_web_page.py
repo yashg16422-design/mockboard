@@ -55,6 +55,17 @@ def test_report_can_be_printed_and_grouped_when_the_server_sends_members():
     assert "m.text" in js
 
 
+def test_limit_notice_does_not_blame_the_visitor():
+    js = Path("src/mockboard/voice/static/app.js").read_text(encoding="utf-8")
+    start = js.index("function copyFree")
+    end = js.index("function renderAccess")
+    notice = js[start:end].lower()
+    assert "thank you for trying mock board" in notice
+    assert "today's test interviews are all taken" in notice
+    for word in ("error", "denied", "blocked"):
+        assert word not in notice
+
+
 def test_page_keeps_the_voice_client_contract():
     # tests/voice/test_voice_app.py reads these from the served page.
     assert "Mock Board" in PAGE
