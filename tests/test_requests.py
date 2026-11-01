@@ -841,6 +841,146 @@ def test_we_want_plus_bare_session_stays_refused(text):
     assert _got(text) == NONE
 
 
+# ---------------------------------------------------------------------------
+# P1.2: tails, "what exactly", wanting a different topic, skip after a don't-know
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "kisi aur topic par chal sakte hain",
+        "kisi aur topic par chalein",
+        "koi aur topic le sakte hain",
+        "koi aur topic le lete hain",
+        "kisi aur vishay par aa sakte hain",
+        "किसी और विषय पर चलें",
+        "किसी और विषय पर चल सकते हैं",
+        "कोई और विषय ले सकते हैं",
+        "कोई और विषय ले लेते हैं",
+        "किसी और विषय पर आ सकते हैं",
+    ],
+)
+def test_other_topic_verb_tails_are_strong(text):
+    hit = detect_request(text)
+    assert hit is not None
+    assert hit.pattern_id == "change_other_topic"
+    assert hit.strength is ChangeStrength.STRONG
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "kisan koi aur topic le sakte hain",
+        "kisi aur topic par chalein to log naraz honge",
+        "vishay bahut gambhir hai",
+    ],
+)
+def test_other_topic_tails_keep_their_guards(text):
+    assert _got(text) == NONE
+
+
+@pytest.mark.parametrize("text", ["what exactly do you mean", "sorry but what exactly do you mean"])
+def test_what_exactly_do_you_mean(text):
+    assert _got(text) == "clarify_question"
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "i would prefer a different topic",
+        "I'd prefer a different topic",
+        "i'd like another topic",
+        "i want some other topic please",
+        "can we have a different topic",
+        "i would prefer a different subject sir",
+    ],
+)
+def test_wanting_a_different_topic_is_strong(text):
+    hit = detect_request(text)
+    assert hit is not None
+    assert hit.pattern_id == "change_en_want"
+    assert hit.strength is ChangeStrength.STRONG
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "i want another question",
+        "i would prefer a different topic of research for the students",
+        "students said i want a different topic",
+    ],
+)
+def test_change_en_want_stays_on_the_word_topic(text):
+    assert _got(text) != "change_topic"
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "pata nahi sir agla sawal",
+        "pata nahi next question",
+        "mujhe pata nahi agla sawal",
+        "maloom nahi agla sawal",
+        "sir i dont know next question",
+        "I don't know, next question",
+        "no idea sir next question",
+        "पता नही अगला सवाल",
+    ],
+)
+def test_skip_after_a_dont_know(text):
+    hit = detect_request(text)
+    assert hit is not None
+    assert hit.kind == "skip"
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "the next question is about water",
+        "mujhe pata nahi agla sawal kya hoga",
+        "pata nahi ki agla sawal",
+        "sarkar ko pata nahi agla sawal",
+        "I do not know the next question",
+    ],
+)
+def test_dont_know_needs_the_turn_to_end_on_the_next_question(text):
+    assert _got(text) == NONE
+
+
+@pytest.mark.parametrize(
+    "text, kind",
+    [
+        ("aage badhiye thank you", "change_topic"),
+        ("can we move on thank you sir", "change_topic"),
+        ("kuch aur baat karte hain thanks", "change_topic"),
+        ("next question please thank you", "skip"),
+        ("please repeat thanks", "repeat"),
+        ("interview yahin khatam karte hain dhanyavaad", "end"),
+        ("I want to end the interview, thank you", "end"),
+        ("I want to end the interview thank you sir", "end"),
+        ("what do you mean shukriya", "clarify_question"),
+        ("इंटरव्यू यहीं खत्म करते हैं धन्यवाद", "end"),
+        ("आगे बढ़िए थैंक यू", "change_topic"),
+    ],
+)
+def test_thanks_at_the_tail_is_a_filler(text, kind):
+    assert _got(text) == kind
+
+
+@pytest.mark.parametrize(
+    "text", ["thank you", "thank you sir", "thanks", "aage badhiye you", "dhanyavaad sir"]
+)
+def test_thanks_alone_is_nothing_and_you_is_no_filler(text):
+    assert _got(text) == NONE
+
+
+def test_thanks_never_joins_an_avoid_term():
+    hit = detect_request("enough about tourism thank you")
+    assert hit is not None
+    assert hit.avoid_terms == ("tourism",)
+
+
 @pytest.mark.parametrize(
     "token", ["sir", "ko", "kisi aur", "please", "topic", "can we", "ko chhod"]
 )

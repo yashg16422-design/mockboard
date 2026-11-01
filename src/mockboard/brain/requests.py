@@ -105,6 +105,18 @@ _VARIANTS: dict[str, tuple[str, ...]] = {
     "badhein": ("badhen", "barhein", "बढ़ें"),
     "chalte": ("चलते",),
     "chaliye": ("chalie", "चलिए", "चलिये"),
+    "chalein": ("chalen", "चलें"),
+    "chal": ("चल",),
+    "aa": ("आ",),
+    "le": ("ले",),
+    "lete": ("लेते",),
+    "pata": ("पता",),
+    "maloom": ("malum", "मालूम"),
+    "thank": ("थैंक",),
+    "you": ("यू",),
+    "thanks": ("थैंक्स",),
+    "dhanyavaad": ("dhanyavad", "dhanyawad", "dhanyawaad", "धन्यवाद"),
+    "shukriya": ("शुक्रिया",),
     "next": ("nekst", "नेक्स्ट"),
     "agla": ("agle", "agli", "अगला", "अगले", "अगली"),
     "please": ("plz", "pls", "kripya", "kripaya", "कृपया", "प्लीज़", "प्लीज"),
@@ -332,9 +344,11 @@ def _tokenise(text: str) -> _Tokens:
 
 _FILLERS: tuple[str, ...] = (
     "sir", "maam", "ji", "please", "sorry", "ok", "haan", "acha", "achha", "um", "umm", "hmm",
-    "ab", "bas", "to", "toh", "well", "so",
+    "ab", "bas", "to", "toh", "well", "so", "thanks", "dhanyavaad", "shukriya",
 )
-_FILLER = rf"(?:{'|'.join(_FILLERS)})"
+# "thank you" is two tokens, and "you" must never be a filler alone.
+_FILLER = rf"(?:{'|'.join(_FILLERS)}|thank you)"
+_ONLY_FILLERS = re.compile(rf"{_FILLER}(?: {_FILLER})*")
 _START = rf"^(?:{_FILLER} )*"
 _END = rf"(?: {_FILLER})*$"
 _AUR = r"(?:aur|or|our)"
@@ -357,6 +371,10 @@ _ASK_IMPERATIVE = (
 )
 _ASK_VERB = rf"(?:{_ASK_IMPERATIVE}|chahiye)"
 _OTHER = rf"(?:kisi {_AUR}|kisi dusra|koi {_AUR}|koi dusra|dusra)"
+_GO_VERB = (
+    r"(?:chalte hain|chaliye|chalein|chal sakte hain|aa sakte hain|le sakte hain|le lete hain)"
+)
+_DONT_KNOW = r"(?:pata nahi|maloom nahi|i (?:dont|do not) know|no idea)"
 _SOMETHING_ELSE = rf"(?:{_OTHER}|kuch {_AUR}|kuch dusra)"
 _NO_KI_CLAUSE = r"(?!(?: \S+)? ki(?!\S))"  # "...baat karte hain ki gaon mein" is a sentence
 _SAY_AGAIN = r"(?:repeat|say (?:that|it)(?: again| once more| one more time)|say again)"
@@ -401,6 +419,9 @@ _PATTERNS: tuple[tuple[str, RequestKind, str], ...] = (
     ("skip_next_tail", RequestKind.SKIP, r"next sawal(?: sir| maam| ji)? please" + _END),
     ("skip_agla_tail", RequestKind.SKIP,
      rf"agla sawal(?: par)? (?:{_ASK_VERB}|chalte hain|chaliye)" + _END),
+    ("skip_dont_know", RequestKind.SKIP,
+     rf"{_DONT_KNOW}(?: {_FILLER})* (?:next|agla) sawal(?: par)?"
+     rf"(?: {_ASK_VERB}| chalte hain| chaliye)?" + _END),
     ("skip_ask", RequestKind.SKIP, _ASK + r" skip(?: this| that| the)?(?: sawal| one| it)?" + _END),
     ("skip_bare", RequestKind.SKIP,
      _START + r"skip(?: this| that| the)?(?: sawal| one| it)?" + _END),
@@ -432,7 +453,7 @@ _PATTERNS: tuple[tuple[str, RequestKind, str], ...] = (
      rf"{_SOMETHING_ELSE} {_BAAT_VERB}{_NO_KI_CLAUSE}"),
     ("change_other_topic", RequestKind.CHANGE_TOPIC,
      rf"(?<!mera )(?<!meri )(?<!hamara ){_OTHER} (?:topic|sawal|cheez)"
-     rf"(?: par| ke bare mein| ka sawal)?(?: {_ASK_VERB}| chalte hain| chaliye)?" + _END),
+     rf"(?: par| ke bare mein| ka sawal)?(?: {_ASK_VERB}| {_GO_VERB})?" + _END),
     ("change_kuch_aur", RequestKind.CHANGE_TOPIC,
      rf"(?:kuch {_AUR}|kuch dusra)(?: sawal)? {_ASK_IMPERATIVE}" + _END),
     ("change_alawa_tail", RequestKind.CHANGE_TOPIC,
@@ -455,6 +476,9 @@ _PATTERNS: tuple[tuple[str, RequestKind, str], ...] = (
     ("change_agla_topic", RequestKind.CHANGE_TOPIC,
      _START + rf"(?:next|agla|dusra) topic(?: par)?(?: {_ASK_VERB}| chalte hain| chaliye)?"
      + _END),
+    ("change_en_want", RequestKind.CHANGE_TOPIC,
+     r"(?:i would prefer|id prefer|id like|i want|can we have)"
+     r" (?:a different|another|some other) topic" + _END),
     ("change_en_modal", RequestKind.CHANGE_TOPIC,
      rf"{_MODAL} move (?:on|one)(?: from \S+| to(?: \S+){{1,3}})?"),
     ("change_en_move", RequestKind.CHANGE_TOPIC,
@@ -523,9 +547,9 @@ _PATTERNS: tuple[tuple[str, RequestKind, str], ...] = (
 
     # clarify_question
     ("clarify_mean_start", RequestKind.CLARIFY_QUESTION,
-     _START + r"what do you mean(?: by(?: \S+){1,4}| exactly)?" + _END),
+     _START + r"what (?:exactly )?do you mean(?: by(?: \S+){1,4}| exactly)?" + _END),
     ("clarify_mean_tail", RequestKind.CLARIFY_QUESTION,
-     r"what do you mean(?: by that| exactly)?" + _END),
+     r"what (?:exactly )?do you mean(?: by that| exactly)?" + _END),
     ("clarify_what", RequestKind.CLARIFY_QUESTION,
      _START + r"what (?:exactly )?(?:are you asking|does that mean|does this mean|does it mean"
      r"|is the sawal asking|do you want me to say)" + _END),
@@ -660,7 +684,7 @@ _TERM_STOP = frozenset({
     "something", "anything", "some", "another", "other", "else", "ke", "ka", "ko", "se", "par",
     "mein", "bare", "bhi", "ask", "talk", "discuss", "move", "next", "abhi", "here", "now",
     "topic", "sawal", "baat", "chhodkar", "chhodiye", "chhodo", "my", "our", "about", "on", "of",
-    "mera", "meri", "hamara",
+    "mera", "meri", "hamara", "thank", "thanks", "dhanyavaad", "shukriya",
 })
 _TERM_NOUNS = frozenset({"topic", "sawal"})
 _TERM_BACK = re.compile(
@@ -774,7 +798,7 @@ def _ends_clause(tokens: _Tokens, end: int) -> bool:
     return (
         end >= len(tokens.canon)
         or tokens.breaks[end]
-        or all(word in _FILLERS for word in tokens.canon[end:])
+        or _ONLY_FILLERS.fullmatch(" ".join(tokens.canon[end:])) is not None
     )
 
 
