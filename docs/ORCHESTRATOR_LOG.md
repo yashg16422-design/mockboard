@@ -229,3 +229,9 @@ Orchestrator read trace voice-32a441f916 and the server log from the owner's Mac
 - The builder's reported lint slip on e8a933e did not reproduce (CTO: exit 0 on an export of each commit). Builders report real exit codes (`set -o pipefail`).
 - **Ruling 44:** P0.1 comes before P1. Must-fix: the debate lock hashes the ordered fake-LLM calls of the scripted debate, because per-call user messages and `max_tokens` currently escape it (five mutations passed). Should-fixes included in the same chunk: freeze lock cards so real cards do not break debate tests; `load_form_file` refuses more than 3 hobbies (leave `_form_values`); assert the real-path prefix; answers-only example script.
 - **Ruling 45:** commit trailer is the CLAUDE.md one, `Co-Authored-By: Claude <noreply@anthropic.com>`. The orchestrator's brief gave a different line; that was the orchestrator's error. History is not rewritten.
+
+## Round 26 — Nov 1, 2026 (P0.1 accepted; P0.2 required before P4)
+
+- **Accepted** P0.1 (d83def0, c003187, fb85f16); review in `docs/CTO_NOTES_08.md`. M1 is closed: all five mutations are caught. Orchestrator re-ran at fb85f16: `make test` 851 passed, `make lint` exit 0, UPSC and form-file sessions md5 826ef550..., debate f2a23f33..., and a four-hobby form is refused.
+- **Ruling 46:** P1 to P3 may proceed. P0.2 (tests only) must land before P4: fingerprint tool name and temperature, because wiring debate to the UPSC listener tool passes all 851 tests but would lose debate fields on real Nova; add two test-only scripts in `tests/data/` reaching rebut, cross-question and fact_challenge, with no golden change. Should-fixes in the same chunk: the `"dd"` sentinel that fails on temp paths containing "dd", and pinning the `stream_line` cap.
+- `fake_panel.txt` must not have its md5 updated just to pass in P4. Python 3.12 is UNVERIFIED (not runnable offline here; 3.14 only). Check the Python version when deploying to EC2.
