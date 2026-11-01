@@ -337,3 +337,11 @@ Orchestrator read trace voice-32a441f916 and the server log from the owner's Mac
 - Commits d7c30ac, a29982e, 54ac00a, 804d4d8, 870b560. Orchestrator re-ran: `make test` 2603 passed (exit 0), `make lint` clean, fake panel session read by hand (varied hand-offs, no repeated lines, tourism gone after the change). UPSC and debate md5 tests pass.
 - **Ruling 74:** B gets no separate review (credits, Ruling 70). Its diff is reviewed together with P7 in Milestone C's one review, since C touches the same code. Not verified: `listener.v4`, `actor.v5`, `agenda_plan.v1` have never run on Nova; the 1.5 s plan wait is a guess.
 - Next: Milestone C (P7 cutover). Item 6 of Ruling 73 (`handler.close()` must call `session.close()`) is part of it.
+
+## Round 42 — Nov 1, 2026 (Milestones B and C accepted: P5, P6, P7)
+
+- **Accepted** ae5d76c, ff21be2, a3811e3 (P7) together with B's diff. Orchestrator re-ran: `make test` 2637 passed (exit 0), `make lint` clean, full fake transcript read by hand (`docs/tasks/P7_FAKE_TRANSCRIPT.md`). Reviewer ACCEPT, no must-fixes (`docs/CTO_NOTES_16.md`).
+- **Ruling 75:** the UPSC golden changed on purpose: board md5 is now `e748940f8faa2863b5891d3c71532a67` (was `826ef550…`). Debate md5 `f2a23f33…` unchanged. The debate librarian request hash was re-derived, and the reviewer proved it legitimate: byte-identical debate output at 65b8a88 and HEAD; only the librarian's persona-pack block differs, and with it masked both hash to `85fa5b76…`. This is the only allowed exception to the hash rule, and it is closed.
+- **Ruling 76:** should-fixes from CTO_NOTES_16 go into Milestone D: (1) reject planned seeds that name the district or state; (3) refuse `--max-turns` in `voice/server.py` and fix `docs/VOICE_QUICKSTART.md` line 73; (4) silence reassure line must not say "is vishay" without a referent; (5) self-host fonts before deploy (Milestone F gate). (2) is the known detector recall limit (Ruling 57): say so in the demo.
+- Not verified: browser rendering, Nova behaviour of the new prompts, live Prisma rotation, Python 3.12.
+- Next: browser check on `make voice-fake`, then Milestone D (P8 to P11).
