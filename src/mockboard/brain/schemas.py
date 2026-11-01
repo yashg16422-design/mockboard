@@ -364,6 +364,9 @@ class Persona(_Model):
     voice_candidates: list[str] = Field(default_factory=list)
     language: str = "hi-en"
     style: str
+    # The member's field, in plain words, for the panel actor's agenda item (CTO_NOTES_06 §6).
+    # Empty for the old UPSC board and debate personas; `render_persona_pack` does not print it.
+    domain: str = ""
     # Short acknowledgements for the voice loop's masking filler (played if the actor's first
     # sentence is late). Not used in text mode yet.
     filler_lines: list[str] = Field(default_factory=list)
@@ -408,6 +411,62 @@ class CandidateForm(_Model):
             lines.append(f"work_experience: {self.work_experience}")
         lines.append(f"interview_language: {self.interview_language}")
         return "\n".join(lines)
+
+
+class AgendaSeed(_Model):
+    """One open-ended question a member can open from (CTO_NOTES_06 §4). `must_ask` marks the
+    DM/SP situation, which must be asked once unless a request or wrap-up says otherwise."""
+
+    text: str = Field(min_length=1)
+    must_ask: bool = False
+
+
+class AgendaSegment(_Model):
+    """One part of the panel. Named `AgendaSegment` because `Segment` already means a transcript
+    segment in this module (CTO_NOTES_09 §9 calls this type `Segment`).
+
+    `budget` is data on purpose: a capped session passes smaller budgets (Rulings 47, 49), so no
+    code may assume the design's numbers. `aliases` are other spoken forms of the topic, in any
+    script, for the cross-script avoid list (P4); missing aliases are allowed.
+    """
+
+    id: str = Field(min_length=1)
+    member: str = Field(min_length=1)  # persona id
+    title: str = Field(min_length=1)
+    budget: int = Field(ge=1)  # questions, before the panel moves on
+    seeds: list[AgendaSeed] = Field(min_length=1)
+    aliases: tuple[str, ...] = Field(default=(), max_length=5)
+
+
+class Agenda(_Model):
+    """The ordered panel for one session. Stored in order, and replaced whole.
+
+    One segment is legal (the replay agenda of CTO_NOTES_06 §8), so this type does not insist on
+    five. `brain/agenda.py` holds the content rules.
+    """
+
+    segments: list[AgendaSegment] = Field(min_length=1)
+    source: Literal["template", "nova"] = "template"
+
+    @field_validator("segments")
+    @classmethod
+    def _unique_ids(cls, v: list[AgendaSegment]) -> list[AgendaSegment]:
+        ids = [s.id for s in v]
+        if len(ids) != len(set(ids)):
+            raise ValueError("duplicate segment id in agenda")
+        return v
+
+    @property
+    def topics(self) -> list[str]:
+        """The value for `SessionState.topics`: segment ids, in order."""
+        return [s.id for s in self.segments]
+
+    @property
+    def total_budget(self) -> int:
+        return sum(s.budget for s in self.segments)
+
+    def segment(self, segment_id: str) -> AgendaSegment:
+        return next(s for s in self.segments if s.id == segment_id)
 
 
 class BoardLine(_Model):
