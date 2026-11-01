@@ -279,3 +279,10 @@ Orchestrator read trace voice-32a441f916 and the server log from the owner's Mac
 - **Ruling 61 (provisional, owner to confirm):** "10 messages" means 10 answers; repeat, clarify and silence are free, up to 4 (`PANEL_FREE_TURNS`, 0 = strict). The cap comes only from server admission and fails closed; uncapped sessions get 15. New page events `answers` and `closing`. Closes cannot be interrupted.
 - **Ruling 62:** section 12 items 2 to 5 are accepted: garbled clarify and silence use no budget; `must_ask` sits inside the budget; wrap-up at 960 s and hard stop at 1020 s; Nova writes no `current_affairs` seeds, and `hi` keeps templates. P3 builds section 9.4.
 
+## Round 33 — Nov 1, 2026 (Arena's web branch rejected on a small fix list)
+
+- **Rejected** `web-frontend` (852a7d1 to e16a665); review in `docs/CTO_NOTES_13.md`. The structure and design stay. Fix list in `docs/tasks/WEB_FIX_01.md`. Live attacks on fake servers held (forged cookies, clearing, parallel commits, daily cap, lockout, blank secret, traversal). M1: limits silently stayed off with settings in `.env`. Not verified: browser rendering; the orchestrator has no headless browser on this Mac.
+- **Ruling 63:** S2: IP hash gets its own limit, `ACCESS_IP_SESSIONS`, default 15. S3: `POST /api/access` is allowed as a second route.
+- **Ruling 64:** panel side takes the `WEB_REQUESTS.md` items: `work_experience` now, `members` on `session`, `segment` on captions, report `members` and `practice_plan`. Likely-questions spends Nova credits, so it goes through admission. `answer_cap` is declined as superseded by `closing`.
+- **Deployment gate (V8):** no STUN or TURN exists, so WebRTC will not connect from real networks on EC2 until added. CTO_NOTES_13 section 8 lists the checks. Limits are not public until they pass.
+
