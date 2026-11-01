@@ -70,7 +70,7 @@ make voice-debate MOTION=1 SIDE=for
 
 Extra options are `--length quick|standard`, `--language hinglish|english|hindi` and `--opponent logician|wit`. The Moderator introduces the motion, you give your opening statement, the opponent opens, there is a clash round, and then come the closing statements. At the end the Moderator says "The board will confer" and reads the verdict, and the full debate report appears in the page.
 
-Useful switches for either mode: `--fake-llm` (real voice, free model), `--fake-speech` (real model, no Gnani credits), `--voice Vikrant` (another Timbre v2.5 voice), `--max-turns 4` (a shorter session) and `--port 7861`.
+Useful switches for either mode: `--fake-llm` (real voice, free model), `--fake-speech` (real model, no Gnani credits), `--voice Vikrant` (another voice of the model in `TTS_MODEL`), `--max-turns 4` (a shorter session), `--record-audio` (save your own microphone audio, section 7) and `--port 7862`.
 
 ## 5. What a session costs (estimates, not measurements)
 
@@ -86,9 +86,84 @@ Useful switches for either mode: `--fake-llm` (real voice, free model), `--fake-
 4. **A wrong figure.** Say a clearly wrong number about tourism (for example, "tourism is 30 percent of GDP"). A turn or two later, the board should ask you about it as a question, never as an accusation.
 5. **A debate.** For example, `make voice-debate MOTION=1 SIDE=for`, with one opening, one or two clash answers and a closing.
 6. **Optional: without headphones, once.** Tell us whether the board interrupted itself.
-7. **Optional: the Prisma v3.0 A/B (ruling 31).** Add `STT_MODEL=prisma-v3.0`, `STT_LANG_CODE=hi-IN,en-IN` and `STT_FORMAT=codemix` to `.env`, run one UPSC session, then remove the three lines. Compare the caption quality on your Hinglish with the v2.5 run. Whether the contest submission may name v3.0 is unverified.
+7. **The transcription A/B (ruling 35).** Do one session with `make voice-record`, then run `make stt-ab` on that recording (section 7 below). It compares three Prisma settings on exactly the same audio, which is fairer than comparing two different sessions. Whether the contest submission may name Prisma v3.0 is unverified.
+8. **The voice lab (ruling 38).** Pick the board's voice by ear with `make voice-lab` (section 8 below).
 
-## 7. How to send the results back
+## 7. Recording your voice and comparing transcription settings (ruling 35)
+
+The first real session showed that `en-IN` turns Hinglish into mangled Latin text. To choose a better Prisma setting, you record one session of your own voice and then replay the same recording through three settings, reading the transcripts side by side.
+
+**Recording is off unless you ask for it.** With `--record-audio`, the app saves only your microphone audio (never the board's voice) on your Mac, as `traces/<session id>.mic.wav` (16 kHz mono, exactly what Prisma received). The page shows a yellow note while recording is on, and the Terminal prints where the file went when the session ends. Nothing is uploaded. Delete the file whenever you like.
+
+On your Mac, in Terminal, from the `mockboard` folder:
+
+```zsh
+export AWS_PROFILE=default
+make voice-record
+# the same as: .venv/bin/python -m mockboard.voice.server --mode upsc --record-audio
+```
+
+Do a normal UPSC session in Hinglish (two or three minutes of your speech is enough), then press **Stop** and **Ctrl+C**.
+
+Next, replay the recording through Prisma. The tool streams the whole recording once per setting, one setting after another, at real-time speed, so it takes about three times as long as the recording and spends about three recordings' worth of Prisma credits.
+
+On your Mac, in Terminal, from the `mockboard` folder:
+
+```zsh
+make stt-ab                                   # the newest traces/*.mic.wav
+make stt-ab WAV=traces/voice-abc123.mic.wav   # or a recording you name
+# the same as: .venv/bin/python -m mockboard.voice.stt_ab traces/voice-abc123.mic.wav
+# free check first (prints the headers, sends nothing):
+.venv/bin/python -m mockboard.voice.stt_ab --dry-run
+```
+
+The three settings are `prisma-v2.5` with `en-IN` (what the first session used), `prisma-v2.5` with `hi-IN`, and `prisma-v3.0` with `language_code: hi-IN,en-IN` and `format=codemix` (Hindi in Devanagari, English words kept in Latin). For each setting, the output shows the full transcript, a timing line (how long each final took after Prisma's `processing` message, and Prisma's own `latency` field) and the detected languages, followed by a table aligned by the second of audio where each segment ended. The same table is saved next to the recording as `<recording>.stt_ab.md`. The transcripts contain your words, so read them yourself and send back only your choice and the timing lines unless you are happy to share the text.
+
+To use the winner, set the matching lines in `.env` (for example `STT_MODEL=prisma-v3.0`, `STT_LANG_CODE=hi-IN,en-IN`, `STT_FORMAT=codemix`).
+
+## 8. Choosing the board's voice in the voice lab (ruling 38)
+
+Gnani's TTS documentation (read on October 31, 2026) lists two models: `timbre-v2.5`, which the board uses today, and `timbre-v3.0`, which Gnani announces as "Expressive text-to-speech". Every v3.0 voice speaks all ten languages, and voices are not shared between the models. The voice lab is a local page that plays the same three board lines (the Chairperson's opener, a topic question and a debate rebuttal) with different settings, so you can choose by ear.
+
+First, check the page for free. It plays tones instead of voices. On your Mac, in Terminal, from the `mockboard` folder:
+
+```zsh
+make voice-lab-fake
+# the same as: .venv/bin/python -m mockboard.voice.lab --fake
+```
+
+Then use the real voices. On your Mac, in Terminal, from the `mockboard` folder:
+
+```zsh
+make voice-lab
+# the same as: .venv/bin/python -m mockboard.voice.lab
+```
+
+Open `http://localhost:7861` in Chrome and wear headphones. Each table changes one thing from the baseline, which starts at what the board sends today (Poorvi, v2.5, `auto`, Latin script, one request per sentence, 16 kHz). The tables cover:
+
+- six voices across both models: Poorvi, Vikrant and Urmila (v2.5), and Avinash, Yashraj and Vasudha (v3.0);
+- the language field: `auto`, `hi-IN`, `hi-en` (Hinglish) and `en-IN`;
+- the script: Latin, Devanagari with the English words in Latin, and all Devanagari;
+- one request for the whole line versus one request per sentence;
+- 16 kHz versus 24 kHz.
+
+Nothing is rendered until you press a play button. Each new render sends that line to Timbre once (the page counts the characters sent, since Timbre bills per character at a rate we have not verified). Every render is saved in `traces/voice_lab/`, so playing it again, even after a restart, costs nothing. You can change the baseline at the top of the page to compare around another voice.
+
+Under each row, the grey line shows the `.env` lines that make the board sound like that row, for example:
+
+```
+TTS_MODEL=timbre-v3.0
+TTS_VOICE=Yashraj
+TTS_LANGUAGE=hi-IN
+TTS_SAMPLE_RATE=24000
+TTS_REQUEST_UNIT=line
+```
+
+Two limits apply. First, the board cannot send `hi-en` yet, because ruling 25 keeps the board to languages the Gnani SDK also accepts; if `hi-en` clearly wins, tell us and the orchestrator will rule on it. Second, the script (Latin or Devanagari) is decided by the board's prompts, not by a setting, so if Devanagari clearly wins, tell us that too.
+
+`TTS_REQUEST_UNIT` has three values. `sentence` (the default) sends each sentence as soon as the board writes it, which gives the fastest first sound. `line` waits for the whole line and sends it as one request, which may sound more natural but starts later, by roughly the time the board takes to write the rest of the line. `first_rest` sends the first sentence at once and the rest of the line as one request, which is a middle ground. After changing it, run one session and check **STOP->FIRST AUDIO** in `make voice-summary`, which now also prints the TTS settings the session used.
+
+## 9. How to send the results back
 
 After each session, run the summary. It prints timings and counts only: no transcript text, no board lines and no keys, so it is safe to paste.
 
@@ -107,10 +182,12 @@ Paste the output into the chat, together with:
 
 The key numbers in the summary are **STOP->FIRST AUDIO** (from the end of your speech to the board's first sound; our target is a p95 under 3 seconds), the **commit** replies and waits, and the barge-in and reopen counts.
 
-## 8. What your first real run verifies (all UNVERIFIED until then)
+## 10. What still needs a real run (all UNVERIFIED until then)
 
 - **Prisma.** That the connection is accepted with the new header names (`language_code`, `format`, `model`, `x-idle-timeout-sec`, `x-api-request-id` = `<session id>-c1`). That 1,024-byte frames work. That `speech_start` arrives, which tells the app whether an utterance is open. That `commit` closes an utterance quickly, and what it does when nothing is open. That `connected` confirms the model that served.
 - **Turn-taking.** How often Smart Turn ends a Hinglish turn too early or waits its full 3 seconds, and whether the barge-in threshold (`VOICE_BARGE_IN_MIN_SPEECH_MS=500`) and the resume threshold (`VOICE_RESUME_MIN_SPEECH_MS=150`) feel right.
+- **Timbre v3.0 and the new settings (ruling 38).** That `timbre-v3.0` is accepted with a v3.0 voice and a `language` field (the Gnani SDK we use predates v3.0, so our code builds the request itself), that a whole line in one request is accepted and how much later it starts, that 24 kHz output plays correctly through WebRTC, and that the voice lab's renders work.
+- **The A/B tool (ruling 35).** That Prisma accepts each of the three settings and that real-time replay of a recording gives the same kind of transcript as a live session.
 - **Timbre.** That one-request-at-a-time works, that the first byte arrives within `TTS_FIRST_BYTE_TIMEOUT_S` (3 s), that a barge-in silences Poorvi at once, and that `auto` voices Latin-script Hinglish acceptably.
 - **Nova Pro.** The real latencies: `turn_end->move` (the listener) and `move->1st sentence` (the actor). These decide `MOVE_DEADLINE_MS` (still 1,500, a placeholder).
 - **WebRTC.** That Chrome on macOS connects to `localhost` without STUN servers.
