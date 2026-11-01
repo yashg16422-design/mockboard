@@ -25,10 +25,14 @@ from mockboard.config import Settings
 
 @pytest.fixture(autouse=True)
 def _clean_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Tests never see the developer's real environment (flags, keys, regions)."""
+    """Tests never see the developer's real environment (flags, keys, regions) and never
+    read the developer's `.env` file: with a real GNANI_API_KEY in `.env`, code under test
+    that builds `Settings()` would otherwise find a key and start real services (seen on the
+    owner's Mac: the voice-lab test started a real server and waited)."""
     for key in list(os.environ):
         if key.startswith(("FEATURE_", "GNANI_", "LANGFUSE_", "REPORT_", "CACHE_PREFIX")):
             monkeypatch.delenv(key, raising=False)
+    monkeypatch.setitem(Settings.model_config, "env_file", None)
 
 
 @pytest.fixture
