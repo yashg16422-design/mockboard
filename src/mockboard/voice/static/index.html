@@ -56,33 +56,32 @@
     </div>
   </section>
 
-  <section id="view-work" data-view="work" hidden>
-  <p class="lede" id="subtitle"></p>
-
-  <div class="notice" id="recording" hidden>
-    Recording is on: your microphone audio (not the board's voice) is saved on this computer
-    in the traces folder, so you can compare transcription settings later. It is never
-    uploaded. Restart the app without <code>--record-audio</code> to turn it off.
-  </div>
-
-  <section id="form-panel" hidden>
-    <h2>Application form</h2>
-    <p class="quiet">No names, roll numbers, phone numbers, email addresses or colleges. Only what a board would ask about.</p>
+  <section id="view-form" data-view="form" hidden>
+    <h1>Before you enter.</h1>
+    <p class="quiet">No name, roll number, phone number, email or college. Only what a board would ask about.</p>
     <form class="column" id="form" autocomplete="off">
-      <label class="field">Home state
+      <label class="field">Home state <span class="req">required</span>
         <input name="home_state" required minlength="2" maxlength="60" autocomplete="off">
       </label>
       <label class="field">District
         <input name="district" maxlength="60" autocomplete="off">
       </label>
-      <label class="field">Degree subject
+      <label class="field">Degree subject <span class="req">required</span>
         <input name="degree_subject" required minlength="2" maxlength="80" autocomplete="off">
       </label>
-      <label class="field">Hobbies, up to 3, comma-separated
-        <input name="hobbies" maxlength="120" autocomplete="off">
-      </label>
+      <fieldset class="field">
+        <legend>Hobbies, up to 3</legend>
+        <div class="hobbies">
+          <input id="hobby-1" maxlength="60" autocomplete="off" aria-label="Hobby 1">
+          <input id="hobby-2" maxlength="60" autocomplete="off" aria-label="Hobby 2">
+          <input id="hobby-3" maxlength="60" autocomplete="off" aria-label="Hobby 3">
+        </div>
+      </fieldset>
       <label class="field">Optional subject
         <input name="optional_subject" maxlength="80" autocomplete="off">
+      </label>
+      <label class="field">Work experience
+        <textarea name="work_experience" maxlength="200"></textarea>
       </label>
       <label class="field">Interview language
         <select name="interview_language">
@@ -91,269 +90,70 @@
           <option value="hindi">Hindi</option>
         </select>
       </label>
+      <fieldset class="slot" disabled>
+        <legend>Likely questions</legend>
+        <p>Not available in this version. The board does not send a list of likely questions yet.</p>
+      </fieldset>
+      <p class="hint" id="topic-hint">To leave a subject at any time, say: kisi aur topic pe baat karte hain.</p>
+      <div id="access-slot"></div>
+      <div class="actions">
+        <button type="submit" class="primary" id="enter">Enter the room</button>
+      </div>
     </form>
   </section>
 
-  <section id="debate-panel" hidden>
-    <p class="kicker">Motion</p>
-    <p class="debate-motion" id="motion"></p>
-  </section>
-
-  <div class="actions">
-    <button id="start" class="primary" type="button">Start</button>
-    <button id="stop" class="ghost" type="button" disabled>End interview</button>
-  </div>
-  <p class="meta">
-    <span id="status">idle</span>
-    <span id="speaking"></span>
-  </p>
-  <div class="voice" id="meter" title="your microphone"><span class="voice-bar" id="level"></span></div>
-  <p class="problem" id="error" role="status"></p>
-
-  <section>
+  <section id="view-room" data-view="room" hidden>
+    <div class="room-head">
+      <h1 id="room-title">The panel</h1>
+      <p class="timer"><span id="elapsed">00:00</span> <span>/ <span id="cap">00:00</span></span></p>
+    </div>
+    <section id="debate-panel" hidden>
+      <p class="kicker">Motion</p>
+      <p class="debate-motion" id="motion"></p>
+    </section>
+    <ol class="seats" aria-label="Panel">
+      <li class="seat" data-seat="1"><span class="seat-no">01</span><span class="seat-name">—</span></li>
+      <li class="seat" data-seat="2"><span class="seat-no">02</span><span class="seat-name">—</span></li>
+      <li class="seat" data-seat="3"><span class="seat-no">03</span><span class="seat-name">—</span></li>
+      <li class="seat" data-seat="4"><span class="seat-no">04</span><span class="seat-name">—</span></li>
+      <li class="seat" data-seat="5"><span class="seat-no">05</span><span class="seat-name">—</span></li>
+    </ol>
+    <div class="voice" id="meter" data-who="" title="voice"><span class="voice-bar" id="level"></span></div>
+    <p class="meta">
+      <span id="status">Not connected</span>
+      <span id="mic-state">Microphone closed</span>
+      <span id="speaking"></span>
+    </p>
+    <p class="notice" id="room-note" hidden></p>
+    <div class="notice" id="recording" hidden>
+      Recording is on: your microphone audio (not the board's voice) is saved on this computer
+      in the traces folder, so you can compare transcription settings later. It is never
+      uploaded. Restart the app without <code>--record-audio</code> to turn it off.
+    </div>
+    <p class="problem" id="problem" role="status"></p>
+    <div class="actions no-print">
+      <button id="start" class="primary" type="button">Start speaking</button>
+      <button id="stop" class="ghost" type="button" disabled>End interview</button>
+    </div>
     <p class="kicker">Live captions</p>
     <div class="captions" id="captions" aria-live="polite"></div>
   </section>
 
-  <section id="report-panel" hidden>
-    <h2>Report</h2>
+  <section id="view-report" data-view="report" hidden>
+    <h1>Report</h1>
     <p class="report-path" id="report-path"></p>
-    <div class="report-sheet">
+    <div class="report-sheet" id="report-sheet">
       <pre class="report-text" id="report"></pre>
     </div>
   </section>
 
   <audio id="bot" autoplay></audio>
-  </section>
 </main>
 <footer class="site-foot">
   <p>A practice tool for the UPSC Personality Test. Not affiliated with the Union Public Service Commission.</p>
   <p class="models">Speech to text, Gnani Prisma. Text to speech, Gnani Timbre. The board, Amazon Nova Pro.</p>
 </footer>
-<script>
-// SmallWebRTC (pipecat-ai 1.5.0) client: one audio transceiver at index 0, a data channel
-// whose "ping" messages keep the server's connection check alive, and one non-trickle offer
-// POSTed to /api/offer. The server sends {"type":"mockboard", "event": ...} messages back on
-// the data channel: captions, state, the speaking member, and the report.
-// page_id is one id per page load. The server closes this page's previous connection (and its
-// session) when a new offer arrives with the same page_id (defect D).
-const $ = (id) => document.getElementById(id);
-let pc = null, mic = null, pinger = null, meterCtx = null, cfg = null, connecting = false;
-let dc = null, stopWaiter = null;
-const PAGE_ID = (crypto.randomUUID && crypto.randomUUID()) || String(Math.random()).slice(2);
-
-const STATES = {
-  starting: "the board is opening", listening: "your turn: speak, then pause",
-  user: "listening to you", closing: "you paused: checking you are done",
-  thinking: "the board is thinking", speaking: "the board is speaking",
-  finished: "session over: preparing the report",
-};
-
-function caption(side, who, text, extra = "") {
-  const div = document.createElement("div");
-  div.className = `cap ${side} ${extra}`;
-  if (who) { const w = document.createElement("span"); w.className = "who"; w.textContent = who; div.append(w); }
-  div.append(document.createTextNode(text));
-  $("captions").append(div);
-  $("captions").scrollTop = $("captions").scrollHeight;
-}
-
-function onMessage(raw) {
-  let m; try { m = JSON.parse(raw); } catch { return; }
-  if (!m || m.type !== "mockboard") return;
-  switch (m.event) {
-    case "state":
-      $("status").textContent = STATES[m.state] || m.state;
-      if (m.state !== "speaking" && m.state !== "starting") $("speaking").textContent = "";
-      break;
-    case "caption":
-      if (m.side === "board") {
-        $("speaking").textContent = `Speaking: ${m.speaker}`;
-        caption("board", m.speaker, m.text);
-      } else {
-        caption("you", m.late ? "You (late transcript)" : "You", m.text);
-      }
-      break;
-    case "line_end":
-      if (m.interrupted) caption("note", "", "board interrupted");
-      break;
-    case "turn_reopened": caption("note", "", "you went on, so the board is still listening"); break;
-    case "no_speech": caption("note", "", "no words were recognised; please try again"); break;
-    case "tts_failed": caption("note", "", "the voice failed for one line; it is shown as text"); break;
-    case "time_up": caption("note", "", "time is up; the board is wrapping up"); break;
-    case "error": $("error").textContent = m.text; break;
-    case "stopping": $("status").textContent = "stopping: the board is preparing your report…"; break;
-    case "ended":
-      $("status").textContent = m.text || "session over";
-      if (stopWaiter) stopWaiter();
-      break;
-    case "report":
-      $("report-panel").hidden = false;
-      $("report").textContent = m.text;
-      $("report-path").textContent = m.path ? `saved to ${m.path}` : "";
-      $("status").textContent = "session over: report below";
-      if (stopWaiter) stopWaiter();
-      break;
-  }
-}
-
-function startMeter(stream) {
-  meterCtx = new AudioContext();
-  const analyser = meterCtx.createAnalyser();
-  analyser.fftSize = 512;
-  meterCtx.createMediaStreamSource(stream).connect(analyser);
-  const data = new Uint8Array(analyser.fftSize);
-  (function tick() {
-    if (!meterCtx) return;
-    analyser.getByteTimeDomainData(data);
-    let peak = 0;
-    for (const v of data) peak = Math.max(peak, Math.abs(v - 128));
-    $("level").style.width = `${Math.min(100, (peak / 128) * 160)}%`;
-    requestAnimationFrame(tick);
-  })();
-}
-
-function waitForIceGathering(conn, timeoutMs = 2000) {
-  if (conn.iceGatheringState === "complete") return Promise.resolve();
-  return new Promise((resolve) => {
-    const done = () => { conn.removeEventListener("icegatheringstatechange", check); resolve(); };
-    const check = () => { if (conn.iceGatheringState === "complete") done(); };
-    conn.addEventListener("icegatheringstatechange", check);
-    setTimeout(done, timeoutMs);
-  });
-}
-
-function formData() {
-  if (cfg.mode !== "upsc") return {};
-  const f = $("form");
-  if (!f.reportValidity()) throw new Error("please fill in the required form fields");
-  const out = {};
-  for (const [k, v] of new FormData(f).entries()) if (String(v).trim()) out[k] = String(v).trim();
-  return { form: out };
-}
-
-async function start() {
-  if (connecting || pc) return;  // never two offers from one page at once (defect D)
-  $("error").textContent = "";
-  let data;
-  try { data = formData(); } catch (e) { $("error").textContent = e.message; return; }
-  $("start").disabled = true;
-  connecting = true;
-  data.page_id = PAGE_ID;
-  try {
-    $("status").textContent = "asking for the microphone…";
-    mic = await navigator.mediaDevices.getUserMedia({
-      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
-    });
-    startMeter(mic);
-    pc = new RTCPeerConnection();  // localhost only: no STUN/TURN
-    pc.addTransceiver(mic.getAudioTracks()[0], { direction: "sendrecv" });
-    pc.ontrack = (e) => { $("bot").srcObject = e.streams[0] || new MediaStream([e.track]); };
-    pc.onconnectionstatechange = () => {
-      if (["failed", "closed"].includes(pc.connectionState)) stop();
-    };
-    dc = pc.createDataChannel("messages");
-    dc.onopen = () => { pinger = setInterval(() => dc.send(`ping: ${Date.now()}`), 1000); };
-    dc.onmessage = (e) => onMessage(e.data);
-    $("status").textContent = "connecting…";
-    await pc.setLocalDescription(await pc.createOffer());
-    await waitForIceGathering(pc);
-    const res = await fetch("/api/offer", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ sdp: pc.localDescription.sdp, type: pc.localDescription.type,
-                             request_data: data }),
-    });
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({}));
-      throw new Error(body.problems ? body.problems.join("; ") : `server said ${res.status}`);
-    }
-    const answer = await res.json();
-    await pc.setRemoteDescription({ sdp: answer.sdp, type: answer.type });
-    $("stop").disabled = false;
-    connecting = false;
-    $("form-panel").querySelectorAll("input,select").forEach((x) => (x.disabled = true));
-  } catch (err) {
-    $("error").textContent = `Could not start: ${err.message || err}`;
-    stop();
-  }
-}
-
-function stop() {
-  connecting = false;
-  if (pinger) clearInterval(pinger);
-  pinger = null;
-  if (pc) pc.close();
-  pc = null;
-  if (mic) mic.getTracks().forEach((t) => t.stop());
-  mic = null;
-  if (meterCtx) meterCtx.close();
-  meterCtx = null;
-  $("level").style.width = "0";
-  $("start").disabled = false;
-  $("stop").disabled = true;
-  $("speaking").textContent = "";
-  if (!$("report-panel").hidden || /session over|no report/.test($("status").textContent)) return;
-  $("status").textContent = "stopped";
-}
-
-async function init() {
-  cfg = await (await fetch("/api/config")).json();
-  const upsc = cfg.mode === "upsc";
-  $("mode-badge").textContent = upsc ? "UPSC interview" : "Debate";
-  const fake = [cfg.fake_llm && "fake model", cfg.fake_speech && "fake speech"].filter(Boolean);
-  if (fake.length) {
-    $("fake-badge").hidden = false;
-    $("fake-badge").textContent = "Demo mode";
-    $("fake-badge").title = fake.join(", ");
-  }
-  $("duration").textContent = `A session stops at ${cfg.max_minutes} minutes.`;
-  $("subtitle").textContent = upsc
-    ? "The form is what the board may ask about. Nothing here is your name."
-    : "The motion is fixed for this sitting. Speak for your side, then pause.";
-  if (!upsc) {
-    $("home-title").textContent = "A motion, spoken.";
-    $("home-lede").textContent = "You argue one side. The board takes the other, out loud.";
-    $("home-honest").textContent = "This is a practice debate, not an official proceeding. The motion was chosen when the app started.";
-    $("steps-upsc").hidden = true;
-    $("steps-debate").hidden = false;
-  }
-  $("form-panel").hidden = !upsc;
-  $("recording").hidden = !cfg.record_audio;
-  $("debate-panel").hidden = upsc;
-  if (!upsc) $("motion").textContent = `#${cfg.motion_number}: ${cfg.motion} You speak ${cfg.side} it.`;
-}
-
-$("begin").onclick = () => {
-  if (!cfg) return;
-  $("view-home").hidden = true;
-  $("view-work").hidden = false;
-  $("section-kicker").textContent = cfg.mode === "upsc" ? "02 / The form" : "02 / The motion";
-  const head = cfg.mode === "upsc" ? $("form-panel").querySelector("h2") : $("start");
-  head.tabIndex = -1;
-  head.focus();
-};
-$("start").onclick = start;
-// Stop (defect F): ask the server to end the session and wait for the report before closing
-// the connection, so the judge's report still reaches the page. Closing first lost it.
-async function requestStop() {
-  $("stop").disabled = true;
-  if (!dc || dc.readyState !== "open") { stop(); return; }
-  if (mic) mic.getAudioTracks().forEach((t) => (t.enabled = false));  // stop listening now
-  $("status").textContent = "stopping: the board is preparing your report…";
-  dc.send(JSON.stringify({ type: "mockboard", event: "stop" }));
-  await new Promise((resolve) => {
-    stopWaiter = resolve;
-    setTimeout(resolve, 180000);  // the judge can take a while; never hang forever
-  });
-  stopWaiter = null;
-  stop();
-}
-$("stop").onclick = () => { requestStop(); };
-init().catch((e) => {
-  const msg = `Could not load the config: ${e.message}`;
-  $("error").textContent = msg;
-  $("boot").textContent = msg;
-});
-</script>
+<!-- page_id is created once per page load in /static/app.js and sent with the offer (defect D). -->
+<script src="/static/app.js"></script>
 </body>
 </html>
