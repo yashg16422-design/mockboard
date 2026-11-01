@@ -366,3 +366,12 @@
 {"id": "d216", "text": "sansad ka session khatam karte hain", "expect": "none", "lang": "hinglish", "split": "dev", "synthetic": true}
 {"id": "d217", "text": "we want to end the session", "expect": "none", "lang": "english", "split": "dev", "synthetic": true}
 {"id": "d218", "text": "as the opposition we want to end the session", "expect": "none", "lang": "english", "split": "dev", "synthetic": true}
+{"id": "d219", "text": "corruption ko chhodiye asli samasya gareebi hai", "expect": "none", "lang": "hinglish", "split": "dev", "synthetic": true}
+{"id": "d220", "text": "reservation ko chhod dete hain to bhi samasya rahegi", "expect": "none", "lang": "hinglish", "split": "dev", "synthetic": true}
+{"id": "d221", "text": "tambaku ko chhod dijiye sehat ke liye", "expect": "none", "lang": "hinglish", "split": "dev", "synthetic": true}
+{"id": "d222", "text": "भ्रष्टाचार को छोड़िए असली समस्या गरीबी है", "expect": "none", "lang": "devanagari", "split": "dev", "synthetic": true}
+{"id": "d223", "text": "gaon ke bachche aage badhte hain", "expect": "none", "lang": "hinglish", "split": "dev", "synthetic": true}
+{"id": "d224", "text": "bharat aur china aage badhte hain", "expect": "none", "lang": "hinglish", "split": "dev", "synthetic": true}
+{"id": "d225", "text": "देश आगे बढ़ते हैं", "expect": "none", "lang": "devanagari", "split": "dev", "synthetic": true}
+{"id": "d226", "text": "aage chalte hain aur phir dekhte hain ki kya hota hai", "expect": "none", "lang": "hinglish", "split": "dev", "synthetic": true}
+{"id": "d227", "text": "padhai se hi samaj badalta hai aur kisan ko sahi daam milta hai tab jaakar desh mazboot hota hai aur shehar bhi tarakki karte hain aur isi tarah gaon ke bachche aage badhte hain", "expect": "none", "lang": "hinglish", "split": "dev", "synthetic": true}

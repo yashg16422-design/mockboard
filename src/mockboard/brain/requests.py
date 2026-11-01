@@ -321,7 +321,11 @@ def _tokenise(text: str) -> _Tokens:
 # Patterns, written against canonical tokens
 # ---------------------------------------------------------------------------
 
-_FILLER = r"(?:sir|maam|ji|please|sorry|ok|haan|acha|achha|um|umm|hmm|ab|bas|to|toh|well|so)"
+_FILLERS: tuple[str, ...] = (
+    "sir", "maam", "ji", "please", "sorry", "ok", "haan", "acha", "achha", "um", "umm", "hmm",
+    "ab", "bas", "to", "toh", "well", "so",
+)
+_FILLER = rf"(?:{'|'.join(_FILLERS)})"
 _START = rf"^(?:{_FILLER} )*"
 _END = rf"(?: {_FILLER})*$"
 _AUR = r"(?:aur|or|our)"
@@ -419,7 +423,7 @@ _PATTERNS: tuple[tuple[str, RequestKind, str], ...] = (
      r"|badh jaiye|chalte hain|chaliye)"),
     ("change_topic_chhod", RequestKind.CHANGE_TOPIC, rf"topic(?: ko)? {_CHHOD}"),
     ("change_x_chhod", RequestKind.CHANGE_TOPIC,
-     _START + rf"(?:\S+ ){{1,3}}?ko {_CHHOD}(?: \S+){{0,5}}$"),
+     _START + rf"(?:(?!sawal )\S+ ){{1,3}}?ko {_CHHOD}" + _END),
     ("change_badal", RequestKind.CHANGE_TOPIC,
      r"topic (?:change |badal |switch )?"
      r"(?:kijiye|karein|karte hain|kar dijiye|kar lete hain|kar sakte hain|karo"
@@ -578,6 +582,9 @@ _AFTER_BLOCK = frozenset({"said", "says", "kaha", "kehte", "mat", "log", "studen
 _RESULT_WORDS = frozenset({"toh", "then", "tab"})  # "...aage badhte hain to log..." is an "if"
 _BEFORE_WINDOW = 6
 # An interview or session that is someone else's, or a description of how a place works.
+# "aage badhte hain" also closes sentences about anyone at all, so a declarative needs one of
+# these (or a clause break, or the turn start) on its left. Imperatives need nothing.
+_AAGE_LEFT = frozenset({*_FILLERS, "chaliye", "nahi"})
 _OWNER_WORDS = frozenset({"ka", "ki", "ke", "hum"})
 _DESCRIBES_A_PLACE = frozenset({
     "yahan", "company", "campus", "office", "placements", "parliament", "sansad", "assembly",
@@ -692,6 +699,23 @@ def _not_a_request(tokens: _Tokens, start: int, end: int, strong_change: bool) -
     return any(word in _AFTER_BLOCK for word in after)
 
 
+def _ends_clause(tokens: _Tokens, end: int) -> bool:
+    """True when only fillers follow, up to the turn end or a clause break."""
+    return (
+        end >= len(tokens.canon)
+        or tokens.breaks[end]
+        or all(word in _FILLERS for word in tokens.canon[end:])
+    )
+
+
+def _aage_is_a_request(tokens: _Tokens, start: int, end: int) -> bool:
+    if not _ends_clause(tokens, end):
+        return False
+    if tokens.canon[end - 1] != "hain":  # imperative
+        return True
+    return start == 0 or tokens.breaks[start] or tokens.canon[start - 1] in _AAGE_LEFT
+
+
 def _end_describes_something(tokens: _Tokens, start: int) -> bool:
     """True when end_hi's "interview ... band" is not this interview ("sansad ka session...")."""
     if start > 0 and tokens.canon[start - 1] in _OWNER_WORDS:
@@ -726,6 +750,8 @@ def detect_request(text: str) -> RequestHit | None:
             ):
                 continue
             if pattern_id == "end_hi" and _end_describes_something(tokens, start):
+                continue
+            if pattern_id == "change_aage" and not _aage_is_a_request(tokens, start, end):
                 continue
             avoid = _avoid_terms(tokens) if kind is RequestKind.CHANGE_TOPIC else ()
             return RequestHit(kind, avoid, pattern_id)

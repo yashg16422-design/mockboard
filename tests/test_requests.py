@@ -410,3 +410,69 @@ def test_describing_an_interview_or_session_is_not_end(text):
 )
 def test_real_end_requests_still_fire(text):
     assert _got(text) == "end"
+
+
+# ---------------------------------------------------------------------------
+# P1.1: "X ko chhodiye" and "aage badhte hain" inside ordinary answers (M3)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "corruption ko chhodiye asli samasya gareebi hai",
+        "reservation ko chhod dete hain to bhi samasya rahegi",
+        "tambaku ko chhod dijiye sehat ke liye",
+        "भ्रष्टाचार को छोड़िए असली समस्या गरीबी है",
+    ],
+)
+def test_leave_x_aside_inside_an_answer_bans_nothing(text):
+    assert detect_request(text) is None
+
+
+def test_x_ko_chhodiye_as_the_whole_turn_is_a_weak_topic_change():
+    hit = detect_request("sir corruption ko chhodiye")
+    assert hit is not None
+    assert hit.kind == "change_topic"
+    assert hit.pattern_id == "change_x_chhod"
+    assert hit.avoid_terms == ("corruption",)
+
+
+def test_x_chhod_never_takes_the_word_sawal():
+    hit = detect_request("is sawal ko chhodiye")
+    assert hit is not None
+    assert hit.kind == "skip"
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "gaon ke bachche aage badhte hain",
+        "bharat aur china aage badhte hain",
+        "देश आगे बढ़ते हैं",
+        "aage chalte hain aur phir dekhte hain ki kya hota hai",
+        f"{FILLER * 3}aur isi tarah gaon ke bachche aage badhte hain",
+    ],
+)
+def test_declarative_aage_inside_an_answer_is_not_a_request(text):
+    assert _got(text) == NONE
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "aage badhte hain",
+        "sir aage badhte hain",
+        "chaliye aage badhte hain",
+        "pata nahi aage badhte hain",
+        "agar ho sake to aage badhte hain",
+        "sir is par aur nahi bolna, aage badhte hain",
+        "aage badhiye",
+        "ye mushkil hai aage badhiye sir",
+        "aage chaliye",
+    ],
+)
+def test_aage_requests_still_fire(text):
+    hit = detect_request(text)
+    assert hit is not None
+    assert hit.pattern_id == "change_aage"
