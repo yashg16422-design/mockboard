@@ -352,9 +352,10 @@ _CHHOD = (
     r"|chhod lete hain|chhod sakte hain|chhodna chahta hoon|chhodna chahunga|chhodna chahungi"
     r"|rehne dijiye|jaane dijiye)"
 )
-_ASK_VERB = (
-    r"(?:puchiye|puch lijiye|lijiye|le lijiye|bataiye|bata dijiye|kijiye|dijiye|boliye|chahiye)"
+_ASK_IMPERATIVE = (
+    r"(?:puchiye|puch lijiye|lijiye|le lijiye|bataiye|bata dijiye|kijiye|dijiye|boliye)"
 )
+_ASK_VERB = rf"(?:{_ASK_IMPERATIVE}|chahiye)"
 _OTHER = rf"(?:kisi {_AUR}|kisi dusra|koi {_AUR}|koi dusra|dusra)"
 _SOMETHING_ELSE = rf"(?:{_OTHER}|kuch {_AUR}|kuch dusra)"
 _NO_KI_CLAUSE = r"(?!(?: \S+)? ki(?!\S))"  # "...baat karte hain ki gaon mein" is a sentence
@@ -380,6 +381,9 @@ _PATTERNS: tuple[tuple[str, RequestKind, str], ...] = (
      r"(?:we (?:want|wish|would like|need) to|can we|could we|shall we|lets|let us)(?: please)?"
      rf" {_END_VERB} (?:the|this|my|our) (?:mock )?(?:interview|mock session)(?: here| now)?"
      + _END),
+    ("end_en_modal", RequestKind.END,
+     rf"(?:can we|could we|shall we|lets|let us)(?: please)? {_END_VERB}"
+     r" (?:the|this|our)(?: mock)? session(?: here| now)?" + _END),
     ("end_en_bare", RequestKind.END,
      _START + r"(?:end|stop|finish) (?:the|this)(?: mock)? (?:interview|session)(?: here| now)?"
      + _END),
@@ -430,7 +434,7 @@ _PATTERNS: tuple[tuple[str, RequestKind, str], ...] = (
      rf"(?<!mera )(?<!meri )(?<!hamara ){_OTHER} (?:topic|sawal|cheez)"
      rf"(?: par| ke bare mein| ka sawal)?(?: {_ASK_VERB}| chalte hain| chaliye)?" + _END),
     ("change_kuch_aur", RequestKind.CHANGE_TOPIC,
-     rf"(?:kuch {_AUR}|kuch bhi|kuch dusra)(?: sawal)? {_ASK_VERB}" + _END),
+     rf"(?:kuch {_AUR}|kuch dusra)(?: sawal)? {_ASK_IMPERATIVE}" + _END),
     ("change_alawa_tail", RequestKind.CHANGE_TOPIC,
      rf"alawa (?:\S+ )?(?:kisi {_AUR}|koi {_AUR}|kuch {_AUR}|kuch bhi|koi bhi|dusra"
      rf"|something else|some other topic|anything else)(?: topic| sawal| cheez)?"
@@ -637,7 +641,7 @@ _LEFT_EDGE = {
     "change_aage": _AAGE_LEFT,
     "change_kuch_baat": frozenset({*_AAGE_LEFT, *_REFUSAL_WORDS, "hum"}),
 }
-_OWNER_WORDS = frozenset({"ka", "ki", "ke", "hum"})
+_OWNER_WORDS = frozenset({"ka", "ki", "ke"})
 _DESCRIBES_A_PLACE = frozenset({
     "yahan", "company", "campus", "office", "placements", "parliament", "sansad", "assembly",
     "court",

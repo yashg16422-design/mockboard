@@ -761,6 +761,86 @@ def test_strong_imperatives_ignore_the_third_person_guard(text):
     assert hit.strength is ChangeStrength.STRONG
 
 
+# ---------------------------------------------------------------------------
+# P1.2: "ask me anything" is the opposite of a topic change (F2, section 6)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "sir aap kuch bhi puchiye",
+        "kuch bhi puchiye",
+        "isliye hamein kuch aur chahiye",
+        f"{FILLER * 4}isliye hamein kuch aur chahiye",
+    ],
+)
+def test_ask_me_anything_and_we_need_more_fire_nothing(text):
+    assert detect_request(text) is None
+
+
+def test_alawa_kuch_bhi_is_still_a_topic_change():
+    hit = detect_request("tourism ke alawa kuch bhi puchiye")
+    assert hit is not None
+    assert hit.pattern_id == "change_alawa_tail"
+    assert hit.avoid_terms == ("tourism",)
+
+
+def test_kuch_aur_puchiye_still_fires():
+    hit = detect_request("kuch aur puchiye")
+    assert hit is not None
+    assert hit.pattern_id == "change_kuch_aur"
+
+
+# ---------------------------------------------------------------------------
+# P1.2: `end` has no listener behind it, so it leans towards recall (F3)
+# ---------------------------------------------------------------------------
+
+
+def test_dev_end_is_complete_with_no_floor():
+    """Exact on purpose: DEV_RECALL_FLOOR hid the loss of h046 at 20 of 21."""
+    rows = [r for r in CORPUS if r["split"] == "dev" and r["expect"] == "end"]
+    assert len(rows) == 21
+    assert [r["id"] for r in rows if _got(r["text"]) != "end"] == []
+
+
+def test_h046_is_an_end_request():
+    row = next(r for r in CORPUS if r["id"] == "h046")
+    assert row["text"] == "can we conclude this session"
+    hit = detect_request(row["text"])
+    assert hit is not None
+    assert hit.kind == "end"
+    assert hit.pattern_id == "end_en_modal"
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "ab hum interview khatam karte hain sir",
+        "sir hum session yahin band karte hain",
+        "can we end the session",
+        "could we end this mock session",
+        "shall we stop our session",
+        "lets finish the session",
+        "let us end the session now",
+    ],
+)
+def test_first_person_plural_end_requests_fire(text):
+    assert _got(text) == "end"
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "we want to end the session",
+        "as the opposition we want to end the session",
+        "we need to end the session",
+    ],
+)
+def test_we_want_plus_bare_session_stays_refused(text):
+    assert _got(text) == NONE
+
+
 @pytest.mark.parametrize(
     "token", ["sir", "ko", "kisi aur", "please", "topic", "can we", "ko chhod"]
 )
