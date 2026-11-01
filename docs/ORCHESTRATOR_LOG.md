@@ -252,3 +252,11 @@ Orchestrator read trace voice-32a441f916 and the server log from the owner's Mac
 - **Ruling 53:** a healthy listener may veto weak-pattern hits on turns over 8 words, traced as `request_disagree`. Built in P5. Strong patterns and listener failure are unchanged.
 - **Ruling 54:** the phrase that always works is taught as a hint on the form screen, not a spoken ritual line, until the owner hears both. The orchestrator writes a third holdout, kept out of the repo until P1.1 is scored, so no builder sees it. Real recall is measured once at P12 with owner approval.
 
+## Round 29 — Nov 1, 2026 (P1.1 accepted; P1.2 closes the detector)
+
+- **Accepted** P1.1 (8625bd9 to f4f7aca); review in `docs/CTO_NOTES_10.md`. Orchestrator re-ran at f4f7aca: `make test` 1069 passed, `make lint` exit 0, UPSC and form-file md5 826ef550..., debate f2a23f33.... The CTO confirmed the new tests are real (46 loop, 110 hand-written; 12 of 15 mutations caught). The orchestrator reproduced F1 and F2 below.
+- Third holdout (Ruling 54): 28/33 requests caught, 0/15 negatives fired; change_topic 9/12. This is the last synthetic figure and is now spent. No fourth set.
+- **Ruling 55:** P1.2 fixes F1, F2 and F3 and the CTO_NOTES_10 table items (section 8 items 2, 3 thank-you, 6, 7; the verb-tail gap; "what exactly"; "prefer a different topic"). Item 4 goes to P5. `sorry`, `kya/na`, "tourism nahi" and the section 6 low lines are waived. Dev `end` must be 21/21.
+- **Ruling 56 (amends Ruling 53):** the listener veto covers seven weak patterns, adding `change_kuch_baat`. P5 uses a shared word count.
+- **Ruling 57:** after P1.2 the detector is frozen until P12's real transcripts. Next: P2, P3, then P0.2 before P4.
+
