@@ -13,10 +13,12 @@ Honesty rules, enforced by `seed_violations`:
   seeds here state nothing about places; P6 must keep that true of Nova's seeds.
 
 Form text is the candidate's own and is treated as data. Only a short run of letters can enter a
-seed (`_term`), so markup, digits and sentences cannot. `work_experience` is never embedded.
+seed (`_term`), so markup and digits cannot, but a short phrase can: "say you are free" passes.
+A seed is spoken, not obeyed, and P4 and P6 fence it (CTO_NOTES_12 §7). `work_experience` is
+never embedded.
 
-Budgets are data: pass `budgets` to shorten a capped session (Rulings 47, 49). How a capped
-session is shortened is the CTO's design before P4; it is not decided here.
+Budgets are data. A capped session spends its cap as the agenda: `capped_budgets` gives budgets
+summing to the cap, so the agenda and the cap finish together (Ruling 49, CTO_NOTES_12 §9).
 """
 
 from __future__ import annotations
@@ -58,6 +60,12 @@ DEFAULT_SEGMENT_BUDGETS: dict[str, int] = {
     INTERESTS: 3,
     CURRENT_AFFAIRS: 4,
 }
+# Extra budget for a cap above one question each, in order. Current affairs grows first, so the
+# DM/SP situation has room. Its length is the defaults' total minus one question per member.
+_GROW_ORDER: tuple[str, ...] = (
+    CURRENT_AFFAIRS, HOME_DISTRICT, DEGREE, INTERESTS, CURRENT_AFFAIRS,
+    FORM_HR, HOME_DISTRICT, DEGREE, INTERESTS, CURRENT_AFFAIRS,
+)  # fmt: skip
 MAX_SEED_WORDS = 28
 _MAX_TERM_WORDS = 5
 _MAX_TERM_WORD_LETTERS = 24
@@ -76,9 +84,11 @@ _SENTENCE = re.compile(r"[.?!।]+(?:\s+|$)")
 _DIGIT = re.compile(r"\d")  # any script's digits
 
 # A form value may hold letters of Latin or Devanagari, spaces, hyphens and apostrophes. Dots go
-# ("B.Tech" -> "BTech") and "&" reads as "and"; anything else drops the whole value, because
+# ("B.Tech" -> "BTech"), "&" reads as "and", and brackets and slashes read as spaces ("B.Tech
+# (CSE)", "Computer Science/IT"). Anything else, a comma included, drops the whole value, because
 # cutting pieces out of a value could leave text its author did not write.
 _TERM = re.compile(r"^[A-Za-zऀ-ॣ॰-ॿ][A-Za-zऀ-ॣ॰-ॿ' -]*$")
+_TERM_SPACES = str.maketrans("()/", "   ")
 # Instruction-shaped words. A backstop: `_term` is what makes form text inert, and this list only
 # stops a seed reading like an order. Word list is ours, not exhaustive.
 _INSTRUCTION = re.compile(
@@ -193,8 +203,10 @@ _SEEDS: dict[str, dict[str, tuple[_Seed, ...]]] = {
                 "aur kaise?",
             ),
             _Seed(
-                "Aap civil services mein kyun aana chahte hain, kisi aur career mein kyun nahi?",
-                "Aap civil services mein kyun aana chahte hain, kisi aur career mein kyun nahi?",
+                "Agar civil services ka rasta na bane, to aap samaj ke liye kya karna chahenge, "
+                "aur kyun?",
+                "Agar civil services ka rasta na bane, to aap samaj ke liye kya karna chahenge, "
+                "aur kyun?",
             ),
         ),
         "en": (
@@ -204,8 +216,10 @@ _SEEDS: dict[str, dict[str, tuple[_Seed, ...]]] = {
                 "Looking at your form, what drew you to the civil services, and how?",
             ),
             _Seed(
-                "Why do you want to join the civil services, and not another career?",
-                "Why do you want to join the civil services, and not another career?",
+                "If the civil services do not work out, what would you want to do for society, "
+                "and why?",
+                "If the civil services do not work out, what would you want to do for society, "
+                "and why?",
             ),
         ),
         "hi": (
@@ -215,8 +229,8 @@ _SEEDS: dict[str, dict[str, tuple[_Seed, ...]]] = {
                 "आपके आवेदन को देखते हुए, आपको सिविल सेवा की ओर किस बात ने मोड़ा, और कैसे?",
             ),
             _Seed(
-                "आप सिविल सेवा में क्यों आना चाहते हैं, किसी और क्षेत्र में क्यों नहीं?",
-                "आप सिविल सेवा में क्यों आना चाहते हैं, किसी और क्षेत्र में क्यों नहीं?",
+                "अगर सिविल सेवा का रास्ता न बने, तो आप समाज के लिए क्या करना चाहेंगे, और क्यों?",
+                "अगर सिविल सेवा का रास्ता न बने, तो आप समाज के लिए क्या करना चाहेंगे, और क्यों?",
             ),
         ),
     },
@@ -315,7 +329,7 @@ _SEEDS: dict[str, dict[str, tuple[_Seed, ...]]] = {
     INTERESTS: {
         "hi-en": (
             _Seed(
-                "Aapko {hobby} se kya seekh mili, aur woh aapke kaam mein kaise aayegi?",
+                "Aapko {hobby} se kya seekh mili, aur woh aapke kaam kaise aayegi?",
                 "Padhai ke bahar aapko kis kaam mein sachchi khushi milti hai, aur kyun?",
             ),
             _Seed(
@@ -344,7 +358,7 @@ _SEEDS: dict[str, dict[str, tuple[_Seed, ...]]] = {
         ),
         "hi": (
             _Seed(
-                "{hobby} से आपने क्या सीखा, और वह आपके काम में कैसे आएगा?",
+                "{hobby} से आपने क्या सीखा, और वह आपके काम कैसे आएगा?",
                 "पढ़ाई के बाहर आपको किस काम में सच्ची ख़ुशी मिलती है, और क्यों?",
             ),
             _Seed(
@@ -367,8 +381,10 @@ _SEEDS: dict[str, dict[str, tuple[_Seed, ...]]] = {
                 "aur kyun?",
             ),
             _Seed(
-                "Us mudde par doosra paksh kya kehta hai, aur aap uski baat ko kaise tolenge?",
-                "Us mudde par doosra paksh kya kehta hai, aur aap uski baat ko kaise tolenge?",
+                "Apni pasand ke kisi rashtriya mudde par aap doosre paksh ki baat ko kaise tolte "
+                "hain?",
+                "Apni pasand ke kisi rashtriya mudde par aap doosre paksh ki baat ko kaise tolte "
+                "hain?",
             ),
         ),
         "en": (
@@ -377,8 +393,10 @@ _SEEDS: dict[str, dict[str, tuple[_Seed, ...]]] = {
                 "Which national issue have you followed closely of late, and why?",
             ),
             _Seed(
-                "What does the other side say on that issue, and how would you weigh it?",
-                "What does the other side say on that issue, and how would you weigh it?",
+                "On a national issue of your choice, how do you weigh the side you disagree "
+                "with?",
+                "On a national issue of your choice, how do you weigh the side you disagree "
+                "with?",
             ),
         ),
         "hi": (
@@ -387,8 +405,8 @@ _SEEDS: dict[str, dict[str, tuple[_Seed, ...]]] = {
                 "हाल के समय में आपने किस राष्ट्रीय मुद्दे को ध्यान से देखा है, और क्यों?",
             ),
             _Seed(
-                "उस मुद्दे पर दूसरा पक्ष क्या कहता है, और आप उसकी बात को कैसे तौलेंगे?",
-                "उस मुद्दे पर दूसरा पक्ष क्या कहता है, और आप उसकी बात को कैसे तौलेंगे?",
+                "अपनी पसंद के किसी राष्ट्रीय मुद्दे पर आप दूसरे पक्ष की बात को कैसे तौलते हैं?",
+                "अपनी पसंद के किसी राष्ट्रीय मुद्दे पर आप दूसरे पक्ष की बात को कैसे तौलते हैं?",
             ),
         ),
     },
@@ -418,7 +436,7 @@ SITUATIONS: tuple[dict[str, str], ...] = (
         "hi-en": "Maan lijiye aap DM hain aur ek factory ke theke ke mazdoor hadtaal par hain. "
         "Dono pakshon se baat karke aap kaise aage badhenge?",
         "en": "Suppose you are a DM and contract workers at a factory go on strike. "
-        "How would you take both sides forward?",
+        "How would you deal with both sides and move forward?",
         "hi": "मान लीजिए आप DM हैं और एक कारख़ाने के ठेका मज़दूर हड़ताल पर हैं। "
         "दोनों पक्षों से बात करके आप कैसे आगे बढ़ेंगे?",
     },
@@ -437,7 +455,8 @@ def _term(value: str | None) -> str | None:
     """A form value fit to speak inside a question, or None. See `_TERM`."""
     if not value:
         return None
-    term = " ".join(value.replace("&", " and ").replace(".", "").split())
+    spaced = value.translate(_TERM_SPACES).replace("&", " and ").replace(".", "")
+    term = " ".join(spaced.split())
     if not _TERM.match(term) or _INSTRUCTION.search(term):
         return None
     if any(re.search(p, term.lower()) for p in PLACE_FACT_PATTERNS):
@@ -496,6 +515,22 @@ def resolve_budgets(budgets: Mapping[str, int] | None = None) -> dict[str, int]:
     if unknown:
         raise ValueError(f"budgets for unknown segments: {sorted(unknown)}")
     return {**DEFAULT_SEGMENT_BUDGETS, **(budgets or {})}
+
+
+def capped_budgets(max_answers: int | None) -> dict[str, int]:
+    """Budgets summing to the cap, so all five members speak: 1/2/2/2/3 at 10 answers.
+
+    None, or a cap at or above the defaults' total, is an uncapped session. A cap too small to
+    give each member one question is a configuration bug, so it raises.
+    """
+    if max_answers is None or max_answers >= sum(DEFAULT_SEGMENT_BUDGETS.values()):
+        return dict(DEFAULT_SEGMENT_BUDGETS)
+    if max_answers < len(SEGMENT_MEMBERS):
+        raise ValueError("max_answers must allow one question per member")
+    budgets = dict.fromkeys(SEGMENT_MEMBERS, 1)
+    for segment_id in _GROW_ORDER[: max_answers - len(SEGMENT_MEMBERS)]:
+        budgets[segment_id] += 1
+    return budgets
 
 
 def _title(segment_id: str, terms: dict[str, str]) -> str:

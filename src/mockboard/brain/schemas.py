@@ -466,7 +466,10 @@ class Agenda(_Model):
         return sum(s.budget for s in self.segments)
 
     def segment(self, segment_id: str) -> AgendaSegment:
-        return next(s for s in self.segments if s.id == segment_id)
+        for segment in self.segments:
+            if segment.id == segment_id:
+                return segment
+        raise KeyError(segment_id)
 
 
 class BoardLine(_Model):
