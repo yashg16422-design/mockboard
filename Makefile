@@ -6,10 +6,12 @@ VENV_PY := .venv/bin/python
 PYTHON ?= $(if $(wildcard $(VENV_PY)),$(VENV_PY),python3)
 export PYTHONPATH := src:.
 
-.PHONY: help venv install test lint format cli cli-fake cli-fake-hi cli-real cli-fake-debate cli-debate cli-real-debate eval eval-gate eval-motions eval-debate clean-traces voice-install voice-fake voice-upsc voice-debate voice-summary voice-record stt-ab voice-lab voice-lab-fake
+.PHONY: help venv hooks verify-range install test lint format cli cli-fake cli-fake-hi cli-real cli-fake-debate cli-debate cli-real-debate eval eval-gate eval-motions eval-debate clean-traces voice-install voice-fake voice-upsc voice-debate voice-summary voice-record stt-ab voice-lab voice-lab-fake
 
 help:
 	@echo "venv         create .venv and install everything (run this first on macOS)"
+	@echo "hooks        switch on the versioned pre-commit hook (repo-local git setting)"
+	@echo "verify-range check each commit on its own export: make verify-range BASE=<sha>"
 	@echo "install      install runtime + dev dependencies (pinned)"
 	@echo "test         run the offline unit tests (FakeLLM only)"
 	@echo "lint         ruff check"
@@ -38,6 +40,15 @@ venv:
 	.venv/bin/python -m pip install --upgrade pip
 	.venv/bin/python -m pip install -r requirements.txt -r requirements-probes.txt
 	.venv/bin/python -m pip install -e . --no-deps
+	git config core.hooksPath .githooks
+
+# Ruling 60: every commit is gated on the index (CTO_NOTES_12 section 5). Repo-local setting.
+hooks:
+	git config core.hooksPath .githooks
+
+BASE ?=
+verify-range:
+	bash scripts/verify_range.sh $(BASE)
 
 install:
 	$(PYTHON) -m pip install -r requirements.txt

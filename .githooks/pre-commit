@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# Commit gate (Ruling 60, CTO_NOTES_12 section 5). Exports the INDEX, not the working tree, and
+# runs ruff and pytest on that copy, so a fix left unstaged or a file left out fails here.
+# Switched on by `make hooks` (also part of `make venv`). `--no-verify` is banned on this project.
+set -euo pipefail
+
+repo=$(git rev-parse --show-toplevel)
+python=${MOCKBOARD_HOOK_PYTHON:-$repo/.venv/bin/python}
+if [ ! -x "$python" ]; then
+    echo "pre-commit: no Python at $python. Run: make venv" >&2
+    exit 1
+fi
+
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+git checkout-index -a --prefix="$tmp/"  # honours GIT_INDEX_FILE, so `commit -a` is covered too
+
+# Git sets these for hooks. They would point any git call made by a test at this repository.
+unset GIT_DIR GIT_INDEX_FILE GIT_WORK_TREE GIT_PREFIX
+
+cd "$tmp"
+export PYTHONPATH=src:.
+# Prove the export is what runs: `pip install -e .` would otherwise reach the working tree.
+"$python" -c '
+import os, sys
+import mockboard
+here = os.path.realpath(mockboard.__file__)
+sys.exit(0 if here.startswith(os.path.realpath(".") + os.sep) else f"imported {here}")
+'
+"$python" -m ruff check src tests eval
+"$python" -m pytest -x -q

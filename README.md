@@ -78,6 +78,8 @@ make test
 make lint
 ```
 
+Commits are gated: `make venv` (or `make hooks` on an existing checkout) switches on `.githooks/pre-commit`, which runs both checks on what is staged, not on your working folder. A full run takes a few minutes. `--no-verify` is not used on this project. To check each commit afterwards without trusting the hook, run `make verify-range BASE=<sha>`.
+
 ## Run the evaluation
 
 The evaluation sends scripted answers through the real analysis graphs and counts how many planted factual errors the board catches and whether it ever "corrects" a true statement. On your laptop (WSL), in the `mockboard` folder:
