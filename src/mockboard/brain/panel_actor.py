@@ -26,7 +26,6 @@ from dataclasses import dataclass
 from typing import Any
 
 from mockboard.brain.actor import (
-    CLARIFY_LINES,
     FILLER_TEMPLATES,
     PLACE_FACT_PATTERNS,
     ActorBudgetExceeded,
@@ -47,6 +46,7 @@ from mockboard.brain.agenda import NEUTRAL_SEEDS
 from mockboard.brain.avoid_terms import find_avoided, prompt_terms
 from mockboard.brain.cards import CardSet
 from mockboard.brain.llm import LLMClient, LLMError
+from mockboard.brain.panel_lines import CLARIFY_PANEL_LINES, line_for
 from mockboard.brain.prompts import PromptKit, tag
 from mockboard.brain.schemas import (
     BoardMove,
@@ -105,18 +105,61 @@ async def strip_title_dots(chunks: AsyncIterator[str]) -> AsyncIterator[str]:
         yield undotted_titles(held)
 
 
-class _TitleDotLLM:
-    """The model client with `stream_text` passed through `strip_title_dots`. Anything else is
-    the client's own, so `offline` and the fake's call log still read through."""
+# A greeting in a model line (Ruling 73 item 4): only the first hand-off carries one, and that is
+# the prompt's rule (actor.v5). This is the code that backs it, since a model can slip.
+_GREETING = re.compile(
+    r"(?:\bNamaste\b|\bNamaskar\b|\bGood (?:morning|afternoon|evening|day)\b|नमस्ते|नमस्कार)"
+    r"[\s,.!।]*",
+    re.IGNORECASE,
+)
+GREETING_WINDOW_WORDS = 8
 
-    def __init__(self, llm: LLMClient) -> None:
+
+def without_greeting(text: str) -> str:
+    """Remove a greeting from the start of a line ("Shukriya. Namaste. Aapko ..." becomes
+    "Shukriya. Aapko ..."). Only the first words are read: a line is a thanks, then a question, so a
+    greeting later in it would be part of what the member is asking about."""
+    words = text.split(" ")
+    head = " ".join(words[:GREETING_WINDOW_WORDS])
+    cleaned = _GREETING.sub("", head).strip()
+    tail = " ".join(words[GREETING_WINDOW_WORDS:])
+    return (f"{cleaned} {tail}" if cleaned and tail else cleaned or tail).strip()
+
+
+async def strip_greeting(chunks: AsyncIterator[str]) -> AsyncIterator[str]:
+    """`without_greeting` on a stream. The first `GREETING_WINDOW_WORDS` words are held until they
+    are all in (or the line ends), then released with the greeting gone; the rest passes through.
+    On a hand-off the Chairperson's fixed line is playing meanwhile, so the wait is not heard."""
+    held = ""
+    released = False
+    async for chunk in chunks:
+        if released:
+            yield chunk
+            continue
+        held += chunk
+        if len(held.split()) > GREETING_WINDOW_WORDS:
+            released = True
+            lead = without_greeting(held)
+            yield lead + (" " if held.endswith(" ") and lead else "")
+    if not released and held:
+        yield without_greeting(held)
+
+
+class _TitleDotLLM:
+    """The model client with `stream_text` passed through `strip_title_dots`, and through
+    `strip_greeting` unless the line may greet. Anything else is the client's own, so `offline`
+    and the fake's call log still read through."""
+
+    def __init__(self, llm: LLMClient, *, greeting_allowed: bool = True) -> None:
         self._llm = llm
+        self._greeting_allowed = greeting_allowed
 
     def __getattr__(self, name: str) -> Any:
         return getattr(self._llm, name)
 
     def stream_text(self, **kwargs: Any) -> AsyncIterator[str]:
-        return strip_title_dots(self._llm.stream_text(**kwargs))
+        stream = strip_title_dots(self._llm.stream_text(**kwargs))
+        return stream if self._greeting_allowed else strip_greeting(stream)
 
 
 @dataclass
@@ -181,6 +224,7 @@ def board_context(
     form: CandidateForm,
     spoken: Sequence[str],
     after_handoff: bool,
+    first_handoff: bool = False,
 ) -> str:
     actor_move = Move.next_question if move.move == Move.move_on else move.move
     ctx = {
@@ -191,6 +235,8 @@ def board_context(
         "move_reason": move.reason,
         "interview_language": form.interview_language,
         "after_handoff": after_handoff,
+        # Only the first hand-off of the session may carry a "Namaste" (actor.v5, Ruling 73 item 4).
+        "first_handoff": first_handoff,
         # Already said by code before this line; the model must not repeat it.
         "preface_already_spoken": list(spoken),
     }
@@ -217,7 +263,10 @@ def build_panel_user(
     text, gists and avoid terms are untrusted (CTO_NOTES_12 §7)."""
     item = {"segment": panel.segment_title, "member_field": persona.domain, "seed": panel.seed}
     parts = [
-        board_context(persona, move, form=form, spoken=spoken, after_handoff=after_handoff),
+        board_context(
+            persona, move, form=form, spoken=spoken, after_handoff=after_handoff,
+            first_handoff=panel.first_handoff,
+        ),
         tag("agenda_item", json.dumps(item, ensure_ascii=False)),
     ]
     summary = render_summary(memory.notes)
@@ -313,7 +362,8 @@ async def compose_panel_line(
             fixed.append(PrefacePart(member=move.member, text=repeat_text))
         return fixed_line(fixed)
     if move.move == Move.clarify:  # Ruling 37: ask generically, never echo the transcript
-        clarify = CLARIFY_LINES.get(mix, CLARIFY_LINES["hi-en"])
+        uses = memory.line_uses.get(CLARIFY_PANEL_LINES.id, 0)
+        clarify = line_for(CLARIFY_PANEL_LINES, mix, uses)
         fixed.append(PrefacePart(member=move.member, text=clarify))
         return fixed_line(fixed, guard="clarify_template")
     if move.move == Move.fact_challenge and (claim is None or card is None):
@@ -330,7 +380,8 @@ async def compose_panel_line(
     )
     cap = max(max_words, SEED_LINE_WORDS) if seeded else max_words
     call = await call_actor(
-        _TitleDotLLM(llm), kit, user, max_words=cap, max_tokens=max_tokens, turn_id=turn_id,
+        _TitleDotLLM(llm, greeting_allowed=panel.first_handoff), kit, user, max_words=cap,
+        max_tokens=max_tokens, turn_id=turn_id,
         on_first_token=on_first_token, first_token_budget_s=first_token_budget_s,
         fast_throttle_retry_window_s=fast_throttle_retry_window_s, gate=gate,
     )

@@ -527,6 +527,10 @@ class PrefacePart(_Model):
 
     member: str  # persona id
     text: str
+    # The fixed-line table this text came from (`panel_lines.LineSet.id`), so a fold can count how
+    # often each table has been used and pick the next wording (Ruling 73 item 3). "" for any text
+    # that is not from a table, a question for instance.
+    kind: str = ""
 
 
 class TurnNote(_Model):
@@ -561,6 +565,10 @@ class PanelMemory(_Model):
     avoid_terms: list[str] = Field(default_factory=list)
     notes: list[TurnNote] = Field(default_factory=list)
     committed_turns: list[str] = Field(default_factory=list)  # what makes the fold idempotent
+    # How often each fixed-line table has been used (`PrefacePart.kind`), counted when a turn is
+    # folded. The next use takes wording number `uses % len(variants)`, so no table repeats a
+    # wording back to back. `line_uses["handoff"] == 0` means the first hand-off is still to come.
+    line_uses: dict[str, int] = Field(default_factory=dict)
 
 
 class PanelContext(_Model):
@@ -571,6 +579,9 @@ class PanelContext(_Model):
     member: str
     seed: str | None = None
     avoid_terms: tuple[str, ...] = ()
+    # True on the first hand-off of the session only: the one place a member says "Namaste" to the
+    # candidate (Ruling 73 item 4). Every later hand-off is a plain thanks.
+    first_handoff: bool = False
 
 
 class PanelSettings(_Model):

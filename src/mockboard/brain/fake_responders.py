@@ -446,6 +446,7 @@ _PANEL_WORDINGS: dict[str, tuple[str, ...]] = {
     ),
 }
 _PANEL_OPENINGS = ("Achha.", "Theek hai.", "Ji.")
+_PANEL_THANKS = ("Ji, shukriya.", "Aabhaar.", "Ji, dhanyavaad.")
 
 
 def _panel_actor_line(user: str, used: set[str] | None = None) -> str | None:
@@ -459,7 +460,12 @@ def _panel_actor_line(user: str, used: set[str] | None = None) -> str | None:
     if move == Move.next_question.value:
         seed = item.get("seed") or "Is vishay par aap apne anubhav se kya kehna chahenge, aur kyun?"
         if ctx.get("after_handoff"):
-            return f"Shukriya. Namaste. {seed}"
+            if ctx.get("first_handoff"):  # actor.v5: the one place a member greets the candidate
+                return f"Shukriya. Namaste. {seed}"
+            # Later hand-offs: a short thanks in words the Chairperson has not just used.
+            heard = " ".join(ctx.get("preface_already_spoken") or ()).lower()
+            thanks = [t for t in _PANEL_THANKS if t.split()[-1].rstrip(".,").lower() not in heard]
+            return f"{thanks[pick % len(thanks)]} {seed}"
         if ctx.get("preface_already_spoken"):
             return seed
         return f"{_PANEL_OPENINGS[pick % len(_PANEL_OPENINGS)]} {seed}"

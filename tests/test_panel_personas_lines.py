@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import itertools
 import re
 
 import pytest
@@ -11,11 +12,15 @@ from mockboard.brain.agenda import _SEEDS, _WORK_SEEDS, SEGMENT_MEMBERS, SITUATI
 from mockboard.brain.panel_lines import (
     ALL_LINE_TABLES,
     CAP_CLOSE_LINES,
+    CHANGE_TOPIC_ACK_LINES,
+    CLARIFY_PANEL_LINES,
     CLOSE_LINES,
     END_CONFIRM_LINES,
+    END_DECLINED_LINES,
     HANDOFF_LINES,
     REPEAT_PREFIX_LINES,
     RITUAL_LINES,
+    SKIP_ACK_LINES,
     handoff_line,
     line_for,
 )
@@ -187,3 +192,82 @@ def test_handoff_stays_whole(persona, mix, thanks, ask):
 
 def test_unknown_mix_falls_back_to_hinglish():
     assert line_for(CLOSE_LINES, "xx") == CLOSE_LINES["hi-en"]
+
+
+# --- Variants (Ruling 73 item 3): no fixed line says the same words twice in a row ---------------
+
+REPEATABLE = (
+    HANDOFF_LINES, CHANGE_TOPIC_ACK_LINES, SKIP_ACK_LINES, REPEAT_PREFIX_LINES,
+    END_CONFIRM_LINES, END_DECLINED_LINES, CLARIFY_PANEL_LINES,
+)  # fmt: skip
+ALL_WORDINGS = [
+    (table.id, mix, text)
+    for table in ALL_LINE_TABLES
+    for mix, options in table.variants.items()
+    for text in options
+]
+DEVANAGARI = re.compile(r"[\u0900-\u097f]")
+
+
+@pytest.mark.parametrize("table", REPEATABLE, ids=lambda t: t.id)
+def test_a_line_that_can_come_up_twice_has_two_or_three_wordings_in_every_mix(table):
+    assert set(table.variants) == {"hi-en", "en", "hi"}
+    for options in table.variants.values():
+        assert 2 <= len(options) <= 3 and len(set(options)) == len(options)
+
+
+@pytest.mark.parametrize("table", ALL_LINE_TABLES, ids=lambda t: t.id)
+def test_the_first_wording_is_the_one_the_table_has_always_had(table):
+    for mix, options in table.variants.items():
+        assert table[mix] == options[0] == line_for(table, mix) == line_for(table, mix, 0)
+
+
+@pytest.mark.parametrize("table", REPEATABLE, ids=lambda t: t.id)
+@pytest.mark.parametrize("mix", ["hi-en", "en", "hi"])
+def test_no_two_uses_in_a_row_give_the_same_words_even_after_wrapping(table, mix):
+    said = [line_for(table, mix, uses) for uses in range(10)]
+    assert all(a != b for a, b in itertools.pairwise(said))
+    assert said[: len(table.variants[mix])] == list(table.variants[mix])
+
+
+@pytest.mark.parametrize(("table_id", "mix", "line"), ALL_WORDINGS)
+def test_every_wording_keeps_the_register_and_states_nothing(table_id, mix, line):
+    assert not re.search(r"\d", line)
+    low = line.lower()
+    assert not INFORMAL.search(low)
+    assert not re.search(r"\b\w+(?:ta|ti) hoon\b|ता हूँ|ती हूँ", low)
+    for word in ("minute", "minat", "ghant", "hour", "मिनट", "घंट"):
+        assert word not in low
+    assert not any(re.search(p, low) for p in PLACE_FACT_PATTERNS)
+
+
+@pytest.mark.parametrize(("table_id", "mix", "line"), ALL_WORDINGS)
+def test_wordings_are_language_aware(table_id, mix, line):
+    """Devanagari only in `hi`; the English mix has no Hindi words in Latin script to speak."""
+    assert bool(DEVANAGARI.search(line)) == (mix == "hi")
+    if mix == "en":
+        hindi_in_latin = r"\b(?:aap|kijiye|suniye|dhanyavaad|shukriya|theek|zaroor)\b"
+        assert not re.search(hindi_in_latin, line.lower())
+
+
+@pytest.mark.parametrize("mix", ["hi-en", "en", "hi"])
+def test_every_confirmation_wording_is_a_question(mix):
+    assert all(text.endswith("?") for text in END_CONFIRM_LINES.variants[mix])
+
+
+@pytest.mark.parametrize("persona", PANEL.values(), ids=lambda p: p.id)
+@pytest.mark.parametrize("mix", ["hi-en", "en", "hi"])
+def test_every_handoff_wording_stays_whole_and_names_the_member(persona, mix):
+    for uses in range(len(HANDOFF_LINES.variants[mix])):
+        line = handoff_line(persona.name, mix, uses)
+        assert persona.name in line
+        assert len(split_sentences(line)) == 2, line  # a thanks, then the call (CTO_NOTES_12 M1)
+
+
+def test_clarify_keeps_the_ruling_37_wording_first_and_never_echoes():
+    from mockboard.brain.actor import CLARIFY_LINES
+
+    for mix, line in CLARIFY_LINES.items():
+        assert CLARIFY_PANEL_LINES.variants[mix][0] == line
+    for options in CLARIFY_PANEL_LINES.variants.values():
+        assert all("{" not in text for text in options)

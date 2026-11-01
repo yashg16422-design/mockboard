@@ -45,13 +45,16 @@ from mockboard.brain.graphs import make_serde
 from mockboard.brain.panel_lines import (
     CAP_CLOSE_LINES,
     CHANGE_TOPIC_ACK_LINES,
+    CLARIFY_PANEL_LINES,
     CLOSE_LINES,
     END_CLOSE_LINES,
     END_CONFIRM_LINES,
     END_DECLINED_LINES,
+    HANDOFF_LINES,
     REPEAT_PREFIX_LINES,
     SKIP_ACK_LINES,
     WRAP_UP_CLOSE_LINES,
+    LineSet,
     handoff_line,
     line_for,
 )
@@ -98,7 +101,7 @@ MAX_GIST_WORDS = 30
 MAX_GIST_REASONS = 2
 FIXED_LINE_MOVES = frozenset({Move.repeat_question, Move.rephrase_question, Move.clarify})
 
-CLOSE_LINE_BY_REASON: dict[str, dict[str, str]] = {
+CLOSE_LINE_BY_REASON: dict[str, LineSet] = {
     "agenda": CLOSE_LINES,
     "end_request": END_CLOSE_LINES,
     "time": WRAP_UP_CLOSE_LINES,
@@ -324,8 +327,9 @@ class _Plan:
         self.segment = agenda.segment(turn.ctx.topic)
         self.following = _following(agenda, self.segment.id)
 
-    def part(self, member: str, table: dict[str, str]) -> PrefacePart:
-        return PrefacePart(member=member, text=line_for(table, self.cfg.mix))
+    def part(self, member: str, table: LineSet) -> PrefacePart:
+        uses = self.memory.line_uses.get(table.id, 0)
+        return PrefacePart(member=member, text=line_for(table, self.cfg.mix, uses), kind=table.id)
 
     def own(self, table: dict[str, str]) -> PrefacePart:
         return self.part(self.segment.member, table)
@@ -373,6 +377,7 @@ class _Plan:
                 member=now.member,
                 seed=seed[1].text if seed else None,
                 avoid_terms=tuple(avoid),
+                first_handoff=node == "handoff" and not self.memory.line_uses.get(HANDOFF_LINES.id),
             ),
             answered_segment=self.segment.id,
             answered_member=self.segment.member,
@@ -404,7 +409,12 @@ class _Plan:
         cap_left = _cap_left(self.turn, self.cfg)
         left = target.budget if cap_left is None else min(target.budget, cap_left)
         name = self.cfg.names[target.member]
-        chair = PrefacePart(member=self.cfg.chairman, text=handoff_line(name, self.cfg.mix))
+        uses = self.memory.line_uses.get(HANDOFF_LINES.id, 0)
+        chair = PrefacePart(
+            member=self.cfg.chairman,
+            text=handoff_line(name, self.cfg.mix, uses),
+            kind=HANDOFF_LINES.id,
+        )
         return self.decision(
             self.board_move(Move.move_on, target.member, "D-HANDOFF", "next member", target.id),
             "handoff",
@@ -550,6 +560,20 @@ def _keeps_last_question(done: CompletedTurn) -> bool:
     return d.free or d.finished or settling or d.move.move in FIXED_LINE_MOVES
 
 
+def _count_line_uses(memory: PanelMemory, d: PanelDecision) -> dict[str, int] | None:
+    """The use counts after this decision's fixed lines, or None when it spoke none from a table.
+    A generic clarify is said by the actor module, not by the director, so it is counted here."""
+    kinds = [p.kind for p in d.preface if p.kind]
+    if d.move.move == Move.clarify and not d.line_complete:
+        kinds.append(CLARIFY_PANEL_LINES.id)
+    if not kinds:
+        return None
+    uses = dict(memory.line_uses)
+    for kind in kinds:
+        uses[kind] = uses.get(kind, 0) + 1
+    return uses
+
+
 def _fold_one(memory: PanelMemory, done: CompletedTurn) -> PanelMemory:
     d = done.decision
     update: dict[str, Any] = {
@@ -564,6 +588,9 @@ def _fold_one(memory: PanelMemory, done: CompletedTurn) -> PanelMemory:
             gist=_gist(done.analysis),
         )
         update["notes"] = [*memory.notes, note]
+    uses = _count_line_uses(memory, d)
+    if uses is not None:
+        update["line_uses"] = uses
     if d.avoid_terms:
         update["avoid_terms"] = list(dict.fromkeys((*memory.avoid_terms, *d.avoid_terms)))
     if d.seed is not None and d.seed_segment is not None and d.seed_index is not None:

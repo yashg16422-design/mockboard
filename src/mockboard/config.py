@@ -239,7 +239,7 @@ class Settings(BaseSettings):
     prompt_judge_version: int = 1
     prompt_opener_version: int = 1
     # The panel's prompts (P4, behind --panel only). The UPSC versions above stay until P7.
-    prompt_actor_panel_version: int = 4  # agenda item, conversation notes, avoid topics
+    prompt_actor_panel_version: int = 5  # v4 + Namaste only at the first hand-off (Ruling 73)
     prompt_opener_panel_version: int = 2  # no greeting: the ritual line is said by code
     # Debate mode (ADR-009, CTO_NOTES_04).
     prompt_shared_debate_version: int = 1

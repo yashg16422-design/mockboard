@@ -4,6 +4,7 @@ CTO_NOTES_14 §7). `Sim` is the session side; the strategist in it is the real o
 from __future__ import annotations
 
 import ast
+import itertools
 import random
 from pathlib import Path
 
@@ -30,10 +31,11 @@ from mockboard.brain.panel_lines import (
     END_CLOSE_LINES,
     END_CONFIRM_LINES,
     END_DECLINED_LINES,
-    HANDOFF_LINES,
     REPEAT_PREFIX_LINES,
     SKIP_ACK_LINES,
     WRAP_UP_CLOSE_LINES,
+    handoff_line,
+    line_for,
 )
 from mockboard.brain.schemas import (
     Agenda,
@@ -206,7 +208,7 @@ async def test_change_topic_preface_has_two_speakers_in_order():
     d = await sim.say(CHANGE)
     assert [(p.member, p.text) for p in d.preface] == [
         ("administrator", hi(CHANGE_TOPIC_ACK_LINES)),
-        ("chairman", hi(HANDOFF_LINES).format(name="Doctor Iyer")),
+        ("chairman", handoff_line("Doctor Iyer", "hi-en", 1)),  # the second hand-off
     ]
 
 
@@ -589,7 +591,11 @@ async def test_two_repeats_after_a_hand_off_are_identical_with_no_stacked_prefix
     one = await sim.say(REPEAT)
     two = await sim.say(REPEAT)
     assert one.repeat_text == two.repeat_text == handoff.seed
-    assert one.preface == two.preface and texts(one) == [hi(REPEAT_PREFIX_LINES)]
+    # One prefix each, never stacked; the table's wording rotates, so two repeats in a row differ
+    # (Ruling 73 item 3) and the first is the first wording.
+    assert len(one.preface) == len(two.preface) == 1
+    assert texts(one) == [hi(REPEAT_PREFIX_LINES)]
+    assert texts(two) == [line_for(REPEAT_PREFIX_LINES, "hi-en", 1)] != texts(one)
     assert one.move.member == "administrator"
 
 
@@ -1009,3 +1015,64 @@ async def test_finish_survives_a_graph_with_no_checkpointer(monkeypatch):
     await answers(sim, 2)
     monkeypatch.setattr(sim.director._graph, "checkpointer", None)
     assert (await sim.director.finish()).asked_seeds
+
+
+# --- Ruling 73 item 3: wording rotates, so no fixed line repeats back to back -------------------
+
+
+async def test_three_repeats_in_a_row_use_three_different_wordings_then_wrap():
+    sim = Sim()
+    await answers(sim, 1)
+    said = [texts(await sim.say(REPEAT))[0] for _ in range(4)]
+    assert said[:3] == list(REPEAT_PREFIX_LINES.variants["hi-en"])
+    assert said[3] == said[0] and said[3] != said[2]  # wraps, still never twice in a row
+
+
+async def test_two_skips_do_not_acknowledge_in_the_same_words():
+    sim = Sim()
+    await answers(sim, 2)
+    first = texts(await sim.say(SKIP))[0]
+    second = texts(await sim.say(SKIP))[0]
+    assert first == hi(SKIP_ACK_LINES) and second == line_for(SKIP_ACK_LINES, "hi-en", 1)
+
+
+async def test_every_handoff_in_a_session_has_a_different_wording_from_the_one_before():
+    sim = Sim()
+    chair: list[str] = []
+    for _ in range(sim.agenda.total_budget):
+        if sim.finished:
+            break
+        d = await sim.say()
+        chair += [p.text for p in d.preface if p.kind == "handoff"]
+    assert len(chair) == 4
+    assert all(a != b for a, b in itertools.pairwise(chair))
+
+
+async def test_the_first_handoff_alone_is_marked_first():
+    sim = Sim()
+    flags = []
+    for _ in range(sim.agenda.total_budget):
+        if sim.finished:
+            break
+        d = await sim.say()
+        if d.node == "handoff":
+            flags.append(d.panel.first_handoff)
+    assert flags == [True, False, False, False]
+
+
+async def test_a_reopened_turn_picks_the_same_wording_because_only_a_fold_counts():
+    sim = Sim()
+    await answers(sim, 1)
+    turn, _analysis = sim.build(REPEAT)
+    one = await sim.director.decide_turn(turn)
+    two = await sim.director.decide_turn(turn)  # re-decided, never applied (Ruling 31)
+    assert one.preface == two.preface
+
+
+async def test_a_wording_is_counted_once_per_folded_turn_and_the_table_is_named():
+    sim = Sim()
+    await answers(sim, 2)  # the second answer hands off to Menon
+    await sim.say(REPEAT)
+    await sim.say(REPEAT)  # folds the first repeat
+    assert sim.director.memory.line_uses["repeat_prefix"] == 1
+    assert sim.director.memory.line_uses.get("handoff") == 1

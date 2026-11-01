@@ -15,7 +15,9 @@ sentences, not paraphrases.
 
 from __future__ import annotations
 
+import itertools
 import json
+import re
 import uuid
 from dataclasses import dataclass
 
@@ -38,9 +40,9 @@ from mockboard.brain.panel_actor import question_part
 from mockboard.brain.panel_lines import (
     CHANGE_TOPIC_ACK_LINES,
     CLOSE_LINES,
-    HANDOFF_LINES,
     RITUAL_LINES,
     SKIP_ACK_LINES,
+    handoff_line,
     line_for,
 )
 from mockboard.brain.schemas import PANEL_FREE_TURNS, Move
@@ -161,7 +163,9 @@ async def test_change_topic_always_moves_on(settings, cards, form, tmp_path, k, 
         nxt = agenda.segments[k + 1]
         parts = out.line.parts
         assert parts[0].text == ack and parts[0].member == agenda.segments[k].member
-        assert parts[1].member == "chairman" and parts[1].text.startswith("Dhanyavaad.")
+        # k hand-offs came before this one, so it is the (k+1)-th wording of the table (Ruling 73).
+        assert parts[1].member == "chairman" and parts[1].kind == "handoff"
+        assert parts[1].text == handoff_line(session.speaker_name(nxt.member), "hi-en", k)
         assert parts[-1].member == nxt.member != agenda.segments[k].member
         assert session.state.topic == nxt.id
     else:
@@ -301,7 +305,7 @@ async def test_the_session_start_line_names_the_agenda_and_the_openers_member(
     assert [s["id"] for s in first["agenda"]["segments"]] == SEGMENTS
     assert first["agenda"]["source"] == "template"
     assert first["segment_id"] == "form_hr" and first["member"] == "chairman"
-    assert first["prompt_versions"]["actor"] == 4 and first["prompt_versions"]["opener"] == 2
+    assert first["prompt_versions"]["actor"] == 5 and first["prompt_versions"]["opener"] == 2
     assert opener.parts[0].text == line_for(RITUAL_LINES, "hi-en")
     assert not opener.text.lower().startswith("namaste. namaste")
 
@@ -319,7 +323,7 @@ async def test_every_change_of_member_is_a_spoken_handoff(settings, cards, form,
             seen.append(segment)
             name = p.hooks.speaker_name(row["panel"]["member"])
             chair = [x for x in out.line.parts if x.member == "chairman"]
-            assert chair and chair[0].text == line_for(HANDOFF_LINES, "hi-en").format(name=name)
+            assert chair and chair[0].text == handoff_line(name, "hi-en", handoffs - 1)
             answered = p.hooks.agenda.segment(row["panel"]["answered_segment"])
             assert row["panel"]["handoff_from"] == answered.member
     assert seen == SEGMENTS and handoffs == 4
@@ -534,7 +538,7 @@ async def test_the_report_lists_each_detected_request_with_its_source(
     assert "Request at t1: repeat" in notes and "Request at t2: change_topic" in notes
     assert REQUEST_ACCURACY_NOTE in report.notes
     assert "Accuracy on real speech has not been measured yet." in notes
-    assert report.prompt_versions["actor"] == 4
+    assert report.prompt_versions["actor"] == 5
 
 
 async def test_a_session_with_no_request_says_so(settings, cards, form, tmp_path):
@@ -600,7 +604,10 @@ def test_the_scripted_panel_session_moves_on_from_tourism_and_it_never_returns(c
     board = [x for x in lines if x.startswith("[")]
     at = next(i for i, x in enumerate(lines) if x.startswith("You: tourism ke alawa"))
     assert lines[at + 1].startswith("[Shrimati Menon] Zaroor, koi baat nahi.")
-    assert lines[at + 2].startswith("[Chairperson Sharma] Dhanyavaad. Doctor Iyer, please.")
+    # The second hand-off of the session, so the second wording (Ruling 73 item 3).
+    assert lines[at + 2].startswith(
+        f"[Chairperson Sharma] {handoff_line('Doctor Iyer', 'hi-en', 1)}"
+    )
     assert lines[at + 3].startswith("[Doctor Iyer] (move_on, D-HANDOFF)")
     said = " ".join(x for x in lines[at + 1 :] if x.startswith("["))
     assert find_avoided(said, expand_terms(["tourism"])) is None
@@ -738,3 +745,52 @@ async def test_the_real_session_makes_the_same_decisions_as_the_director_sim(
     expected = [shape(d) for _, d in sim.log[: len(real)]]
     assert real == expected
     assert p.session.state.finished == sim.finished
+
+
+# --- Ruling 73 item 4: Namaste at the first hand-off only; item 3: no wording twice in a row -
+
+
+GREETINGS = re.compile(r"namaste|namaskar|good (?:morning|day)|नमस्ते", re.IGNORECASE)
+
+
+async def test_namaste_is_said_at_the_ritual_and_the_first_handoff_and_nowhere_else(
+    settings, cards, form, tmp_path
+):
+    p = await play(settings, cards, form, tmp_path, [PLAIN[i % 3] for i in range(30)])
+    said = [part for out in p.outs for part in out.line.parts]
+    said = [*p.opener.parts, *said]
+    greeting = [part for part in said if GREETINGS.search(part.text)]
+    assert len(greeting) == 2, [x.text for x in greeting]
+    assert greeting[0].text == line_for(RITUAL_LINES, "hi-en") and greeting[0].member == "chairman"
+    first_member = p.hooks.agenda.segments[1].member
+    assert greeting[1].member == first_member  # the first member to speak, at the first hand-off
+
+
+async def test_no_fixed_line_repeats_its_words_back_to_back_in_a_whole_session(
+    settings, cards, form, tmp_path
+):
+    p = await play(settings, cards, form, tmp_path, [PLAIN[i % 3] for i in range(30)])
+    by_table: dict[str, list[str]] = {}
+    for out in p.outs:
+        for part in out.line.parts:
+            if part.kind:
+                by_table.setdefault(part.kind, []).append(part.text)
+    assert len(by_table["handoff"]) == 4
+    for kind, said in by_table.items():
+        assert all(a != b for a, b in itertools.pairwise(said)), (kind, said)
+
+
+async def test_two_topic_changes_and_two_repeats_never_sound_the_same_twice(
+    settings, cards, form, tmp_path
+):
+    session, _, _ = await start(settings, cards, form, tmp_path)
+    acks, repeats = [], []
+    for text in (PLAIN[0], PLAIN[1], CHANGES["latin"], "please repeat", "please repeat",
+                 CHANGES["latin"]):
+        out = await answer(session, text, think_s=0.5)
+        if text == CHANGES["latin"]:
+            acks.append(texts(out)[0])
+        elif text == "please repeat":
+            repeats.append(texts(out)[0])
+    assert len(acks) == 2 and len(repeats) == 2
+    assert acks[0] != acks[1] and repeats[0] != repeats[1]
