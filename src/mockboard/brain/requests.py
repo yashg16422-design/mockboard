@@ -214,6 +214,7 @@ _SPLIT_APART: dict[tuple[str, str], str] = {
     ("a", "lawa"): "alawa",
     ("a", "lava"): "alawa",
     ("al", "awa"): "alawa",
+    ("ala", "wa"): "alawa",
     ("inter", "view"): "interview",
 }
 
@@ -688,7 +689,7 @@ _TERM_STOP = frozenset({
 })
 _TERM_NOUNS = frozenset({"topic", "sawal"})
 _TERM_BACK = re.compile(
-    r"(?<!\S)(?:(?:ke|ka|ki|k) alawa|(?:ko |se |ke )?chhodkar|ko chhodiye|ko chhodo|ko chhodein"
+    r"(?<!\S)(?:(?:ke|ka|ki|k|key) alawa|(?:ko |se |ke )?chhodkar|ko chhodiye|ko chhodo|ko chhodein"
     r"|ko chhod dete hain|ko chhod dijiye|(?:par|ke bare mein) baat nahi)(?!\S)"
 )
 _TERM_FORWARD = re.compile(

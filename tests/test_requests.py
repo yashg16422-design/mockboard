@@ -981,6 +981,33 @@ def test_thanks_never_joins_an_avoid_term():
     assert hit.avoid_terms == ("tourism",)
 
 
+# ---------------------------------------------------------------------------
+# P1.2: avoid terms behind "key alawa" and "ala wa" (item 6)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "text, term",
+    [
+        ("tourism key alawa kisi aur topic pe baat karte hain", "tourism"),
+        ("rural tourism key alawa kuch aur puchiye", "rural tourism"),
+        ("tourism ke ala wa kisi aur topic pe baat karte hain", "tourism"),
+        ("tourism ke ala wa kuch aur puchiye", "tourism"),
+        ("kisan key alawa kisi aur topic pe baat karte hain", "kisan"),
+    ],
+)
+def test_avoid_term_survives_garbled_alawa(text, term):
+    hit = detect_request(text)
+    assert hit is not None
+    assert hit.kind == "change_topic"
+    assert hit.avoid_terms == (term,)
+
+
+def test_key_stays_an_english_word():
+    assert _got("the key alawa nothing") == NONE
+    assert detect_request("key issue is water") is None
+
+
 @pytest.mark.parametrize(
     "token", ["sir", "ko", "kisi aur", "please", "topic", "can we", "ko chhod"]
 )
