@@ -248,7 +248,9 @@ def test_helpers_pick_and_opening_args():
 
 
 def test_the_mode_move_sets():
-    assert len(UPSC_MOVES) == 9
+    assert len(UPSC_MOVES) == 12  # nine rule-table moves, three panel director moves
+    panel = {Move.repeat_question, Move.rephrase_question, Move.next_question}
+    assert panel <= UPSC_MOVES and panel.isdisjoint(DEBATE_MOVES)
     assert {Move.probe, Move.counter, Move.pressure}.isdisjoint(DEBATE_MOVES)
     assert {
         Move.opening_statement, Move.closing_statement, Move.rebut, Move.cross_question,

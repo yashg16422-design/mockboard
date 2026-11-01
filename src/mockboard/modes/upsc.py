@@ -12,7 +12,8 @@ from mockboard.brain.schemas import BoardMove, Dimension, Move, StrategyContext
 from mockboard.brain.strategist import CLOSE_TARGET, PRESSURE, StrategyConfig, decide_move
 from mockboard.modes.registry import ModeProfile, register
 
-# The nine UPSC board moves (PLAN_v2_DELTA §7). Debate moves are never emitted here.
+# The nine UPSC board moves (PLAN_v2_DELTA §7), plus the three the panel director emits and the
+# rule table never does (CTO_NOTES_06 §7). Debate moves are never emitted here.
 UPSC_MOVES: frozenset[Move] = frozenset(
     {
         Move.probe,
@@ -24,6 +25,9 @@ UPSC_MOVES: frozenset[Move] = frozenset(
         Move.move_on,
         Move.clarify,
         Move.interrupt,
+        Move.repeat_question,
+        Move.rephrase_question,
+        Move.next_question,
     }
 )
 

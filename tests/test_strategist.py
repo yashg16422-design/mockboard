@@ -9,6 +9,10 @@ from mockboard.brain.schemas import Balance, ClaimKind, Move, Verdict, VoiceSign
 from mockboard.brain.strategist import CLOSE_TARGET, StrategyConfig, decide_move, merge_analyses
 from mockboard.modes.upsc import UPSC_MOVES
 
+# The director's three moves are in `UPSC_MOVES`; the rule table can never emit them.
+PANEL_MOVES = {Move.repeat_question, Move.rephrase_question, Move.next_question}
+RULE_TABLE_MOVES = UPSC_MOVES - PANEL_MOVES
+
 CFG = StrategyConfig(
     chairman="chairman",
     topic_members={"tourism": "economist", "internal_security": "ips_officer"},
@@ -144,7 +148,7 @@ def test_concession_preface_rides_on_any_move_without_adding_a_tenth():
     conceded = make_analysis(concedes_error=True, balance=Balance.one_sided)
     m = decide_move(make_ctx(), [conceded], [], CFG)
     assert m.move == Move.counter and m.preface == "acknowledge"
-    assert len(UPSC_MOVES) == 9  # the UPSC board's moves stay nine (debate adds its own)
+    assert len(RULE_TABLE_MOVES) == 9  # the rule table's moves stay nine (the panel adds its own)
 
 
 def test_no_preface_without_a_concession_or_on_clarify():
@@ -275,4 +279,4 @@ def test_every_move_has_a_rule():
         Move.pressure,
         Move.probe,
     }
-    assert reachable == UPSC_MOVES
+    assert reachable == RULE_TABLE_MOVES

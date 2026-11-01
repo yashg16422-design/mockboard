@@ -78,6 +78,10 @@ PRESSURE: dict[Move, int] = {
     Move.cross_question: 2,
     Move.concede_point: 0,
     Move.redirect: 1,
+    # Panel director (CTO_NOTES_06 §7).
+    Move.repeat_question: 0,
+    Move.rephrase_question: 0,
+    Move.next_question: 1,
 }
 THIN_ANSWER_WORDS = 25
 _STRENGTH_ORDER = [PointStrength.weak, PointStrength.adequate, PointStrength.strong]

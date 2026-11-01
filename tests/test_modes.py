@@ -139,7 +139,7 @@ def test_default_mode_is_upsc_and_wraps_todays_rules():
     profile = get_profile(None)
     assert profile.id == DEFAULT_MODE
     assert profile.decide is decide_move
-    assert profile.allowed_moves == UPSC_MOVES and len(UPSC_MOVES) == 9
+    assert profile.allowed_moves == UPSC_MOVES and len(UPSC_MOVES) == 12
     assert profile.prompt_ids == {
         "shared": "shared",
         "listener": "listener",
