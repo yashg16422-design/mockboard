@@ -152,6 +152,11 @@ class PanelHooks:
     def speaker_name(self, member: str) -> str:
         return self.persona(member).name
 
+    def member_for_speaker(self, name: str) -> str:
+        """The persona id whose display name is `name` ("" if none): a spoken sentence carries the
+        name, and the voice loop picks the voice by member (P8)."""
+        return next((p.id for p in self.personas.values() if p.name == name), "")
+
     @property
     def fact_check_enabled(self) -> bool:
         return True  # the fact checker itself skips a run with no real cards (Ruling 36)

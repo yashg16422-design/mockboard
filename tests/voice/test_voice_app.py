@@ -4,6 +4,7 @@ Skipped without the `voice` extra."""
 
 from __future__ import annotations
 
+import itertools
 import json
 
 import pytest
@@ -58,6 +59,64 @@ def test_the_server_refuses_max_turns_for_the_panel_and_keeps_it_for_debate(caps
     quickstart = (server.HERE.parents[2] / "docs" / "VOICE_QUICKSTART.md").read_text("utf-8")
     advertised = [line for line in quickstart.splitlines() if "--max-turns 4" in line]
     assert advertised and all("debate only" in line for line in advertised)
+
+
+# --- P8: the panel's voices -----------------------------------------------------------------
+
+
+def test_the_default_panel_voices_are_lab_voices_that_pass_the_catalog_and_never_clash(settings):
+    from mockboard.brain.agenda import SEGMENT_MEMBERS
+    from mockboard.config import DEFAULT_PANEL_VOICES
+    from mockboard.speech.gnani_protocol import check_voice
+    from mockboard.voice.lab import VOICES as LAB_VOICES
+
+    members = ["chairman", *SEGMENT_MEMBERS.values()]
+    seats = list(dict.fromkeys(members))  # chairman, then each segment's member in order
+    assert len(seats) == 5
+    for model, table in DEFAULT_PANEL_VOICES.items():
+        assert set(table) == set(seats), model
+        for voice in table.values():  # nothing invented: the voice lab already offers it
+            check_voice(model, voice)
+            assert (model, voice) in {(m, v) for m, v, _note in LAB_VOICES}
+        chair = table["chairman"]
+        members_only = [table[m] for m in seats[1:]]
+        assert chair not in members_only  # she speaks every hand-off, then a member answers
+        assert all(a != b for a, b in itertools.pairwise(members_only))
+    assert settings.tts_model in DEFAULT_PANEL_VOICES
+
+
+def test_the_panel_voice_table_comes_from_the_model_unless_the_env_says_otherwise(monkeypatch):
+    from mockboard.config import DEFAULT_PANEL_VOICES, Settings
+
+    assert Settings(_env_file=None).panel_voices() == DEFAULT_PANEL_VOICES["timbre-v2.5"]
+    v3 = Settings(_env_file=None, tts_model="timbre-v3.0", tts_voice="Avinash")
+    assert v3.panel_voices() == DEFAULT_PANEL_VOICES["timbre-v3.0"]
+    monkeypatch.setenv("TTS_PANEL_VOICES", "{}")
+    assert Settings(_env_file=None).panel_voices() == {}  # one voice, as before P8
+    monkeypatch.setenv("TTS_PANEL_VOICES", '{"chairman": "Deepak"}')
+    assert Settings(_env_file=None).panel_voices() == {"chairman": "Deepak"}
+
+
+def test_the_server_gives_the_panel_its_voices_and_debate_or_an_explicit_voice_none(settings):
+    upsc = cfg_for(settings, ["--mode", "upsc", "--fake-llm", "--fake-speech"])
+    assert upsc.panel_voices == settings.panel_voices() and upsc.panel_voices
+    pick = upsc.voice_for()
+    assert pick("chairman") == "Vikrant" and pick("ips_officer") == "Poorvi"
+    assert pick("someone_new") == upsc.voice  # a member the table leaves out speaks in TTS_VOICE
+    one = cfg_for(settings, ["--mode", "upsc", "--voice", "Vikrant", "--fake-llm", "--fake-speech"])
+    assert one.panel_voices == {} and one.voice_for() is None
+    debate = cfg_for(settings, ["--mode", "debate", "--motion", "1", "--side", "for"])
+    assert debate.panel_voices == {} and debate.voice_for() is None
+    assert "panel_voices" not in json.dumps(upsc.public())  # nothing for the page to show
+
+
+def test_a_panel_voice_the_model_does_not_have_stops_the_server_before_it_starts(settings):
+    cfg = cfg_for(settings, ["--mode", "upsc", "--fake-llm", "--fake-speech"])
+    server.check_panel_voices(cfg)  # the defaults pass
+    cfg.panel_voices = {**cfg.panel_voices, "economist": "Yashraj"}  # a v3.0 voice on v2.5
+    with pytest.raises(SystemExit) as exc:
+        server.check_panel_voices(cfg)
+    assert "economist" in str(exc.value) and "TTS_PANEL_VOICES" in str(exc.value)
 
 
 def test_page_config_and_form_validation(settings):

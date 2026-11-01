@@ -168,6 +168,7 @@ class SpokenSentence:
     move: str
     kind: str  # "preface" | "model" | "line" (buffered or no-model text) | "question"
     segment: str = ""  # the agenda segment the line belongs to (panel only)
+    member: str = ""  # the persona id of the speaker, for the voice (panel only; "" in debate)
 
 
 @dataclass(frozen=True)
@@ -329,6 +330,12 @@ class InterviewSession:
     def time_limits(self) -> tuple[float | None, float]:
         """(wrap-up seconds or None, hard stop seconds) the voice loop runs this session by."""
         return self.deps.settings.time_limits(self.mode)
+
+    def member_for_speaker(self, name: str) -> str:
+        """The persona id behind a speaker's display name, so the voice loop can pick a voice (P8).
+        "" when the mode has no per-member voices (debate) or the name is unknown."""
+        hook = getattr(self.hooks, "member_for_speaker", None)
+        return hook(name) if hook is not None else ""
 
     def panel_members(self) -> list[str]:
         """The panel's members in seat order, for the page before anyone speaks (UPSC panel only;
@@ -966,7 +973,8 @@ class InterviewSession:
             turn.sent.append(text)
             kinds.append(kind)
             return SpokenSentence(
-                text, len(turn.sent) - 1, who or speaker, move.move.value, kind, segment
+                text, len(turn.sent) - 1, who or speaker, move.move.value, kind, segment,
+                self.member_for_speaker(who or speaker),
             )
 
         try:

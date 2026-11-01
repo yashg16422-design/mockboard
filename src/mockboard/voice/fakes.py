@@ -6,7 +6,11 @@
   `result["mb"]` tags (`seq`, `commit_id`) as `PrismaSTTService`. Texts come from `answers`
   (cycled) or "fake answer N".
 * `FakeTTSService` turns each `TTSSpeakFrame` into a beep (or silence) one request at a time,
-  after `ttfb_s`, and reports to a `PlaybackLedger` like `TimbreTTSService`.
+  after `ttfb_s`, and reports to a `PlaybackLedger` like `TimbreTTSService`. Like it, it takes a
+  voice from a `TTSUpdateSettingsFrame` (which it consumes) and sends the current voice with each
+  request: `requests` is the (voice, text) of every request, `voice_changes` the voices switched
+  to, in order, so a test can see which member's voice each line would have had (P8). A voice
+  beeps at its own pitch, so `make voice-fake` lets you hear the members change.
 * `FakePlayback` stands in for the output transport in offline tests: it plays audio in real
   time and sends `BotStartedSpeakingFrame` / `BotStoppedSpeakingFrame` upstream, and drops
   queued audio on an interruption.
@@ -34,6 +38,7 @@ from pipecat.frames.frames import (
     TTSSpeakFrame,
     TTSStartedFrame,
     TTSStoppedFrame,
+    TTSUpdateSettingsFrame,
     VADUserStartedSpeakingFrame,
     VADUserStoppedSpeakingFrame,
 )
@@ -144,6 +149,13 @@ def tone_pcm(seconds: float, freq_hz: float = 440.0, volume: float = 0.15) -> by
     )
 
 
+def _voice_pitch(voice: str | None) -> float:
+    """A beep pitch per voice name (a stable hash), 330 to 660 Hz; 440 Hz with no voice."""
+    if not voice:
+        return 440.0
+    return 330.0 + sum(voice.encode()) % 12 * 27.5
+
+
 class FakeTTSService(FrameProcessor):
     """One `TTSSpeakFrame` at a time (as `TimbreTTSService` serialises): `ttfb_s`, then audio
     of about `ms_per_word` per word in 20 ms chunks pushed quickly (a streaming service sends
@@ -151,13 +163,16 @@ class FakeTTSService(FrameProcessor):
 
     def __init__(self, *, ledger: Any = None, ttfb_s: float = 0.05, ms_per_word: int = 120,
                  chunk_gap_s: float = 0.002, audible: bool = False, fail_marker: str = "",
-                 **kwargs):
+                 voice: str | None = None, **kwargs):
         super().__init__(**kwargs)
         self.ledger = ledger
         self.ttfb_s, self.ms_per_word, self.chunk_gap_s = ttfb_s, ms_per_word, chunk_gap_s
         self.audible = audible
         self.fail_marker = fail_marker
         self.texts: list[str] = []
+        self.voice: str | None = voice
+        self.requests: list[tuple[str | None, str]] = []
+        self.voice_changes: list[str] = []
         self._register_event_handler("on_first_byte_timeout")
 
     async def process_frame(self, frame: Frame, direction: FrameDirection):
@@ -165,10 +180,17 @@ class FakeTTSService(FrameProcessor):
         if isinstance(frame, TTSSpeakFrame):
             await self._speak(frame.text)
             return
+        if isinstance(frame, TTSUpdateSettingsFrame):  # consumed here, as the real service does
+            voice = getattr(frame.delta, "voice", None)
+            if isinstance(voice, str):
+                self.voice = voice
+                self.voice_changes.append(voice)
+            return
         await self.push_frame(frame, direction)
 
     async def _speak(self, text: str) -> None:
         self.texts.append(text)
+        self.requests.append((self.voice, text))
         if self.ledger is not None:
             self.ledger.unit_started(text)
         done = False
@@ -179,7 +201,10 @@ class FakeTTSService(FrameProcessor):
                 return
             await self.push_frame(TTSStartedFrame())
             seconds = max(0.2, self.ms_per_word * len(text.split()) / 1000)
-            pcm = tone_pcm(seconds) if self.audible else b"\x00\x00" * int(seconds * SAMPLE_RATE)
+            pcm = (
+                tone_pcm(seconds, _voice_pitch(self.voice)) if self.audible
+                else b"\x00\x00" * int(seconds * SAMPLE_RATE)
+            )
             step = SAMPLE_RATE // 50 * 2
             for i in range(0, len(pcm), step):
                 chunk = pcm[i : i + step]

@@ -95,6 +95,17 @@ class AppConfig:
     host: str = "localhost"
     port: int = 7860
     record_audio: bool = False  # ruling 35: opt-in, saved only under the trace folder
+    # P8: persona id -> Timbre voice for the panel. Empty: one voice (`voice`) for everyone, as
+    # for debate and for an explicit --voice. Set by `parse_args` from `Settings.panel_voices()`.
+    panel_voices: dict[str, str] = field(default_factory=dict)
+
+    def voice_for(self):
+        """The voice picker the voice loop uses, or None for a single voice (P8). A member the
+        table leaves out speaks in `voice`."""
+        voices = dict(self.panel_voices)
+        if not voices:
+            return None
+        return lambda member: voices.get(member) or self.voice
 
     def public(self) -> dict[str, Any]:
         """What the page may show (no keys, no paths)."""
@@ -159,7 +170,7 @@ def make_speech(cfg: AppConfig, session: InterviewSession, ledger: PlaybackLedge
     if cfg.fake_speech:
         from mockboard.voice.fakes import FakeCommitSTT, FakeTTSService
 
-        return FakeCommitSTT(), FakeTTSService(ledger=ledger, audible=True)
+        return FakeCommitSTT(), FakeTTSService(ledger=ledger, audible=True, voice=cfg.voice)
     from mockboard.speech.prisma_stt import PrismaSTTService
     from mockboard.speech.timbre_tts import TimbreTTSService
 
@@ -231,7 +242,7 @@ async def _serve(webrtc_connection, cfg: AppConfig, session: InterviewSession) -
         session=session, settings=cfg.settings, transport_input=transport.input(),
         transport_output=transport.output(), stt=stt, tts=tts, ledger=ledger,
         report_dir=cfg.settings.trace_dir, on_listen=update_context, autostart=False,
-        mic_recorder=mic,
+        mic_recorder=mic, voice_for=cfg.voice_for(),
     )
 
     @stt.event_handler("on_gave_up")
@@ -282,6 +293,9 @@ def _write_session_log(cfg: AppConfig, session, vp, stt, tts, mic=None) -> None:
         "stt_stats": dict(getattr(stt, "stats", {}) or {}),
         "stt_gave_up": bool(getattr(stt, "gave_up", None)),
         "tts_voice": cfg.voice,
+        "tts_panel_voices": dict(cfg.panel_voices),
+        "tts_voice_changes": list(getattr(tts, "voice_changes", []) or []),
+        "tts_voice_refused": list(getattr(tts, "voice_refused", []) or []),
         "tts_model": cfg.settings.tts_model,
         "tts_language": cfg.settings.tts_language,
         "tts_sample_rate": cfg.settings.tts_sample_rate,
@@ -555,6 +569,20 @@ def _check_keys(cfg: AppConfig) -> None:
                      "run with --fake-llm.")
 
 
+def check_panel_voices(cfg: AppConfig) -> None:
+    """Every voice of the panel table must be in the Timbre model's catalog, checked before the
+    server starts (a wrong one would otherwise fail on a real line). Exits with the reason."""
+    from mockboard.speech.gnani_protocol import check_voice
+
+    for member, voice in cfg.panel_voices.items():
+        try:
+            check_voice(cfg.settings.tts_model, voice)
+        except ValueError as e:
+            sys.exit(f"TTS_PANEL_VOICES: {member!r} -> {e} (TTS_MODEL is "
+                     f"{cfg.settings.tts_model}). Fix the voice, or set TTS_PANEL_VOICES={{}} for "
+                     "one voice.")
+
+
 def _refuse_exposure(cfg: AppConfig, access: AccessConfig) -> None:  # access:
     """Real services on a public address, with limits off, would spend credits for anyone."""
     if access.enabled or cfg.host in _LOOPBACK or (cfg.fake_llm and cfg.fake_speech):
@@ -594,12 +622,14 @@ def parse_args(argv: list[str] | None = None) -> AppConfig:
     settings = Settings()
     if a.trace_dir:
         settings = settings.model_copy(update={"trace_dir": Path(a.trace_dir)})
+    # P8: the panel's voices. An explicit --voice means one voice for everyone; debate has no seats.
+    panel_voices = {} if a.voice or MODES[a.mode] == "debate" else settings.panel_voices()
     cfg = AppConfig(mode=MODES[a.mode], settings=settings, fake_llm=a.fake_llm,
                     fake_speech=a.fake_speech, voice=a.voice or settings.tts_voice,
                     max_turns=9 if a.max_turns is None else a.max_turns, length=a.length,
                     language=a.language,
                     opponent=a.opponent, host=a.host, port=a.port,
-                    record_audio=a.record_audio)
+                    record_audio=a.record_audio, panel_voices=panel_voices)
     if cfg.mode == "debate":
         from mockboard.modes.debate.motions import find_motion, load_curated_motions
 
@@ -617,6 +647,7 @@ def main(argv: list[str] | None = None) -> None:
     import uvicorn
 
     cfg = parse_args(argv)
+    check_panel_voices(cfg)
     _check_keys(cfg)
     try:  # access: a bad ACCESS_ value stops startup here
         access = AccessConfig.from_env()

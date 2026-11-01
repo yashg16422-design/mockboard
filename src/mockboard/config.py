@@ -16,6 +16,26 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
+# P8: placeholder voices for the five panel members, one table per Timbre model. They use only
+# voices the voice lab already offers (`voice/lab.py` VOICES, from Gnani's available-voices.md):
+# v2.5 has three of them for five members, so voices repeat, but never between the Chairperson (who
+# speaks every hand-off) and a member, and never between two neighbouring members. Which voice
+# suits which member is the owner's choice by ear from `make voice-lab` (Milestone E, Ruling 39);
+# until then these are stand-ins. Persona ids, not names: the names live in the persona files.
+# UNVERIFIED: that any of these voices sounds right for its member, and Poorvi on a male-titled
+# member ("Shri Rathore"): v2.5 offers one verified male voice here, which the Chairperson has.
+DEFAULT_PANEL_VOICES: dict[str, dict[str, str]] = {
+    "timbre-v2.5": {
+        "chairman": "Vikrant", "administrator": "Urmila", "economist": "Poorvi",
+        "humanities": "Urmila", "ips_officer": "Poorvi",
+    },
+    "timbre-v3.0": {
+        "chairman": "Avinash", "administrator": "Vasudha", "economist": "Yashraj",
+        "humanities": "Vasudha", "ips_officer": "Yashraj",
+    },
+}
+
+
 class Settings(BaseSettings):
     """Application settings. Field names map to upper-case environment variables."""
 
@@ -96,6 +116,11 @@ class Settings(BaseSettings):
     # The board's single Timbre voice for the local voice app (persona voice ids are still
     # placeholders until the owner picks them by ear, CTO_NOTES_03 T4).
     tts_voice: str = "Poorvi"
+    # P8 (CTO_NOTES_06 section 6): the panel's voices, persona id -> Timbre voice, as JSON in
+    # TTS_PANEL_VOICES. Unset: the placeholder table for TTS_MODEL (`DEFAULT_PANEL_VOICES`, below).
+    # `{}`: every member speaks with TTS_VOICE, as before P8. A member left out of the table also
+    # uses TTS_VOICE. Every voice is checked against the model's catalog before a session starts.
+    tts_panel_voices: dict[str, str] | None = None
     # Ruling 30 (CTO_NOTES_05 should-fix 5): if a Timbre request gives no audio within this
     # time, reconnect and resend once, then show the line as text only. UNVERIFIED (T1/T2).
     tts_first_byte_timeout_s: float = Field(default=3.0, gt=0)
@@ -353,6 +378,12 @@ class Settings(BaseSettings):
         if mode == "debate":
             return None, self.voice_debate_max_s
         return self.voice_wrap_up_s, self.voice_hard_stop_s
+
+    def panel_voices(self) -> dict[str, str]:
+        """persona id -> voice for the panel (P8). `TTS_PANEL_VOICES` wins, `{}` included."""
+        if self.tts_panel_voices is not None:
+            return dict(self.tts_panel_voices)
+        return dict(DEFAULT_PANEL_VOICES.get(self.tts_model, {}))
 
     def prompt_versions(self, mode: str = "upsc_interview") -> dict[str, int]:
         """The prompt id -> version map recorded in every trace line, for one mode. Another mode

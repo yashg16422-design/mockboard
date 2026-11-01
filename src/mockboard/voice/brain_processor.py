@@ -45,6 +45,15 @@ candidate is closed at once with the Chairperson's time line, and one who is tal
 as having stopped. Debate keeps its single 10-minute stop. The page's `answers` and `closing`
 events come from the session just before each line is spoken.
 
+Voice per member (P8): with `voice_for` set (the panel; debate gives none), each line starts
+with a `TTSUpdateSettingsFrame` naming the speaker's voice, and another whenever the speaker
+changes inside the line (a hand-off, then the next member's question). The frame is sent at the
+start of EVERY line, even if the voice is the same as the last line's, because the frame is
+uninterruptible while the speech after it is not: after a barge-in the voice may have moved on
+without its line, and only an explicit voice per line keeps one member's voice from leaking into
+the next. Sentences held for one request per line (`line`, `first_rest`) are flushed at a change
+of speaker, so a request never mixes two voices. No `voice_for`: no frame is ever sent.
+
 UI messages go to the browser as `OutputTransportMessageUrgentFrame`s
 (`{"type": "mockboard", ...}`) over SmallWebRTC's data channel.
 """
@@ -71,12 +80,14 @@ from pipecat.frames.frames import (
     StartFrame,
     TranscriptionFrame,
     TTSSpeakFrame,
+    TTSUpdateSettingsFrame,
     UserStartedSpeakingFrame,
     UserStoppedSpeakingFrame,
     VADUserStartedSpeakingFrame,
     VADUserStoppedSpeakingFrame,
 )
 from pipecat.processors.frame_processor import FrameDirection, FrameProcessor
+from pipecat.services.settings import TTSSettings
 
 from mockboard.session import InterviewSession, TurnOutcome
 from mockboard.speech.prisma_stt import PrismaProcessingFrame
@@ -93,6 +104,17 @@ CLOSING = "closing"  # Smart Turn ended the turn; commit and wait for its transc
 THINKING_S = "thinking"  # end_of_turn and the actor, no TTS yet
 BOARD = "speaking"  # speak_stream is feeding TTS, or the line is playing
 FINISHED = "finished"
+
+
+class _Held:
+    """Sentences waiting to go to Timbre as one request, and who says them (P8)."""
+
+    def __init__(self) -> None:
+        self.texts: list[str] = []
+        self.member = ""
+
+    def __bool__(self) -> bool:
+        return bool(self.texts)
 
 
 class BrainProcessor(FrameProcessor):
@@ -116,6 +138,7 @@ class BrainProcessor(FrameProcessor):
         on_listen: Callable[[], Awaitable[None]] | None = None,
         autostart: bool = True,
         tts_request_unit: str | None = None,
+        voice_for: Callable[[str], str | None] | None = None,
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -150,6 +173,11 @@ class BrainProcessor(FrameProcessor):
         # False: wait for `begin()` (the server calls it when the browser has connected, so
         # the opener's captions are not sent before the data channel exists).
         self._autostart = autostart
+        # P8: persona id -> Timbre voice, or None for one voice. `_line_voice` is the voice the
+        # current line last asked for; `_unit_voices` is the voice of each request of this line.
+        self._voice_for = voice_for
+        self._line_voice: str | None = None
+        self._unit_voices: list[str | None] = []
 
         self.state = STARTING
         self._task: asyncio.Task | None = None  # the turn task (or opener / closing lines)
@@ -376,6 +404,8 @@ class BrainProcessor(FrameProcessor):
         """A fresh ledger for the next line (the same object: the TTS service holds it)."""
         self.ledger.reset()
         self._pushed = 0
+        self._line_voice = None  # the next line names its voice again, whatever came before
+        self._unit_voices = []
         return self.ledger
 
     def _settled(self, commit_task: asyncio.Task | None) -> bool:
@@ -448,21 +478,50 @@ class BrainProcessor(FrameProcessor):
             entry.update(commit_id=r.commit_id, reply=r.reply, wait_ms=r.wait_ms)
         return done
 
-    async def _speak(self, text: str) -> None:
+    async def _set_voice(self, member: str) -> None:
+        """P8: tell Timbre who speaks the request that follows. Nothing without `voice_for` or a
+        member; otherwise a frame at the first request of a line and whenever the voice changes."""
+        if self._voice_for is None or not member:
+            return
+        voice = self._voice_of(member)
+        if not voice or voice == self._line_voice:
+            return
+        self._line_voice = voice
+        await self.push_frame(TTSUpdateSettingsFrame(delta=TTSSettings(voice=voice)))
+
+    async def _speak(self, text: str, member: str = "") -> None:
+        await self._set_voice(member)
         self._pushed += 1
+        self._unit_voices.append(self._line_voice)
         await self.push_frame(TTSSpeakFrame(text, append_to_context=False))
 
-    async def _feed_sentence(self, text: str, held: list[str]) -> None:
-        """Ruling 38: send a guarded sentence now, or hold it for one request per line."""
+    async def _flush(self, held: _Held) -> None:
+        """Send what is held as one request, in its speaker's voice."""
+        if held:
+            text, member = " ".join(held.texts), held.member
+            held.texts = []
+            await self._speak(text, member)
+
+    async def _feed_sentence(self, text: str, held: _Held, member: str = "") -> None:
+        """Ruling 38: send a guarded sentence now, or hold it for one request per line. A change
+        of voice flushes what is held first (P8): one request never has two voices. Without
+        `voice_for` nothing changes: a whole line stays one request."""
         if self._tts_unit == "sentence" or (self._tts_unit == "first_rest" and not self._pushed):
-            await self._speak(text)
-        else:
-            held.append(text)
+            await self._flush(held)
+            await self._speak(text, member)
+            return
+        if held and self._voice_of(held.member) != self._voice_of(member):
+            await self._flush(held)
+        held.member = held.member if held else member
+        held.texts.append(text)
+
+    def _voice_of(self, member: str) -> str | None:
+        return self._voice_for(member) if self._voice_for is not None and member else None
 
     async def _speak_turn(self) -> None:
         self._reset_ledger()
         await self._set_state(BOARD)
-        held: list[str] = []
+        held = _Held()
         for event, fields in self.session.turn_events():  # `answers`, then `closing`
             if event == "closing":
                 self._closing_sent = True
@@ -471,9 +530,8 @@ class BrainProcessor(FrameProcessor):
             await self.emit("caption", side="board", speaker=sentence.speaker,
                             move=sentence.move, text=sentence.text, kind=sentence.kind,
                             **self._segment_field(sentence.segment))
-            await self._feed_sentence(sentence.text, held)
-        if held:  # the whole guarded line (or its rest) as one Timbre request
-            await self._speak(" ".join(held))
+            await self._feed_sentence(sentence.text, held, sentence.member)
+        await self._flush(held)  # the whole guarded line (or its rest) as one Timbre request
         await self._wait_played()
         self._mark_playback()
         out = self.session.finish_line(details=self._details())
@@ -508,6 +566,7 @@ class BrainProcessor(FrameProcessor):
             "commit": self.commits[-1] if self.commits else None,
             "transcripts_dropped": len(self.dropped),
             "stt_model": getattr(self._stt, "served_model", None),
+            "tts_voices": list(self._unit_voices),  # one entry per request; null: one voice
         }
 
     async def _after_line(self, out: TurnOutcome, *, interrupted: bool) -> None:
@@ -553,13 +612,13 @@ class BrainProcessor(FrameProcessor):
     async def say(self, text: str, *, speaker: str, kind: str, segment: str = "") -> None:
         """A whole line that is not a turn's move (ritual, opener, confer, verdict)."""
         self._reset_ledger()
-        held: list[str] = []
+        held = _Held()
+        member = self.session.member_for_speaker(speaker)
         for sentence in split_sentences(text):
             await self.emit("caption", side="board", speaker=speaker, text=sentence, kind=kind,
                             **self._segment_field(segment))
-            await self._feed_sentence(sentence, held)
-        if held:
-            await self._speak(" ".join(held))
+            await self._feed_sentence(sentence, held, member)
+        await self._flush(held)
         await self._wait_played()
 
     @property

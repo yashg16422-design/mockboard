@@ -79,7 +79,8 @@ class Rig:
     """Runs the offline voice pipeline for one session."""
 
     def __init__(self, session, *, stt=None, tts_ms_per_word=60, deadline_s=5.0,
-                 report_dir=None, session_max_s=None, tts_request_unit=None, wrap_up_s=None):
+                 report_dir=None, session_max_s=None, tts_request_unit=None, wrap_up_s=None,
+                 voice_for=None, hard_stop_grace_s=None):
         self.session = session
         self.ledger = PlaybackLedger()
         self.stt = stt or FakeCommitSTT(segment_delay_s=10.0)
@@ -89,7 +90,10 @@ class Rig:
         self.brain = BrainProcessor(session, stt=self.stt, ledger=self.ledger,
                                     deadline_s=deadline_s, settle_s=0.05,
                                     report_dir=report_dir, session_max_s=session_max_s,
-                                    wrap_up_s=wrap_up_s, tts_request_unit=tts_request_unit)
+                                    wrap_up_s=wrap_up_s, tts_request_unit=tts_request_unit,
+                                    voice_for=voice_for, **(
+                                        {} if hard_stop_grace_s is None
+                                        else {"hard_stop_grace_s": hard_stop_grace_s}))
         self.worker = PipelineWorker(
             Pipeline([PassThrough(), self.stt, self.brain, self.tts, self.playback,
                       self.collector]),

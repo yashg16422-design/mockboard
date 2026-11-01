@@ -43,6 +43,23 @@ Five things are ours:
    validate before setting the real model and voice.
    # UNVERIFIED: timbre-v3.0 against the real service (fake server only).
 
+7. **A voice per request** (P8, CTO_NOTES_06 section 6). The panel has five members and one
+   Timbre socket, so the voice changes between lines. Pipecat's `TTSUpdateSettingsFrame(delta=
+   TTSSettings(voice=...))` is an `UninterruptibleFrame` and goes through the same queue as
+   `TTSSpeakFrame`, so it reaches us in order, but alone it would change nothing here:
+   `request_body` sends `self.voice`, while the plugin updates its own `_settings`, and the
+   plugin refuses a timbre-v3.0 voice. `_update_settings` therefore takes a voice out of the
+   delta, checks it against the model's catalog (`check_voice`, so a wrong one costs nothing),
+   sets `self.voice`, and hands the plugin a delta without it. A voice the model does not have
+   is refused with a warning and the voice stays as it was (`voice_refused`). Each request
+   captures its voice when it is sent (`_request_voice`), so a resend by the first-byte watchdog
+   never uses a voice set after the request. The voice persists until the next update: the voice
+   loop sends one at the start of every line, so a frame that survived an interruption (it is
+   uninterruptible, the line after it is not) cannot leak into a later line.
+   # UNVERIFIED: that the real Timbre honours a different `voice` on the same socket per request
+   # (the plugin's docstring says voice changes apply to the next request without a reconnect;
+   # fake server only). It is Milestone E item 1.
+
 The language is checked against gnani-vachana 0.7.9's own list before anything is sent,
 because ruling 25 asks for a value both the SDK and Timbre accept (the SDK refuses `hi-en`,
 which Gnani's docs list); see config.py TTS_LANGUAGE. Sending `hi-en` from the board needs an
@@ -53,6 +70,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import dataclasses
 import json
 from collections.abc import AsyncGenerator
 from typing import Any, cast
@@ -68,6 +86,7 @@ from pipecat.frames.frames import (
     TTSStoppedFrame,
 )
 from pipecat.processors.frame_processor import FrameDirection
+from pipecat.services.settings import NOT_GIVEN, TTSSettings, is_given
 from pipecat_gnani import GnaniTTSService
 from pipecat_gnani import tts as _plugin_tts
 from websockets.protocol import State
@@ -133,6 +152,9 @@ class TimbreTTSService(GnaniTTSService):
             self._sync_model_name_to_metrics()
         self.model = model
         self.voice = voice
+        self.voice_changes: list[str] = []  # each voice a settings frame switched to, in order
+        self.voice_refused: list[str] = []  # voices the model does not have, never applied
+        self._request_voice = voice  # the voice of the request in flight (see `_send_request`)
         self.language = language
         self._audio_gate_open = True
         self.interruptions = 0
@@ -213,6 +235,23 @@ class TimbreTTSService(GnaniTTSService):
         self.interruptions += 1
         await super()._handle_interruption(frame, direction)
 
+    async def _update_settings(self, delta: TTSSettings) -> dict[str, Any]:
+        """Apply a settings delta, with the voice done here (module docstring, item 7)."""
+        voice = getattr(delta, "voice", NOT_GIVEN)
+        if is_given(voice) and voice is not None:
+            try:
+                check_voice(self.model, str(voice))
+            except ValueError as exc:
+                self.voice_refused.append(str(voice))
+                logger.warning(f"[timbre] voice change refused, keeping {self.voice!r}: {exc}")
+            else:
+                if str(voice) != self.voice:
+                    self.voice_changes.append(str(voice))
+                self.voice = str(voice)
+                self._settings.voice = self.voice  # metrics and the plugin's own view agree
+            delta = dataclasses.replace(delta, voice=NOT_GIVEN)  # the plugin would refuse v3.0 ids
+        return await super()._update_settings(delta)
+
     async def run_tts(self, text: str, context_id: str) -> AsyncGenerator[Frame, None]:
         if not self._request_done.is_set():
             # One request at a time (ruling 30): wait for the previous `complete`/`error`.
@@ -243,13 +282,16 @@ class TimbreTTSService(GnaniTTSService):
             self._cancel_watchdog()
             self._watchdog = self.create_task(self._first_byte_watchdog(text), "timbre-ttfb")
 
-    def request_body(self, text: str, sample_rate: int) -> dict[str, Any]:
+    def request_body(
+        self, text: str, sample_rate: int, voice: str | None = None
+    ) -> dict[str, Any]:
         """The Timbre request: the plugin's fields and audio_config (pipecat-gnani 0.5.12
         `_build_tts_payload`), plus `language` for timbre-v3.0 too (the docs list it for
-        both models; the plugin only sends it for v2.5)."""
+        both models; the plugin only sends it for v2.5). `voice` is the request's own (a resend
+        passes the voice the first send used); without it, the current voice."""
         body: dict[str, Any] = {
             "text": text,
-            "voice": self.voice,
+            "voice": voice or self.voice,
             "model": self.model,
             "audio_config": _plugin_tts._build_audio_config(self._settings, sample_rate),
         }
@@ -267,7 +309,9 @@ class TimbreTTSService(GnaniTTSService):
             yield ErrorFrame(error="Gnani TTS WebSocket not connected")
             return
         try:
-            body = self.request_body(text, _plugin_tts._resolved_tts_sample_rate(self))
+            self._request_voice = self.voice  # a resend must use this voice, whatever comes next
+            body = self.request_body(text, _plugin_tts._resolved_tts_sample_rate(self),
+                                     self._request_voice)
             self._bot_speaking = True
             self._awaiting_first_chunk = True
             self._pcm_processor.reset()
@@ -298,7 +342,7 @@ class TimbreTTSService(GnaniTTSService):
                     if self._ws is None:
                         break
                     rate = _plugin_tts._resolved_tts_sample_rate(self)
-                    payload = self.request_body(text, rate)
+                    payload = self.request_body(text, rate, self._request_voice)
                     self._bot_speaking = True
                     self._awaiting_first_chunk = True
                     self._pcm_processor.reset()
