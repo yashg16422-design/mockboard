@@ -26,9 +26,10 @@ import argparse
 import json
 import sys
 import uuid
+from collections import Counter  # access: in-flight offers
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime  # access: admission time
 from pathlib import Path
 from typing import Any
 
@@ -44,7 +45,7 @@ from pipecat.transports.smallwebrtc.request_handler import (
 )
 from pydantic import ValidationError
 
-from mockboard.access import (
+from mockboard.access import (  # access: the limits
     COOKIE,
     AccessConfig,
     Identity,
@@ -67,10 +68,13 @@ from mockboard.voice.gate import PageSessions
 from mockboard.voice.lines import PlaybackLedger
 
 HERE = Path(__file__).resolve().parent
-_STATIC = (HERE / "static").resolve()
+_STATIC = (HERE / "static").resolve()  # access: the page's own files
+_STATIC_FILES = frozenset({"app.js", "presence.js", "site.css", "tokens.css"})  # access:
+_LOOPBACK = frozenset({"localhost", "127.0.0.1", "::1"})  # access:
+MAX_OFFERS_PER_IP = 4  # access: in-flight offers per IP hash; each holds a peer connection
 MODES = {"upsc": "upsc_interview", "debate": "debate"}
 FORM_FIELDS = ("home_state", "district", "degree_subject", "hobbies", "optional_subject",
-               "interview_language")
+               "work_experience", "interview_language")
 
 
 @dataclass
@@ -112,14 +116,8 @@ class AppConfig:
         return out
 
 
-def _static_path(asset: str) -> Path | None:
-    """A file that sits directly in voice/static. No subpaths, no lab page."""
-    if not asset or asset == "lab.html" or asset.startswith(".") or "/" in asset or "\\" in asset:
-        return None
-    path = (_STATIC / asset).resolve()
-    if path.parent != _STATIC or not path.is_file():
-        return None
-    return path
+def _static_path(asset: str) -> Path | None:  # access: an allowlist, so no lab page and no subpaths
+    return _STATIC / asset if asset in _STATIC_FILES else None
 
 
 def parse_form(data: dict[str, Any] | None, *, allow_default: bool) -> CandidateForm:
@@ -286,12 +284,12 @@ def _write_session_log(cfg: AppConfig, session, vp, stt, tts, mic=None) -> None:
         logger.warning(f"[voice] could not write the session log: {e}")
 
 
-def _client_ip(request: Request) -> str:
+def _client_ip(request: Request) -> str:  # access:
     client = request.client
     return client.host if client is not None and client.host else "unknown"
 
 
-def _stamp_cookie(response: Response, token: str | None, request: Request) -> Response:
+def _stamp_cookie(response: Response, token: str | None, request: Request) -> Response:  # access:
     if not token:
         return response
     response.set_cookie(
@@ -301,10 +299,12 @@ def _stamp_cookie(response: Response, token: str | None, request: Request) -> Re
     return response
 
 
-def _identity(request: Request, book: Limits) -> tuple[Identity, str | None]:
+def _identity(request: Request, book: Limits) -> tuple[Identity, str | None]:  # access:
     """The visitor, and a cookie to set when they do not have a valid one yet."""
     cfg = book.config
-    parsed = read_token(request.cookies.get(COOKIE, ""), cfg.secret) if cfg.secret else None
+    parsed = None
+    if cfg.secret:
+        parsed = read_token(request.cookies.get(COOKIE, ""), cfg.secret, codes=cfg.codes)
     token = None
     if parsed is None:
         visitor_id, reviewer = new_visitor_id(), False
@@ -316,36 +316,73 @@ def _identity(request: Request, book: Limits) -> tuple[Identity, str | None]:
     return Identity(visitor_id, ip_hash, reviewer), token
 
 
+def _redeemed(identity: Identity) -> Identity:  # access:
+    return Identity(identity.visitor_id, identity.ip_hash, True)
+
+
 def create_app(cfg: AppConfig) -> FastAPI:
     # Localhost only, so no STUN/TURN servers: host candidates are enough (V1b adds them).
     handler = SmallWebRTCRequestHandler()
     pending_forms: dict[str, CandidateForm | None] = {}
-    pending_counts: dict[str, Any] = {}
-    book = Limits(AccessConfig.from_env())
+    pending_counts: dict[str, Any] = {}  # access: Decisions, committed once connected
+    # access: pc_id to `decision.max_answers`. Only `on_connection` writes it; the panel reads it
+    # at P7. A missing entry means capped.
+    pending_limits: dict[str, int | None] = {}
+    offer_ips: dict[str, str] = {}  # access: pc_id to IP hash, for in-flight offers
+    offers_by_ip: Counter[str] = Counter()  # access: includes offers still being answered
+    book = Limits(AccessConfig.from_env())  # access:
+
+    def release_offer(pc_id: str) -> None:  # access: this offer is no longer in flight
+        ip_hash = offer_ips.pop(pc_id, None)
+        if ip_hash is not None:
+            _release_ip(ip_hash)
+
+    def _release_ip(ip_hash: str) -> None:  # access:
+        offers_by_ip[ip_hash] -= 1
+        if offers_by_ip[ip_hash] <= 0:
+            del offers_by_ip[ip_hash]
+
+    def forget_offer(pc_id: str) -> None:  # access: it ended with no session; keep nothing
+        release_offer(pc_id)
+        pending_forms.pop(pc_id, None)
+        pending_counts.pop(pc_id, None)
+        pending_limits.pop(pc_id, None)
 
     async def start_session(connection) -> None:  # only for connections that connected
         # access: count only after the peer connection is up. A reload that never
         # connects is not in this function, so it is not counted.
-        decision = pending_counts.pop(getattr(connection, "pc_id", ""), None)
-        if decision is not None and not decision.commit():
+        pc_id = getattr(connection, "pc_id", "")
+        release_offer(pc_id)
+        decision = pending_counts.pop(pc_id, None)
+        if decision is None or not decision.commit():
+            forget_offer(pc_id)
             try:
                 await connection.disconnect()
             except Exception:
                 logger.warning("[access] could not close a connection past the limit")
             return
-        await run_session(connection, cfg, pending_forms.pop(connection.pc_id, None))
+        try:
+            await run_session(connection, cfg, pending_forms.pop(pc_id, None))
+        finally:
+            pending_limits.pop(pc_id, None)  # access: the panel has read it by now (P7)
 
-    gate = PageSessions(start_session, connect_timeout_s=cfg.settings.voice_connect_timeout_s)
+    gate = PageSessions(start_session, connect_timeout_s=cfg.settings.voice_connect_timeout_s,
+                        on_unstarted=forget_offer)  # access: on_unstarted
 
     @asynccontextmanager
     async def lifespan(_app):
         yield
         await gate.close_all()
         await handler.close()
-        book.close()
+        book.close()  # access:
 
-    app = FastAPI(lifespan=lifespan)
+    # access: no /docs or /openapi.json on a public server
+    app = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
     app.state.gate = gate  # for tests
+    app.state.pending = {  # access: for tests
+        "forms": pending_forms, "counts": pending_counts, "limits": pending_limits,
+        "offer_ips": offer_ips, "offers_by_ip": offers_by_ip,
+    }
 
     @app.get("/favicon.ico")
     async def favicon():
@@ -374,6 +411,27 @@ def create_app(cfg: AppConfig) -> FastAPI:
         decision = book.admit(identity, datetime.now(UTC))
         return _stamp_cookie(JSONResponse(decision.public()), token, request)
 
+    @app.post("/api/access")
+    async def access_code(request: Request):
+        # access: check a reviewer code before the interview, so a wrong one spends nothing
+        try:
+            body = await request.json()
+        except ValueError:
+            body = None
+        code = body.get("code") if isinstance(body, dict) else None
+        now = datetime.now(UTC)
+        identity, token = _identity(request, book)
+        result = "wrong"
+        if isinstance(code, str):
+            result = book.check_code(identity.ip_hash, code, now)
+        if result == "ok":
+            identity = _redeemed(identity)
+            token = sign_token(identity.visitor_id, True, book.config.secret,
+                               code=code.strip(), now=now)
+        decision = book.admit(identity, now)
+        answer = JSONResponse({**decision.public(), "code": result})
+        return _stamp_cookie(answer, token, request)
+
     @app.post("/api/offer")
     async def offer(request: Request):
         body = await request.json()
@@ -389,9 +447,14 @@ def create_app(cfg: AppConfig) -> FastAPI:
         now = datetime.now(UTC)
         identity, token = _identity(request, book)
         code = data.get("access_code")
-        if isinstance(code, str) and book.redeem(identity.ip_hash, code, now):
-            identity = Identity(identity.visitor_id, identity.ip_hash, True)
-            token = sign_token(identity.visitor_id, True, book.config.secret)
+        if book.config.enabled and isinstance(code, str) and code.strip():
+            result = book.check_code(identity.ip_hash, code, now)
+            if result != "ok":  # a wrong code never spends an interview
+                refused = JSONResponse({"error": "code", "reason": result}, status_code=403)
+                return _stamp_cookie(refused, token, request)
+            identity = _redeemed(identity)
+            token = sign_token(identity.visitor_id, True, book.config.secret,
+                               code=code.strip(), now=now)
         decision = book.admit(identity, now)
         if book.config.enabled and not decision.allowed:
             refused = JSONResponse(
@@ -400,6 +463,11 @@ def create_app(cfg: AppConfig) -> FastAPI:
                 status_code=429,
             )
             return _stamp_cookie(refused, token, request)
+        # access: each offer holds a peer connection for the connect timeout
+        ip_hash = identity.ip_hash
+        if book.config.enabled and offers_by_ip[ip_hash] >= MAX_OFFERS_PER_IP:
+            return _stamp_cookie(JSONResponse({"error": "busy"}, status_code=429), token, request)
+        offers_by_ip[ip_hash] += 1  # access: before the await, so parallel offers all count
         webrtc_request = SmallWebRTCRequest.from_dict(
             {k: body.get(k) for k in ("sdp", "type", "pc_id", "restart_pc")}
         )
@@ -411,12 +479,20 @@ def create_app(cfg: AppConfig) -> FastAPI:
             # a newer offer from the same page replaces it.
             pending_forms[connection.pc_id] = form
             pending_counts[connection.pc_id] = decision  # access: commit once it connects
+            pending_limits[connection.pc_id] = decision.max_answers  # access: read at P7
+            offer_ips[connection.pc_id] = ip_hash  # access:
+            claimed.append(connection.pc_id)  # access:
             await gate.offer(connection, page_id)
 
-        answer = await handler.handle_web_request(
-            request=webrtc_request, webrtc_connection_callback=on_connection
-        )
-        return _stamp_cookie(JSONResponse(answer), token, request)
+        claimed: list[str] = []  # access:
+        try:
+            answer = await handler.handle_web_request(
+                request=webrtc_request, webrtc_connection_callback=on_connection
+            )
+        finally:
+            if not claimed:  # access: no connection took the reservation
+                _release_ip(ip_hash)
+        return _stamp_cookie(JSONResponse(answer), token, request)  # access: the cookie
 
     @app.patch("/api/offer")
     async def ice_candidates(request: Request):
@@ -451,6 +527,14 @@ def _check_keys(cfg: AppConfig) -> None:
         if creds is None:
             sys.exit("No AWS credentials found. Set AWS_PROFILE (or run `aws configure`), or "
                      "run with --fake-llm.")
+
+
+def _refuse_exposure(cfg: AppConfig, access: AccessConfig) -> None:  # access:
+    """Real services on a public address, with limits off, would spend credits for anyone."""
+    if access.enabled or cfg.host in _LOOPBACK or (cfg.fake_llm and cfg.fake_speech):
+        return
+    sys.exit(f"Refusing to start: real services on {cfg.host} with access limits off. Set "
+             "ACCESS_ENABLED=true in .env, or use a loopback host.")
 
 
 def parse_args(argv: list[str] | None = None) -> AppConfig:
@@ -501,11 +585,18 @@ def main(argv: list[str] | None = None) -> None:
 
     cfg = parse_args(argv)
     _check_keys(cfg)
+    try:  # access: a bad ACCESS_ value stops startup here
+        access = AccessConfig.from_env()
+        _refuse_exposure(cfg, access)
+        app = create_app(cfg)
+    except ValueError as e:
+        sys.exit(f"Access settings: {e}")
     host, port = cfg.host, cfg.port
     shown = json.dumps(cfg.public(), ensure_ascii=False)
     print(f"\nMock Board voice app: open http://{host}:{port} in Chrome. Ctrl+C stops it.")
     print(f"Config: {shown}\nTraces and reports: {cfg.settings.trace_dir}/\n")
-    uvicorn.run(create_app(cfg), host=host, port=port)
+    # access: uvicorn's access log writes raw client addresses
+    uvicorn.run(app, host=host, port=port, access_log=not access.enabled)
 
 
 if __name__ == "__main__":

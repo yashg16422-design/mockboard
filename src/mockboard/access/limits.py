@@ -1,4 +1,4 @@
-"""Quota, reviewer codes, and the signed visitor cookie. Standard library only."""
+"""Quota, reviewer codes, and the signed visitor cookie. No FastAPI, no raw IP addresses."""
 
 from __future__ import annotations
 
@@ -6,10 +6,11 @@ import base64
 import hashlib
 import hmac
 import json
+import os
 import sqlite3
 import threading
 import uuid
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -17,6 +18,9 @@ from typing import Any
 
 COOKIE = "mb_id"
 _TRUE = {"1", "true", "yes", "on"}
+_FALSE = {"0", "false", "no", "off"}
+MIN_SECRET_CHARS = 32
+REVIEWER_TTL_S = 60 * 60 * 24 * 30  # a reviewer cookie lasts 30 days; our own number
 
 
 def _utc(now: datetime) -> datetime:
@@ -54,7 +58,10 @@ def _flag(env: Mapping[str, str], name: str, default: bool) -> bool:
     raw = env.get(name)
     if raw is None or not raw.strip():
         return default
-    return raw.strip().lower() in _TRUE
+    value = raw.strip().lower()
+    if value not in _TRUE | _FALSE:  # a typo must never mean "limits off"
+        raise ValueError(f"{name} must be true or false")
+    return value in _TRUE
 
 
 def _number(env: Mapping[str, str], name: str, default: int) -> int:
@@ -73,17 +80,54 @@ def hash_ip(ip: str, secret: str) -> str:
     return hmac.new(secret.encode(), b"ip:" + ip.encode(), hashlib.sha256).hexdigest()
 
 
-def sign_token(visitor_id: str, reviewer: bool, secret: str) -> str:
-    payload = json.dumps(
-        {"id": visitor_id, "rev": 1 if reviewer else 0}, separators=(",", ":")
-    ).encode()
+def code_tag(code: str, secret: str) -> str:
+    """A short keyed hash of a reviewer code. It links a cookie to its code, not the code itself."""
+    return hmac.new(secret.encode(), b"code:" + code.encode(), hashlib.sha256).hexdigest()[:16]
+
+
+def sign_token(
+    visitor_id: str,
+    reviewer: bool,
+    secret: str,
+    *,
+    code: str = "",
+    now: datetime | None = None,
+) -> str:
+    """A reviewer token names its redeeming code and expires, so removing the code revokes it."""
+    fields: dict[str, Any] = {"id": visitor_id, "rev": 1 if reviewer else 0}
+    if reviewer:
+        issued = _utc(now or datetime.now(UTC))
+        fields.update(code=code_tag(code, secret), exp=int(issued.timestamp()) + REVIEWER_TTL_S)
+    payload = json.dumps(fields, separators=(",", ":")).encode()
     body = _b64encode(payload)
     sig = hmac.new(secret.encode(), body.encode(), hashlib.sha256).digest()
     return body + "." + _b64encode(sig)
 
 
-def read_token(token: str, secret: str) -> tuple[str, bool] | None:
-    """(visitor id, reviewer) or None when the cookie is missing or tampered."""
+def _reviewer_holds(
+    payload: dict[str, Any], secret: str, codes: Iterable[str], now: datetime
+) -> bool:
+    expires = payload.get("exp")
+    tag = payload.get("code")
+    if not payload.get("rev") or not isinstance(expires, int) or not isinstance(tag, str):
+        return False
+    if expires <= _utc(now).timestamp():
+        return False
+    matches = [hmac.compare_digest(code_tag(code, secret), tag) for code in codes]
+    return any(matches)
+
+
+def read_token(
+    token: str,
+    secret: str,
+    *,
+    codes: Iterable[str] = (),
+    now: datetime | None = None,
+) -> tuple[str, bool] | None:
+    """(visitor id, reviewer) or None when the cookie is missing or tampered.
+
+    An expired or revoked reviewer keeps the visitor id and becomes an ordinary visitor.
+    """
     if not token or not secret or token.count(".") != 1:
         return None
     body, sig_text = token.split(".", 1)
@@ -101,13 +145,24 @@ def read_token(token: str, secret: str) -> tuple[str, bool] | None:
     visitor_id = payload.get("id") if isinstance(payload, dict) else None
     if not isinstance(visitor_id, str) or not visitor_id or len(visitor_id) > 64:
         return None
-    return visitor_id, bool(payload.get("rev"))
+    return visitor_id, _reviewer_holds(payload, secret, codes, now or datetime.now(UTC))
+
+
+def access_environment() -> dict[str, str]:
+    """`.env` under the real environment. The server avoids `load_dotenv`, so `.env` values are
+    not in `os.environ`, and a blank real variable must not hide one that is set in the file."""
+    from dotenv import dotenv_values
+
+    merged = {k: v for k, v in dotenv_values(".env", interpolate=False).items() if v is not None}
+    merged.update({k: v for k, v in os.environ.items() if v.strip()})
+    return merged
 
 
 @dataclass(frozen=True)
 class AccessConfig:
     enabled: bool = False
-    free_sessions: int = 5
+    free_sessions: int = 5  # per cookie
+    ip_sessions: int = 15  # per IP hash: many people in India share one address (WEB_FIX_01 S2)
     max_answers: int = 10
     daily_sessions: int = 30
     secret: str = ""
@@ -118,19 +173,18 @@ class AccessConfig:
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> AccessConfig:
-        import os
-
-        source = os.environ if env is None else env
+        source = access_environment() if env is None else env
         raw_codes = source.get("ACCESS_REVIEWER_CODES", "")
         codes = tuple(part.strip() for part in raw_codes.split(",") if part.strip())
         return cls(
             enabled=_flag(source, "ACCESS_ENABLED", False),
             free_sessions=_number(source, "ACCESS_FREE_SESSIONS", 5),
+            ip_sessions=_number(source, "ACCESS_IP_SESSIONS", 15),
             max_answers=_number(source, "ACCESS_MAX_ANSWERS", 10),
             daily_sessions=_number(source, "ACCESS_DAILY_SESSIONS", 30),
             secret=source.get("ACCESS_SECRET", "").strip(),
             codes=codes,
-            db_path=Path(source.get("ACCESS_DB", "runs/access.sqlite")),
+            db_path=Path(source.get("ACCESS_DB", "").strip() or "runs/access.sqlite"),
         )
 
 
@@ -150,7 +204,7 @@ class Decision:
     remaining: int | None
     reviewer: bool
     enabled: bool
-    answers_per_interview: int
+    max_answers: int | None  # ACCESS_MAX_ANSWERS for a test visitor; None is uncapped
     daily_limit: int
     daily_used: int
     daily_remaining: int | None
@@ -171,10 +225,11 @@ class Decision:
         return {
             "enabled": self.enabled,
             "reviewer": self.reviewer,
+            "reason": self.reason,
             "remaining": self.remaining,
             "limit": self.limit,
             "used": self.used,
-            "answers_per_interview": self.answers_per_interview,
+            "answers_per_interview": self.max_answers,
             "daily_limit": self.daily_limit,
             "daily_used": self.daily_used,
             "daily_remaining": self.daily_remaining,
@@ -192,6 +247,8 @@ class Limits:
             return
         if not config.secret:
             raise ValueError("ACCESS_SECRET is required when ACCESS_ENABLED is on")
+        if len(config.secret) < MIN_SECRET_CHARS:
+            raise ValueError(f"ACCESS_SECRET must be at least {MIN_SECRET_CHARS} characters")
         config.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._db = sqlite3.connect(str(config.db_path), check_same_thread=False)
         self._db.isolation_level = None  # we open transactions ourselves
@@ -223,27 +280,26 @@ class Limits:
         base = dict(
             reviewer=identity.reviewer,
             enabled=cfg.enabled,
-            answers_per_interview=cfg.max_answers,
             daily_limit=cfg.daily_sessions,
             limit=cfg.free_sessions,
         )
         if not cfg.enabled:
             return Decision(
-                allowed=True, reason=None, used=0, remaining=None,
+                allowed=True, reason=None, used=0, remaining=None, max_answers=None,
                 daily_used=0, daily_remaining=None, resets_at=None,
                 _commit=lambda: True, **base,
             )
         if identity.reviewer:
             return Decision(
-                allowed=True, reason=None, used=0, remaining=None,
+                allowed=True, reason=None, used=0, remaining=None, max_answers=None,
                 daily_used=0, daily_remaining=None, resets_at=resets,
                 _commit=lambda: True, **base,
             )
         with self._lock:
-            used, daily = self._counts(identity, now)
-        reason, allowed = _reason(used, daily, cfg)
+            used, ip_used, daily = self._counts(identity, now)
+        reason = _reason(used, ip_used, daily, cfg)
         return Decision(
-            allowed=allowed, reason=reason, used=used,
+            allowed=reason is None, reason=reason, used=used, max_answers=cfg.max_answers,
             remaining=max(0, cfg.free_sessions - used),
             daily_used=daily, daily_remaining=max(0, cfg.daily_sessions - daily),
             resets_at=resets,
@@ -251,8 +307,8 @@ class Limits:
             **base,
         )
 
-    def redeem(self, ip_hash: str, code: str, now: datetime) -> bool:
-        """True when `code` matches a reviewer code. Failures are rate limited.
+    def check_code(self, ip_hash: str, code: str, now: datetime) -> str:
+        """"ok", "wrong" or "locked". Wrong codes are rate limited.
 
         A correct code is still refused during the lockout, so guessing cannot
         sprint through the list. The code itself is never written to the database.
@@ -260,7 +316,7 @@ class Limits:
         cfg = self.config
         cleaned = code.strip()
         if not cfg.enabled or self._db is None or not cleaned or not cfg.codes:
-            return False
+            return "wrong"
         given = hashlib.sha256(cleaned.encode()).digest()
         matched = False
         for candidate in cfg.codes:
@@ -269,12 +325,15 @@ class Limits:
             matched = hmac.compare_digest(digest, given) or matched
         now = _utc(now)
         with self._lock:
-            failures = self._recent_failures(ip_hash, now)
-            if failures >= cfg.code_attempt_limit or not matched:
-                if failures < cfg.code_attempt_limit:
-                    self._record_failure(ip_hash, now)
-                return False
-        return True
+            if self._recent_failures(ip_hash, now) >= cfg.code_attempt_limit:
+                return "locked"
+            if not matched:
+                self._record_failure(ip_hash, now)
+                return "wrong"
+        return "ok"
+
+    def redeem(self, ip_hash: str, code: str, now: datetime) -> bool:
+        return self.check_code(ip_hash, code, now) == "ok"
 
     def _commit(self, identity: Identity, now: datetime) -> bool:
         if not self.config.enabled or identity.reviewer or self._db is None:
@@ -284,8 +343,7 @@ class Limits:
             assert self._db is not None
             self._db.execute("BEGIN IMMEDIATE")
             try:
-                used, daily = self._counts(identity, now)
-                if used >= self.config.free_sessions or daily >= self.config.daily_sessions:
+                if _reason(*self._counts(identity, now), self.config) is not None:
                     self._db.execute("ROLLBACK")
                     return False
                 self._db.execute(
@@ -298,18 +356,21 @@ class Limits:
                 self._db.execute("ROLLBACK")
                 raise
 
-    def _counts(self, identity: Identity, now: datetime) -> tuple[int, int]:
+    def _counts(self, identity: Identity, now: datetime) -> tuple[int, int, int]:
+        """Sessions for this cookie, for this IP hash, and for everyone today."""
         assert self._db is not None
         start, end = _day_bounds(now)
         used = self._db.execute(
-            "SELECT COUNT(*) FROM sessions WHERE visitor_id = ? OR ip_hash = ?",
-            (identity.visitor_id, identity.ip_hash),
+            "SELECT COUNT(*) FROM sessions WHERE visitor_id = ?", (identity.visitor_id,)
+        ).fetchone()[0]
+        ip_used = self._db.execute(
+            "SELECT COUNT(*) FROM sessions WHERE ip_hash = ?", (identity.ip_hash,)
         ).fetchone()[0]
         daily = self._db.execute(
             "SELECT COUNT(*) FROM sessions WHERE counted_at >= ? AND counted_at < ?",
             (start, end),
         ).fetchone()[0]
-        return int(used), int(daily)
+        return int(used), int(ip_used), int(daily)
 
     def _recent_failures(self, ip_hash: str, now: datetime) -> int:
         assert self._db is not None
@@ -331,9 +392,11 @@ class Limits:
         self._db.commit()
 
 
-def _reason(used: int, daily: int, cfg: AccessConfig) -> tuple[str | None, bool]:
+def _reason(used: int, ip_used: int, daily: int, cfg: AccessConfig) -> str | None:
     if used >= cfg.free_sessions:
-        return "free_used", False
+        return "free_used"
+    if ip_used >= cfg.ip_sessions:  # not "you have used yours": this may be a first visit
+        return "ip_full"
     if daily >= cfg.daily_sessions:
-        return "daily_full", False
-    return None, True
+        return "daily_full"
+    return None

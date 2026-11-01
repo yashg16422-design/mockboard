@@ -41,6 +41,7 @@ let reportReady = false;
 let pendingForm = null;
 let clockId = null;
 let clockStarted = 0;
+let lastAnswers = null;
 const seatNames = [null, null, null, null, null];
 
 function show(name) {
@@ -148,6 +149,8 @@ function markSpeaker(name) {
   }
   document.querySelectorAll(".seat").forEach((el, n) => {
     el.classList.toggle("is-active", n === i);
+    if (n === i) el.setAttribute("aria-current", "true");
+    else el.removeAttribute("aria-current");
   });
   $("speaking").textContent = "Speaking: " + name;
   setVoice("board");
@@ -158,12 +161,16 @@ function resetSeats() {
     seatNames[i] = null;
     const seat = document.querySelector(`[data-seat="${i + 1}"]`);
     seat.classList.remove("is-active");
+    seat.removeAttribute("aria-current");
     seat.querySelector(".seat-name").textContent = "—";
   }
 }
 
 function clearSpeaker() {
-  document.querySelectorAll(".seat").forEach((el) => el.classList.remove("is-active"));
+  document.querySelectorAll(".seat").forEach((el) => {
+    el.classList.remove("is-active");
+    el.removeAttribute("aria-current");
+  });
   $("speaking").textContent = "";
   if ($("meter").dataset.who === "board") setVoice("");
 }
@@ -175,6 +182,27 @@ function placeMembers(names) {
     seatNames[i] = String(name);
     document.querySelector(`[data-seat="${i + 1}"] .seat-name`).textContent = seatNames[i];
   });
+}
+
+function showAnswers(m) {
+  if (typeof m.used !== "number" || typeof m.limit !== "number") return; // capped sessions only
+  lastAnswers = m;
+  const count = $("answer-count");
+  count.hidden = false;
+  count.textContent = "Answer " + m.used + " of " + m.limit;
+}
+
+function resetAnswers() {
+  lastAnswers = null;
+  $("answer-count").hidden = true;
+  $("answer-count").textContent = "";
+}
+
+function onClosing() {
+  $("stop").disabled = true; // a close cannot be interrupted
+  if (lastAnswers && lastAnswers.used >= lastAnswers.limit) {
+    caption("note", "", "This interview has reached its answer limit. The board will close here. Thank you for trying Mock Board.");
+  }
 }
 
 function onMessage(raw) {
@@ -225,8 +253,11 @@ function onMessage(raw) {
     case "time_up":
       caption("note", "", "Time is up. The board is wrapping up.");
       break;
-    case "answer_cap":
-      caption("note", "", "This interview has reached its answer limit. The board will close here. Thank you for trying Mock Board.");
+    case "answers":
+      showAnswers(m);
+      break;
+    case "closing":
+      onClosing();
       break;
     case "preparing_report":
       $("status").textContent = "Preparing the report.";
@@ -239,13 +270,13 @@ function onMessage(raw) {
       break;
     case "ended":
       $("status").textContent = m.text || "The session is over.";
-      if (stopWaiter) stopWaiter();
+      sessionOver();
       break;
     case "report":
       reportReady = true;
       renderReport(m);
       $("status").textContent = "The session is over. The report is ready.";
-      if (stopWaiter) stopWaiter();
+      sessionOver();
       break;
     default:
       break;
@@ -309,7 +340,9 @@ function renderReport(m) {
     }
   }
   $("report-demo").hidden = !(cfg && (cfg.fake_llm || cfg.fake_speech));
-  $("report-path").textContent = m.path ? "Saved on this computer at " + m.path : "";
+  // A local run only: on a server this path is neither on the reader's computer nor theirs.
+  const local = access && !access.enabled;
+  $("report-path").textContent = m.path && local ? "Saved on this computer at " + m.path : "";
   show("report");
 }
 
@@ -382,17 +415,34 @@ function copyFree(limit, answers) {
     + "enter your access code.";
 }
 
-function copyDaily() {
-  let text = "Today's test interviews are all taken. They open again tomorrow. Thank you for your patience.";
-  if (access && access.resets_at) text += " The next opening is " + access.resets_at + " UTC.";
-  return text;
+function copyShared() {
+  return "Thank you for trying Mock Board. Every spoken interview uses paid speech and AI services, "
+    + "and many interviews have already come from this network, which people often share. "
+    + "If you are reviewing this project, please enter your access code.";
 }
 
-function showLimitReached(body) {
-  const answers = access && access.answers_per_interview ? access.answers_per_interview : 10;
-  const limit = (body && body.limit) || (access && access.limit) || 5;
-  let text = body && body.reason === "daily_full" ? copyDaily() : copyFree(limit, answers);
-  if (codeValue()) text += " That access code was not recognised.";
+function istTime(stamp) {
+  const when = new Date(stamp);
+  if (Number.isNaN(when.getTime())) return "";
+  return when.toLocaleString("en-IN", {
+    timeZone: "Asia/Kolkata", day: "numeric", month: "long",
+    hour: "numeric", minute: "2-digit", hour12: true,
+  }) + " IST";
+}
+
+function copyDaily() {
+  const when = access && access.resets_at ? istTime(access.resets_at) : "";
+  const opens = when ? "They open again at " + when + "." : "They open again tomorrow.";
+  return "Today's test interviews are all taken. " + opens + " Thank you for your patience.";
+}
+
+function limitCopy(reason, limit, answers) {
+  if (reason === "daily_full") return copyDaily();
+  if (reason === "ip_full") return copyShared();
+  return copyFree(limit, answers);
+}
+
+function showAccessNote(text) {
   $("access-slot").hidden = false;
   $("access-note").textContent = text;
   $("access-code-label").hidden = false;
@@ -400,17 +450,27 @@ function showLimitReached(body) {
   show(cfg && cfg.mode === "upsc" ? "form" : "room");
 }
 
+function showLimitReached(body) {
+  const answers = access && access.answers_per_interview ? access.answers_per_interview : 10;
+  const limit = (body && body.limit) || (access && access.limit) || 5;
+  showAccessNote(limitCopy(body && body.reason, limit, answers));
+}
+
+function showCodeProblem(reason) {
+  showAccessNote(reason === "locked" ? "Please try again in a few minutes."
+    : "That access code was not recognised. Nothing was used.");
+}
+
+function refusalReason() {
+  if (!access || !access.enabled || access.reviewer) return null;
+  return access.reason || null;
+}
+
 function refusedLocally() {
-  if (!access || !access.enabled || access.reviewer || codeValue()) return false;
-  if (access.daily_remaining === 0) {
-    showLimitReached({ reason: "daily_full" });
-    return true;
-  }
-  if (access.remaining === 0) {
-    showLimitReached({ reason: "free_used", limit: access.limit });
-    return true;
-  }
-  return false;
+  const reason = refusalReason();
+  if (!reason) return false;
+  showLimitReached({ reason, limit: access.limit });
+  return true;
 }
 
 function renderAccess() {
@@ -429,18 +489,15 @@ function renderAccess() {
     $("access-note").textContent = "Reviewer access. No interview limit on this browser.";
     return;
   }
-  if (access.daily_remaining === 0) {
-    $("access-note").textContent = copyDaily();
-    return;
-  }
-  if (access.remaining === 0) {
-    $("access-note").textContent = copyFree(access.limit, access.answers_per_interview);
+  if (access.reason) {
+    $("access-note").textContent = limitCopy(access.reason, access.limit, access.answers_per_interview);
     return;
   }
   $("access-note").textContent = "This is a student project. Every spoken interview uses paid speech "
     + "and AI services, so test access is limited to " + access.limit + " interviews of "
     + access.answers_per_interview + " answers each. You have " + access.remaining + " left. "
-    + access.daily_remaining + " test interviews remain for everyone today.";
+    + access.daily_remaining + " test interviews remain for everyone today. "
+    + "Repeats and clarifying questions do not count, up to 4.";
 }
 
 async function loadAccess() {
@@ -450,10 +507,33 @@ async function loadAccess() {
     access = null;
   }
   renderAccess();
+  let duration = "A session stops at " + cfg.max_minutes + " minutes.";
   if (access && access.enabled && !access.reviewer && typeof access.remaining === "number") {
-    $("duration").textContent += " Test access: " + access.remaining + " of " + access.limit
-      + " interviews left.";
+    duration += " Test access: " + access.remaining + " of " + access.limit + " interviews left.";
   }
+  $("duration").textContent = duration;
+}
+
+// A wrong code must never spend an interview, so it is checked before the room opens.
+async function redeemCode(code) {
+  try {
+    const res = await fetch("/api/access", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code }),
+    });
+    access = await res.json();
+  } catch (e) {
+    $("problem").textContent = "The access code could not be checked. Please try again.";
+    return false;
+  }
+  renderAccess();
+  if (access.code !== "ok") {
+    showCodeProblem(access.code);
+    return false;
+  }
+  $("access-code").value = "";
+  return true;
 }
 
 async function start() {
@@ -473,12 +553,18 @@ async function start() {
     bodyData = { ...pendingForm, page_id: PAGE_ID };
   }
   const code = codeValue();
-  if (code) bodyData.access_code = code;
+  if (code) {
+    connecting = true;
+    const redeemed = await redeemCode(code);
+    connecting = false;
+    if (!redeemed) return;
+  }
   if (refusedLocally()) return;
   $("start").disabled = true;
   connecting = true;
   resetSeats();
   resetClock();
+  resetAnswers();
   armClock();
   $("captions").replaceChildren();
   show("room");
@@ -500,12 +586,11 @@ async function start() {
       if (!pc || expectClose) return;
       const state = pc.connectionState;
       if (state === "connected") setNote("");
-      if (state === "disconnected") setNote("reconnect");
-      if (state === "failed") {
-        stop();
+      if (state === "disconnected") {
         setNote("reconnect");
-        $("status").textContent = "The connection dropped.";
+        loadAccess();
       }
+      if (state === "failed" || state === "closed") connectionLost();
     };
     dc = pc.createDataChannel("messages");
     dc.onopen = () => {
@@ -533,6 +618,14 @@ async function start() {
         limit.detail = body;
         throw limit;
       }
+      if (res.status === 403 && body.error === "code") {
+        const refused = new Error("code");
+        refused.codeReason = body.reason;
+        throw refused;
+      }
+      if (res.status === 429 && body.error === "busy") {
+        throw new Error("Please try again in a few minutes.");
+      }
       if (body.problems) throw new Error("The form needs a small change: " + body.problems.join("; "));
       throw new Error("The room did not open (" + res.status + ").");
     }
@@ -544,13 +637,19 @@ async function start() {
     await pc.setRemoteDescription({ sdp: answer.sdp, type: answer.type });
     $("stop").disabled = false;
     connecting = false;
-    $("form").querySelectorAll("input, select, textarea").forEach((el) => { el.disabled = true; });
+    $("form").querySelectorAll("input:not(#access-code), select, textarea").forEach((el) => {
+      el.disabled = true;
+    });
   } catch (err) {
     const denied = err && (err.name === "NotAllowedError" || err.name === "SecurityError"
       || err.name === "NotFoundError");
     stop();
     if (err && err.detail && err.detail.reason) {
       showLimitReached(err.detail);
+      return;
+    }
+    if (err && err.codeReason) {
+      showCodeProblem(err.codeReason);
       return;
     }
     if (denied) {
@@ -589,6 +688,27 @@ function stop() {
   $("status").textContent = "Stopped.";
 }
 
+// Sessions the server ends arrive here too: `ended` or `report` closes the microphone.
+function sessionOver() {
+  if (stopWaiter) {
+    stopWaiter();
+    return;
+  }
+  stop();
+  loadAccess();
+}
+
+async function connectionLost() {
+  stop();
+  setNote("reconnect");
+  $("status").textContent = "The connection dropped.";
+  await loadAccess();
+  if (refusalReason()) {
+    setNote("");
+    refusedLocally();
+  }
+}
+
 async function requestStop() {
   $("stop").disabled = true;
   if (!dc || dc.readyState !== "open") { stop(); return; }
@@ -602,6 +722,7 @@ async function requestStop() {
   });
   stopWaiter = null;
   stop();
+  loadAccess();
 }
 
 async function init() {
@@ -614,7 +735,6 @@ async function init() {
     $("fake-badge").textContent = "Demo mode";
     $("fake-badge").title = fake.join(", ");
   }
-  $("duration").textContent = "A session stops at " + cfg.max_minutes + " minutes.";
   armClock();
   await loadAccess();
   $("recording").hidden = !cfg.record_audio;
@@ -637,7 +757,8 @@ $("begin").addEventListener("click", () => {
 
 $("form").addEventListener("submit", (e) => {
   e.preventDefault();
-  pendingForm = readForm();
+  // After a session the form is locked and reads as empty; `start` keeps the form it has.
+  if (!$("form").elements.home_state.disabled) pendingForm = readForm();
   if (!pendingForm) return;
   start();
 });

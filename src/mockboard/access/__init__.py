@@ -4,9 +4,8 @@
 session, and the voice app calls it only after the peer connection is up.
 A page reload that never connects does not commit, so it is not counted.
 
-The answer cap (how many candidate messages one interview may contain) is not
-enforced here. The board has to close the interview itself. See
-`docs/tasks/WEB_REQUESTS.md`.
+The answer cap is not enforced here. `Decision.max_answers` goes into the server's
+`pending_limits`, and the board closes the interview itself (Rulings 49, 61).
 """
 
 from mockboard.access.limits import (

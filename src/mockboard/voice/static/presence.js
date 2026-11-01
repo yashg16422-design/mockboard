@@ -13,7 +13,7 @@
   if (!homeCanvas || !roomCanvas) return;
 
   const NOTES = {
-    home: "Move across the field. It reads where you are.",
+    home: "Move across the field. It follows your pointer.",
     idle: "Quiet. It is waiting for a voice.",
     board: "The board is speaking, so the field moves with it.",
     you: "It hears you.",

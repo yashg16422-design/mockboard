@@ -6,6 +6,7 @@ without it. They refuse before any WebRTC work, so a bad SDP never matters.
 
 from __future__ import annotations
 
+import base64
 import importlib.util
 import os
 from datetime import UTC, datetime, timedelta
@@ -22,10 +23,11 @@ from mockboard.access import (
     read_token,
     sign_token,
 )
+from mockboard.access.limits import REVIEWER_TTL_S
 
 NOW = datetime(2026, 11, 1, 12, 0, tzinfo=UTC)
 IP = "203.0.113.44"
-SECRET = "test-secret-not-a-real-key"
+SECRET = "test-secret-not-a-real-key-32-chars"
 CODE = "reviewer-code-nine"
 
 
@@ -58,7 +60,8 @@ def _spend(book: Limits, identity: Identity, n: int, now: datetime = NOW) -> Non
         assert decision.commit()
 
 
-def test_from_env_defaults_to_off(monkeypatch):
+def test_from_env_defaults_to_off(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
     for key in list(os.environ):
         if key.startswith("ACCESS_"):
             monkeypatch.delenv(key, raising=False)
@@ -96,12 +99,17 @@ def test_quota_reached_on_the_sixth_interview(tmp_path):
     assert blocked.commit() is False
 
 
-def test_clearing_the_cookie_does_not_reset_the_count(tmp_path):
-    book = _book(tmp_path)
+def test_a_shared_address_has_its_own_higher_limit(tmp_path):
+    book = _book(tmp_path, ip_sessions=7)
     _spend(book, _person("first"), 5)
-    fresh_cookie = book.admit(_person("second"), NOW)  # same IP hash, new id
-    assert fresh_cookie.allowed is False
-    assert fresh_cookie.reason == "free_used"
+    second = book.admit(_person("second"), NOW)  # same IP hash, new id
+    assert second.allowed and second.used == 0 and second.remaining == 5
+    _spend(book, _person("second"), 2)
+    third = book.admit(_person("third"), NOW)
+    assert third.allowed is False and third.reason == "ip_full"
+    assert third.used == 0  # a first visit is never told it used its interviews
+    assert third.commit() is False
+    assert book.admit(_person("third", ip="198.51.100.7"), NOW).allowed
 
 
 def test_a_new_network_does_not_reset_the_same_cookie(tmp_path):
@@ -195,6 +203,81 @@ def test_tampered_cookie_is_not_a_reviewer():
     assert read_token(token, "other-secret") is None
 
 
+def test_reviewer_token_expires_and_dies_with_its_code():
+    token = sign_token("owner", True, SECRET, code=CODE, now=NOW)
+    assert read_token(token, SECRET, codes=(CODE,), now=NOW) == ("owner", True)
+    assert read_token(token, SECRET, codes=("other",), now=NOW) == ("owner", False)
+    assert read_token(token, SECRET, now=NOW) == ("owner", False)
+    late = NOW + timedelta(seconds=REVIEWER_TTL_S + 1)
+    assert read_token(token, SECRET, codes=(CODE,), now=late) == ("owner", False)
+    assert CODE.encode() not in base64.urlsafe_b64decode(token.split(".")[0] + "===")
+
+
+def test_a_short_secret_refuses_to_start(tmp_path):
+    with pytest.raises(ValueError, match="32"):
+        Limits(_cfg(tmp_path, secret="x" * 31))
+
+
+@pytest.mark.parametrize("value", ["enabled", "tru", "2"])
+def test_an_unrecognised_enabled_value_refuses_to_start(value: str):
+    with pytest.raises(ValueError, match="ACCESS_ENABLED"):
+        AccessConfig.from_env({"ACCESS_ENABLED": value})
+
+
+@pytest.mark.parametrize("value", ["false", "off", "0", "no", ""])
+def test_a_clear_false_stays_off(value: str):
+    assert AccessConfig.from_env({"ACCESS_ENABLED": value}).enabled is False
+
+
+def _clear_access(monkeypatch) -> None:
+    for key in list(os.environ):
+        if key.startswith("ACCESS_"):
+            monkeypatch.delenv(key, raising=False)
+
+
+def test_dotenv_turns_limits_on(tmp_path, monkeypatch):
+    _clear_access(monkeypatch)
+    (tmp_path / ".env").write_text(
+        f"ACCESS_ENABLED=true\nACCESS_SECRET={SECRET}\nACCESS_REVIEWER_CODES=a, b\n"
+    )
+    monkeypatch.chdir(tmp_path)
+    cfg = AccessConfig.from_env()
+    assert cfg.enabled and cfg.secret == SECRET and cfg.codes == ("a", "b")
+
+
+def test_dotenv_without_a_secret_refuses_to_start(tmp_path, monkeypatch):
+    _clear_access(monkeypatch)
+    (tmp_path / ".env").write_text("ACCESS_ENABLED=true\n")
+    monkeypatch.chdir(tmp_path)
+    with pytest.raises(ValueError):
+        Limits(AccessConfig.from_env())
+
+
+def test_the_real_environment_outranks_dotenv(tmp_path, monkeypatch):
+    _clear_access(monkeypatch)
+    (tmp_path / ".env").write_text("ACCESS_ENABLED=true\n")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("ACCESS_ENABLED", "false")
+    assert AccessConfig.from_env().enabled is False
+
+
+def test_a_test_visitor_is_capped_and_others_are_not(tmp_path):
+    book = _book(tmp_path, max_answers=7)
+    assert book.admit(_person(), NOW).max_answers == 7
+    assert book.admit(_person(reviewer=True), NOW).max_answers is None
+    off = Limits(_cfg(tmp_path, enabled=False))
+    assert off.admit(_person(), NOW).max_answers is None
+
+
+def test_check_code_tells_wrong_from_locked(tmp_path):
+    book = _book(tmp_path, code_attempt_limit=2)
+    ip_hash = hash_ip(IP, SECRET)
+    assert book.check_code(ip_hash, CODE, NOW) == "ok"
+    assert book.check_code(ip_hash, "nope", NOW) == "wrong"
+    assert book.check_code(ip_hash, "nope", NOW) == "wrong"
+    assert book.check_code(ip_hash, CODE, NOW) == "locked"
+
+
 def test_wrong_codes_are_rate_limited_and_the_code_is_compared_in_full(tmp_path):
     book = _book(tmp_path, code_attempt_limit=3, code_window_s=600)
     ip_hash = hash_ip(IP, SECRET)
@@ -255,13 +338,16 @@ def test_offer_refuses_before_webrtc_and_the_page_can_read_status(tmp_path, monk
     assert fresh.status_code == 200
     assert fresh.json()["enabled"] is True
     assert fresh.json()["answers_per_interview"] == 10
+    assert fresh.json()["reason"] is None
     set_cookie = fresh.headers["set-cookie"].lower()
     assert "httponly" in set_cookie and "samesite=lax" in set_cookie
 
     client.cookies.clear()
-    reviewer = client.get("/api/access", cookies={COOKIE: sign_token("owner", True, SECRET)})
+    token_r = sign_token("owner", True, SECRET, code=CODE)
+    reviewer = client.get("/api/access", cookies={COOKIE: token_r})
     assert reviewer.json()["reviewer"] is True
     assert reviewer.json()["remaining"] is None
+    assert reviewer.json()["answers_per_interview"] is None  # no answer-limit text
 
     client.cookies.clear()
     tampered = client.get("/api/access", cookies={COOKIE: token[:-1] + "x"})

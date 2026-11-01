@@ -85,3 +85,48 @@ def test_page_keeps_the_voice_client_contract():
     assert "headphones" in PAGE
     assert 'rel="icon"' in PAGE
     assert "page_id" in PAGE
+
+
+def _js() -> str:
+    return Path("src/mockboard/voice/static/app.js").read_text(encoding="utf-8")
+
+
+def test_the_page_says_where_the_voice_goes():
+    assert "The microphone stays on this page" not in PAGE
+    assert PAGE.count("Your voice goes to our server and Gnani Prisma") == 2
+    assert "It reads where you are" not in PAGE
+
+
+def test_a_server_path_is_shown_only_on_a_local_run():
+    js = _js()
+    assert "m.path && local" in js and "!access.enabled" in js
+
+
+def test_the_answer_events_replace_the_invented_one():
+    js = _js()
+    assert "answer_cap" not in js
+    assert 'case "answers"' in js and 'case "closing"' in js
+    assert '"Answer " + m.used + " of " + m.limit' in js
+    assert 'id="answer-count"' in PAGE
+    assert "do not count, up to 4" in js
+
+
+def test_server_ended_sessions_close_the_microphone_and_refresh_access():
+    js = _js()
+    start = js.index("function sessionOver")
+    body = js[start:js.index("async function connectionLost")]
+    assert "stop();" in body and "loadAccess();" in body
+    assert js.count("sessionOver();") == 2
+
+
+def test_the_code_box_stays_usable_and_the_reset_time_is_ist():
+    js = _js()
+    assert "input:not(#access-code)" in js
+    assert 'timeZone: "Asia/Kolkata"' in js
+    assert '"/api/access"' in js and "Please try again in a few minutes." in js
+
+
+def test_contrast_and_the_active_seat():
+    tokens = Path("src/mockboard/voice/static/tokens.css").read_text(encoding="utf-8")
+    assert "--faint: #8a8a93" in tokens
+    assert "aria-current" in _js()

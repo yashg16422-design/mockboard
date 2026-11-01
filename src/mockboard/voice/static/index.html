@@ -26,7 +26,7 @@
     <div class="presence" id="home-presence" tabindex="0" aria-describedby="home-field-note">
       <canvas id="home-field" aria-hidden="true"></canvas>
       <p class="presence-label"><span>01</span> Pointer</p>
-      <p class="field-note" id="home-field-note">Move across the field. It reads where you are.</p>
+      <p class="field-note" id="home-field-note">Move across the field. It follows your pointer.</p>
     </div>
     <div class="doc">
       <div>
@@ -43,13 +43,13 @@
         <p class="kicker">How a session works</p>
         <ol class="steps" id="steps-upsc">
           <li><span class="idx">01</span><p><strong>Form</strong> Home state, studies, hobbies. No name, roll number, phone number, email or college.</p></li>
-          <li><span class="idx">02</span><p><strong>Your voice</strong> The microphone stays on this page. Gnani Prisma writes down what you say.</p></li>
+          <li><span class="idx">02</span><p><strong>Your voice</strong> Your voice goes to our server and Gnani Prisma, which writes down what you say.</p></li>
           <li><span class="idx">03</span><p><strong>The board</strong> Amazon Nova Pro chooses the next line. Gnani Timbre speaks it.</p></li>
           <li><span class="idx">04</span><p><strong>Report</strong> At the end you get a practice report. It is not a UPSC mark.</p></li>
         </ol>
         <ol class="steps" id="steps-debate" hidden>
           <li><span class="idx">01</span><p><strong>Motion</strong> The motion is fixed when the app starts. You are told which side is yours.</p></li>
-          <li><span class="idx">02</span><p><strong>Your voice</strong> The microphone stays on this page. Gnani Prisma writes down what you say.</p></li>
+          <li><span class="idx">02</span><p><strong>Your voice</strong> Your voice goes to our server and Gnani Prisma, which writes down what you say.</p></li>
           <li><span class="idx">03</span><p><strong>The other side</strong> Amazon Nova Pro answers. Gnani Timbre speaks that answer.</p></li>
           <li><span class="idx">04</span><p><strong>Report</strong> At the end you get a practice report of the exchange. It is not a score from any institution.</p></li>
         </ol>
@@ -138,6 +138,7 @@
       <span id="status">Not connected</span>
       <span id="mic-state">Microphone closed</span>
       <span id="speaking"></span>
+      <span id="answer-count" hidden></span>
     </p>
     <p class="notice" id="room-note" hidden></p>
     <div class="notice" id="recording" hidden>
