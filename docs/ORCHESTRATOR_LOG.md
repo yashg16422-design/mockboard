@@ -331,3 +331,9 @@ Orchestrator read trace voice-32a441f916 and the server log from the owner's Mac
 - Not verified: `actor.v4` and `opener.v2` have never run on Nova; alias spellings are best effort; Python 3.12 not run.
 - **Ruling 73:** reviewer should-fixes move into the next chunks, not a separate round. (1) Refusal terms cover the topic being discussed, not the whole form list (P6, agenda). (2) Test that a "Kanpur Nagar" alias bans a bare "Kanpur" (P6). (3) Two or three variants per fixed line in `panel_lines.py`, so no line repeats back to back (P5). (4) `actor.v5`: "Namaste" only at the first hand-off (P5). (5) `--max-turns` under `--panel` is ignored: say so in `--help` or reject it (P5). (6) `voice/server.py` handler close must call `session.close()` (P7).
 - Next: Milestone B (P5 + P6), then C (P7).
+
+## Round 41 — Nov 1, 2026 (Milestone B built: P5 + P6, Ruling 73 items 1-5)
+
+- Commits d7c30ac, a29982e, 54ac00a, 804d4d8, 870b560. Orchestrator re-ran: `make test` 2603 passed (exit 0), `make lint` clean, fake panel session read by hand (varied hand-offs, no repeated lines, tourism gone after the change). UPSC and debate md5 tests pass.
+- **Ruling 74:** B gets no separate review (credits, Ruling 70). Its diff is reviewed together with P7 in Milestone C's one review, since C touches the same code. Not verified: `listener.v4`, `actor.v5`, `agenda_plan.v1` have never run on Nova; the 1.5 s plan wait is a guess.
+- Next: Milestone C (P7 cutover). Item 6 of Ruling 73 (`handler.close()` must call `session.close()`) is part of it.
