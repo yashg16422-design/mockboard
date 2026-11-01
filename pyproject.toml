@@ -58,7 +58,8 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 mockboard = ["prompts/*.md", "brain/personas/*.yaml", "brain/personas/debate/*.yaml",
-             "brain/personas/panel/*.yaml", "voice/static/*.html"]
+             "brain/personas/panel/*.yaml", "voice/static/*.html", "voice/static/*.css",
+             "voice/static/*.js"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
