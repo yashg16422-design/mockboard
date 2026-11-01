@@ -1,5 +1,6 @@
 /* Shell, document pages, the interview room, and the report.
-   Motion is the voice indicator and a short caption arrival. */
+   The field on the home page follows the pointer. The same field in the
+   room follows the voice. The voice line and caption arrival stay. */
 
 *,
 *::before,
@@ -177,6 +178,51 @@ button.ghost {
   border-color: var(--line-strong);
   background: transparent;
 }
+
+.presence {
+  position: relative;
+  height: clamp(300px, 48vh, 520px);
+  margin: 0 0 var(--space-6);
+  border: 1px solid var(--line);
+  background: #050505;
+  overflow: hidden;
+}
+
+.presence-room { height: clamp(180px, 28vh, 280px); margin: 0 0 var(--space-3); }
+
+.presence canvas { display: block; width: 100%; height: 100%; }
+
+.presence-label,
+.field-note {
+  position: absolute;
+  margin: 0;
+  pointer-events: none;
+}
+
+.presence-label {
+  top: var(--space-2);
+  left: var(--space-2);
+  font-family: var(--mono);
+  font-size: var(--text-xs);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.presence-label span { color: var(--field-mint); margin-right: 8px; }
+
+.field-note {
+  left: var(--space-2);
+  right: var(--space-2);
+  bottom: var(--space-2);
+  max-width: 42ch;
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+
+.presence[data-who="board"] { border-color: rgba(125, 232, 198, 0.4); }
+
+.presence[data-who="you"] { border-color: rgba(227, 154, 106, 0.55); }
 
 .doc {
   display: grid;
@@ -514,6 +560,10 @@ fieldset.field legend {
 
   .doc { grid-template-columns: 1fr; gap: var(--space-4); }
 
+  .presence { height: clamp(240px, 42vh, 420px); }
+
+  .presence-room { height: clamp(160px, 26vh, 220px); }
+
   .seats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 
   .room-head { flex-direction: column; align-items: flex-start; }
@@ -538,6 +588,7 @@ fieldset.field legend {
   .no-print,
   .skip,
   .voice,
+  .presence,
   .actions { display: none !important; }
 
   main { width: auto; padding: 0; }

@@ -59,6 +59,7 @@ function show(name) {
     heading.tabIndex = -1;
     heading.focus();
   }
+  if (window.Presence) Presence.show(name);
 }
 
 function setNote(key) {
@@ -76,6 +77,7 @@ function setVoice(who) {
   const meter = $("meter");
   meter.dataset.who = who || "";
   if (who === "board") $("level").style.width = "";
+  if (window.Presence) Presence.who(who || "");
 }
 
 function fmt(total) {
@@ -192,6 +194,7 @@ function onMessage(raw) {
       break;
     case "caption":
       if (!clockStarted) startClock();
+      if (window.Presence) Presence.pulse();
       if (m.side === "board") {
         markSpeaker(m.speaker);
         caption("board", m.speaker, m.text, "", m.segment);
@@ -327,6 +330,7 @@ function startMeter(stream) {
       for (const v of data) peak = Math.max(peak, Math.abs(v - 128));
       const level = Math.min(100, (peak / 128) * 160);
       $("level").style.width = level + "%";
+      if (window.Presence && $("meter").dataset.who !== "board") Presence.level(level);
       if (level > 8) setVoice("you");
       else if ($("meter").dataset.who === "you") setVoice("");
     }

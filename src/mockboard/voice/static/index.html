@@ -23,6 +23,11 @@
 </header>
 <main id="content">
   <section id="view-home" data-view="home">
+    <div class="presence" id="home-presence" tabindex="0" aria-describedby="home-field-note">
+      <canvas id="home-field" aria-hidden="true"></canvas>
+      <p class="presence-label"><span>01</span> Pointer</p>
+      <p class="field-note" id="home-field-note">Move across the field. It reads where you are.</p>
+    </div>
     <div class="doc">
       <div>
         <h1 id="home-title">The interview, spoken.</h1>
@@ -123,6 +128,11 @@
       <li class="seat" data-seat="4"><span class="seat-no">04</span><span class="seat-name">—</span></li>
       <li class="seat" data-seat="5"><span class="seat-no">05</span><span class="seat-name">—</span></li>
     </ol>
+    <div class="presence presence-room" id="room-presence" tabindex="0" aria-describedby="room-field-note">
+      <canvas id="room-field" aria-hidden="true"></canvas>
+      <p class="presence-label"><span>02</span> Voice</p>
+      <p class="field-note" id="room-field-note">Quiet. It is waiting for a voice.</p>
+    </div>
     <div class="voice" id="meter" data-who="" title="voice"><span class="voice-bar" id="level"></span></div>
     <p class="meta">
       <span id="status">Not connected</span>
@@ -164,6 +174,7 @@
   <p class="models">Speech to text, Gnani Prisma. Text to speech, Gnani Timbre. The board, Amazon Nova Pro.</p>
 </footer>
 <!-- page_id is created once per page load in /static/app.js and sent with the offer (defect D). -->
+<script src="/static/presence.js"></script>
 <script src="/static/app.js"></script>
 </body>
 </html>

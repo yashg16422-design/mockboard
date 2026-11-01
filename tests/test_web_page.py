@@ -66,6 +66,19 @@ def test_limit_notice_does_not_blame_the_visitor():
         assert word not in notice
 
 
+def test_the_field_follows_the_pointer_and_the_voice():
+    assert 'id="home-field"' in PAGE
+    assert 'id="room-field"' in PAGE
+    js = Path("src/mockboard/voice/static/presence.js").read_text(encoding="utf-8")
+    assert "prefers-reduced-motion" in js
+    assert "pointermove" in js
+    app = Path("src/mockboard/voice/static/app.js").read_text(encoding="utf-8")
+    assert "Presence.show" in app
+    assert "Presence.who" in app
+    assert "Presence.level" in app
+    assert "Presence.pulse" in app
+
+
 def test_page_keeps_the_voice_client_contract():
     # tests/voice/test_voice_app.py reads these from the served page.
     assert "Mock Board" in PAGE
