@@ -12,16 +12,24 @@ the ordered model requests of the scripted debate (system, user, token cap). The
 must not move any of them. If one of these tests fails, debate behaviour changed: find out why
 before touching a hash.
 
-What this does not cover: the scripted debate makes only listener, actor and judge_debate calls
-and reaches four actor moves (opening_statement, concede_point, move_on, closing_statement).
-The user messages for rebut, cross_question and fact_challenge are not locked, and neither is
-anything a fake run cannot show, such as a spoken-line gate that only acts on model text.
+Each model request is fingerprinted by call name, tag, system text, user message, token cap,
+tool name and temperature (P0.2), so wiring debate to the UPSC listener tool or changing a
+stream's temperature goes red. Three scripts are locked:
+`examples/fake_debate.txt` (opening_statement, concede_point, move_on, closing_statement) and
+the test-only `tests/data/debate_rebut_cross.txt` (cross_question D10, rebut D7 and D4, move_on
+D6) and `tests/data/debate_fact_challenge.txt` (fact_challenge D9, cross_question D10, rebut
+D12, which needs the synthetic cards and so only runs on the fake path).
+
+What this does not cover: moves no script reaches (steelman, redirect, reassure, clarify,
+interrupt), and anything a fake run cannot show, such as a spoken-line gate that only acts on
+model text.
 """
 
 from __future__ import annotations
 
 import hashlib
 import json
+import re
 
 import pytest
 
@@ -41,6 +49,9 @@ from mockboard.modes.upsc import UPSC_MOVES
 from mockboard.obs.trace import TraceRecorder
 from mockboard.session import InterviewSession
 
+DEBATE_SCRIPT = REPO_ROOT / "examples" / "fake_debate.txt"
+DEBATE_REBUT_SCRIPT = REPO_ROOT / "tests" / "data" / "debate_rebut_cross.txt"
+DEBATE_FACT_SCRIPT = REPO_ROOT / "tests" / "data" / "debate_fact_challenge.txt"
 GOLDEN = REPO_ROOT / "tests" / "golden" / "upsc_cli_fake.txt"
 DEBATE_GOLDEN = REPO_ROOT / "tests" / "golden" / "debate_cli_fake.txt"
 DEBATE_MODE = "debate"
@@ -60,7 +71,14 @@ DEBATE_PROMPTS_SHA256 = "c03eda960fc0f9339d5b176060be7e378ef579926f54b6ff8037fcb
 # Taken at 620eac9 (no debate code changed since 7d94936), with the fake recording stream caps.
 DEBATE_REAL_PREFIX_SHA256 = "1a53bb5e6c502ffdd7be3af0a14e0ee05625dd593ba4bac6574d75422035e9a9"
 DEBATE_TEMPLATES_SHA256 = "145ed67115387a42c421a24cfb3dba75650d2bc6b9b599909ff973a82b5471d4"
-DEBATE_REQUESTS_SHA256 = "3d2df9cf476cdffb6d03f3f778dc293d6f49e5b165bf03d193650b5e9061a74e"
+# Taken at 37baedf (no debate code changed since 7d94936). The request fingerprint now also
+# holds the tool name and the temperature (P0.2); the row it replaced had the same first five
+# columns, and the old five-column hash of the same run (3d2df9cf...) was re-derived first to
+# prove the run itself had not moved.
+DEBATE_REQUESTS_SHA256 = "60b1a1a5c618a7cf5dec88002263a96feacdc3773f975233be7a5912f8f48b32"
+DEBATE_REBUT_REQUESTS_SHA256 = "d02fe2d00435f3fafd3a9bc3d501a70ecf75ad1a72b5bf7f063098ebec6d1ebf"
+DEBATE_FACT_REQUESTS_SHA256 = "191eb84a7d80035487cf49ffef0284893dd0091e796e5ab77780e90426892373"
+LISTENER_TOOL_NAME = "record_debate_analysis"
 DEBATE_REQUEST_SHAPE = [
     ("listener", "t0", 1200),
     ("actor", "t0", 210),
@@ -95,14 +113,14 @@ def run_upsc_cli(tmp_path, capsys, *extra: str) -> str:
     return normalise_paths(capsys.readouterr().out)
 
 
-def run_debate_cli(capsys, *extra: str) -> str:
+def run_debate_cli(capsys, *extra: str, script=DEBATE_SCRIPT) -> str:
     rc = cli.main(
         [
             "--mode",
             DEBATE_MODE,
             "--fake",
             "--script",
-            str(REPO_ROOT / "examples" / "fake_debate.txt"),
+            str(script),
             "--session-id",
             "golden-debate",
             "--no-trace",
@@ -195,8 +213,8 @@ def test_debate_golden_file_holds_the_recorded_board_lines():
     assert hashlib.md5(board.encode("utf-8")).hexdigest() == DEBATE_BOARD_LINES_MD5
 
 
-def scripted_debate_requests(capsys, monkeypatch) -> list[FakeCall]:
-    """Every call the scripted debate sends to the model, in order."""
+def scripted_debate_requests(capsys, monkeypatch, script=DEBATE_SCRIPT) -> list[FakeCall]:
+    """Every call a scripted debate sends to the model, in order."""
     clients = []
     real_build_llm = cli.build_llm
 
@@ -205,8 +223,15 @@ def scripted_debate_requests(capsys, monkeypatch) -> list[FakeCall]:
         return clients[-1]
 
     monkeypatch.setattr(cli, "build_llm", spy)
-    run_debate_cli(capsys)
+    run_debate_cli(capsys, script=script)
     return clients[0].calls
+
+
+def request_rows(calls: list[FakeCall]) -> list[list]:
+    return [
+        [c.name, c.tag, sha256(c.system), sha256(c.user), c.max_tokens, c.tool, c.temperature]
+        for c in calls
+    ]
 
 
 def test_debate_requests_keep_their_order_and_token_caps(capsys, monkeypatch):
@@ -214,14 +239,57 @@ def test_debate_requests_keep_their_order_and_token_caps(capsys, monkeypatch):
     assert [(c.name, c.tag, c.max_tokens) for c in calls] == DEBATE_REQUEST_SHAPE
 
 
+def test_debate_calls_use_the_debate_tools_and_the_stream_temperature(capsys, monkeypatch):
+    """Nothing else proves debate *uses* its own listener tool: fake responders ignore it. On
+    Nova a UPSC tool would silently drop `arguments`, `rebuts` and `question_to_opponent`."""
+    calls = scripted_debate_requests(capsys, monkeypatch)
+    assert {c.tool for c in calls if c.name == "listener"} == {LISTENER_TOOL_NAME}
+    assert {c.tool for c in calls if c.name == "judge_debate"} == {"record_debate_report"}
+    assert {c.temperature for c in calls if c.name == "actor"} == {0.3}
+    assert all(c.tool == "" for c in calls if c.name == "actor")
+
+
 def test_debate_request_hash_is_locked(capsys, monkeypatch):
     """Fake responders do not read prompts, so a changed user message cannot alter the golden
     transcript. This hash is what sees it."""
-    rows = [
-        [c.name, c.tag, sha256(c.system), sha256(c.user), c.max_tokens]
-        for c in scripted_debate_requests(capsys, monkeypatch)
-    ]
+    rows = request_rows(scripted_debate_requests(capsys, monkeypatch))
     assert sha256(json.dumps(rows)) == DEBATE_REQUESTS_SHA256
+
+
+def moves_spoken(out: str) -> list[tuple[str, str]]:
+    """(move, rule) of each opponent or moderator line that names one."""
+    return re.findall(r"^\[[^\]]+\] \((\w+), (D\d+)\)", out, flags=re.MULTILINE)
+
+
+def test_rebut_script_reaches_cross_question_rebut_and_move_on(capsys, monkeypatch):
+    calls = scripted_debate_requests(capsys, monkeypatch, DEBATE_REBUT_SCRIPT)
+    assert [(c.name, c.tag) for c in calls][-1] == ("judge_debate", "golden-debate")
+    reached = moves_spoken(run_debate_cli(capsys, script=DEBATE_REBUT_SCRIPT))
+    assert ("cross_question", "D10") in reached
+    assert ("rebut", "D7") in reached and ("rebut", "D4") in reached
+    assert ("move_on", "D6") in reached
+    assert len(calls) == 13
+
+
+def test_debate_rebut_request_hash_is_locked(capsys, monkeypatch):
+    rows = request_rows(scripted_debate_requests(capsys, monkeypatch, DEBATE_REBUT_SCRIPT))
+    assert sha256(json.dumps(rows)) == DEBATE_REBUT_REQUESTS_SHA256
+
+
+def test_fact_challenge_script_reaches_fact_challenge_cross_question_and_rebut(
+    capsys, monkeypatch
+):
+    calls = scripted_debate_requests(capsys, monkeypatch, DEBATE_FACT_SCRIPT)
+    reached = moves_spoken(run_debate_cli(capsys, script=DEBATE_FACT_SCRIPT))
+    assert ("fact_challenge", "D9") in reached
+    assert ("cross_question", "D10") in reached and ("rebut", "D12") in reached
+    assert len(calls) == 12
+    assert [c.name for c in calls].count("librarian") == 1
+
+
+def test_debate_fact_challenge_request_hash_is_locked(capsys, monkeypatch):
+    rows = request_rows(scripted_debate_requests(capsys, monkeypatch, DEBATE_FACT_SCRIPT))
+    assert sha256(json.dumps(rows)) == DEBATE_FACT_REQUESTS_SHA256
 
 
 def test_debate_templates_hash_is_locked():

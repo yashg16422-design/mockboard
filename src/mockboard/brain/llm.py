@@ -807,6 +807,10 @@ class FakeCall:
     user: str
     tag: str
     max_tokens: int | None = None
+    # P0.2: what the debate lock fingerprints beyond the text, so wiring a mode to the wrong
+    # tool, or changing a stream's temperature, cannot pass unseen.
+    tool: str = ""
+    temperature: float | None = None
 
 
 @dataclass(frozen=True)
@@ -875,7 +879,9 @@ class FakeLLMClient(_BaseClient):
         stats: CallStats,
     ) -> Any:
         sys_text = system_text(system)
-        self.calls.append(FakeCall(stats.name, sys_text, user, stats.tag, max_tokens))
+        self.calls.append(
+            FakeCall(stats.name, sys_text, user, stats.tag, max_tokens, tool=tool.name)
+        )
         await asyncio.sleep(0)
         payload = self._next(stats.name, sys_text, user)
         stop_reason = "tool_use"
@@ -904,7 +910,9 @@ class FakeLLMClient(_BaseClient):
     ) -> AsyncIterator[str]:
         stats = CallStats(name=name, model_id=self.model_id, tag=tag, attempts=1)
         sys_text = system_text(system)
-        self.calls.append(FakeCall(name, sys_text, user, tag, max_tokens))
+        self.calls.append(
+            FakeCall(name, sys_text, user, tag, max_tokens, temperature=temperature)
+        )
         try:
             reply = self._next(name, sys_text, user)
             words = str(reply).split()

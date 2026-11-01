@@ -178,14 +178,17 @@ def test_debate_refuses_a_form_file(capsys):
 
 
 @pytest.mark.parametrize(
-    "hobbies", ["aa, bb, cc, dd", ["aa", "bb", "cc", "dd"]], ids=["text", "list"]
+    "hobbies",
+    ["aa, bb, cc, zzqhobby", ["aa", "bb", "cc", "zzqhobby"]],
+    ids=["text", "list"],
 )
 def test_form_file_refuses_more_than_three_hobbies_without_echoing_them(tmp_path, hobbies):
     good = json.loads(SAMPLE_FORM.read_text(encoding="utf-8"))
     path = write_form(tmp_path, {**good, "hobbies": hobbies})
     with pytest.raises(SystemExit, match="hobbies") as exc:
         cli.load_form_file(path)
-    assert "dd" not in str(exc.value)
+    # A distinctive value: the message holds the temp path, so a short sentinel could match it.
+    assert "zzqhobby" not in str(exc.value)
 
 
 def test_form_file_accepts_three_hobbies_as_text(tmp_path):

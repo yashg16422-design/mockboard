@@ -19,6 +19,7 @@ from mockboard.brain.actor import (
     opener_template,
     opener_violations,
     stream_capped,
+    stream_line,
 )
 from mockboard.brain.fake_responders import opener_responder
 from mockboard.brain.llm import FakeLLMClient, LLMTransientError
@@ -90,6 +91,24 @@ async def test_word_cap_enforced_in_code():
 
     out = "".join([c async for c in stream_capped(chunks(), 30)])
     assert count_words(out) == 30
+
+
+@pytest.mark.parametrize("max_words", [1, 7, 30])
+async def test_stream_line_stops_at_exactly_max_words(deps, max_words):
+    """`stream_line` is the path to Timbre in voice mode (P0.2): the cap it passes on must be
+    the cap it was given, not one that later guards happen to trim."""
+    reply = " ".join(f"w{i}" for i in range(60))
+    llm = FakeLLMClient(script={"actor": [reply]})
+    out = "".join(
+        [
+            c
+            async for c in stream_line(
+                llm, deps.kit, "user", max_words=max_words, max_tokens=120, tag_="t0"
+            )
+        ]
+    )
+    assert count_words(out) == max_words
+    assert out.split() == [f"w{i}" for i in range(max_words)]
 
 
 def challenge_move():
