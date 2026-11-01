@@ -318,3 +318,9 @@ Orchestrator read trace voice-32a441f916 and the server log from the owner's Mac
 - Not verified: no browser has opened the page since the fixes, and the server emits neither `answers` nor `closing` until P7. Accepted builder choices: IP limit is lifetime with reason `ip_full`, reviewer cookie 30 days, `MAX_OFFERS_PER_IP = 4`, `python-dotenv` direct dependency.
 - **Ruling 72:** the narrow web review of Ruling 71 moves into the P7 milestone review, when the site is connected to the panel, to save credits. Next milestone: P0.2 + P4.
 
+## Round 39 — Nov 1, 2026 (handover to a new agent)
+
+- Owner asked for a clean stop and a handover. The P0.2 + P4 builder was stopped before committing anything; the tree was clean. PR #1 shows as merged.
+- `NEW_INSTRUCT.md` at the repo root holds the plan, rules, open choices and production checklist. The next agent starts there, on `panel-phase`. Keep the separate builder and reviewer roles.
+- Last verified state: `34dc9e6`, 1957 tests, lint clean, both md5s unchanged. Only docs changed after it.
+

@@ -1,5 +1,7 @@
 # Mock Board — project memory for Claude Code
 
+**Taking over this project? Start with `NEW_INSTRUCT.md`: it is newer than this file wherever they differ.**
+
 Mock Board is a voice-first, Hinglish UPSC Personality Test (interview) board, with a Debate mode, built for Gnani.ai's Great Indian AI Internship Challenge. Submission: **Nov 9, 2026** (contest deadline Nov 10, no extensions). Owner: Yash Pratap Singh ("Aloo"), solo builder, learning agentic AI. He wants complete plain-language explanations, commands that state which machine and folder they run from, and honest status (never fake a result).
 
 ## How work is done here (the team)
