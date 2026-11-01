@@ -204,9 +204,9 @@ button.ghost {
   padding-top: 4px;
 }
 
-.steps strong { display: block; font-weight: 500; }
+.steps strong { display: block; font-weight: 500; color: var(--fg); }
 
-.steps span { color: var(--muted); }
+.steps p { margin: 0; color: var(--muted); }
 
 .column {
   width: min(560px, 100%);
@@ -275,6 +275,8 @@ textarea { min-height: 88px; resize: vertical; }
 }
 
 .notice strong { color: var(--fg); font-weight: 500; }
+
+#view-home .notice { margin-top: var(--space-6); }
 
 .limit-notice {
   border-color: rgba(227, 154, 106, 0.45);

@@ -22,12 +22,42 @@
   </p>
 </header>
 <main id="content">
-  <p class="lede" id="subtitle">Loading…</p>
+  <section id="view-home" data-view="home">
+    <div class="doc">
+      <div>
+        <h1 id="home-title">The interview, spoken.</h1>
+        <p class="lede" id="home-lede">Mock Board is a practice interview for the UPSC Personality Test. You speak. A small panel replies, out loud, in Hinglish, Hindi or English.</p>
+        <p id="home-honest">This is a student's practice tool, built for the Gnani.ai Great Indian AI Internship Challenge. It is not run by the Union Public Service Commission, and it does not use the Commission's emblem. A report from this board is not a UPSC mark.</p>
+        <div class="actions">
+          <button type="button" class="primary" id="begin">Begin</button>
+        </div>
+        <p class="quiet" id="duration"></p>
+        <p class="problem" id="boot" role="status"></p>
+      </div>
+      <div>
+        <p class="kicker">How a session works</p>
+        <ol class="steps" id="steps-upsc">
+          <li><span class="idx">01</span><p><strong>Form</strong> Home state, studies, hobbies. No name, roll number, phone number, email or college.</p></li>
+          <li><span class="idx">02</span><p><strong>Your voice</strong> The microphone stays on this page. Gnani Prisma writes down what you say.</p></li>
+          <li><span class="idx">03</span><p><strong>The board</strong> Amazon Nova Pro chooses the next line. Gnani Timbre speaks it.</p></li>
+          <li><span class="idx">04</span><p><strong>Report</strong> At the end you get a practice report. It is not a UPSC mark.</p></li>
+        </ol>
+        <ol class="steps" id="steps-debate" hidden>
+          <li><span class="idx">01</span><p><strong>Motion</strong> The motion is fixed when the app starts. You are told which side is yours.</p></li>
+          <li><span class="idx">02</span><p><strong>Your voice</strong> The microphone stays on this page. Gnani Prisma writes down what you say.</p></li>
+          <li><span class="idx">03</span><p><strong>The other side</strong> Amazon Nova Pro answers. Gnani Timbre speaks that answer.</p></li>
+          <li><span class="idx">04</span><p><strong>Report</strong> At the end you get a practice report of the exchange. It is not a score from any institution.</p></li>
+        </ol>
+      </div>
+    </div>
+    <div class="notice" id="headphones">
+      <strong>Headphones.</strong> Without them the board can hear itself through your microphone
+      and may cut itself off. You can speak over the board to interrupt it.
+    </div>
+  </section>
 
-  <div class="notice" id="headphones">
-    <strong>Headphones.</strong> Without them the board can hear itself through your microphone
-    and may cut itself off. You can speak over the board to interrupt it.
-  </div>
+  <section id="view-work" data-view="work" hidden>
+  <p class="lede" id="subtitle"></p>
 
   <div class="notice" id="recording" hidden>
     Recording is on: your microphone audio (not the board's voice) is saved on this computer
@@ -94,6 +124,7 @@
   </section>
 
   <audio id="bot" autoplay></audio>
+  </section>
 </main>
 <footer class="site-foot">
   <p>A practice tool for the UPSC Personality Test. Not affiliated with the Union Public Service Commission.</p>
@@ -275,15 +306,32 @@ async function init() {
     $("fake-badge").textContent = "Demo mode";
     $("fake-badge").title = fake.join(", ");
   }
+  $("duration").textContent = `A session stops at ${cfg.max_minutes} minutes.`;
   $("subtitle").textContent = upsc
-    ? `A Hinglish UPSC personality test board. About ${cfg.max_minutes} minutes at most.`
-    : `Argue your side against the board. About ${cfg.max_minutes} minutes at most.`;
+    ? "The form is what the board may ask about. Nothing here is your name."
+    : "The motion is fixed for this sitting. Speak for your side, then pause.";
+  if (!upsc) {
+    $("home-title").textContent = "A motion, spoken.";
+    $("home-lede").textContent = "You argue one side. The board takes the other, out loud.";
+    $("home-honest").textContent = "This is a practice debate, not an official proceeding. The motion was chosen when the app started.";
+    $("steps-upsc").hidden = true;
+    $("steps-debate").hidden = false;
+  }
   $("form-panel").hidden = !upsc;
   $("recording").hidden = !cfg.record_audio;
   $("debate-panel").hidden = upsc;
   if (!upsc) $("motion").textContent = `#${cfg.motion_number}: ${cfg.motion} You speak ${cfg.side} it.`;
 }
 
+$("begin").onclick = () => {
+  if (!cfg) return;
+  $("view-home").hidden = true;
+  $("view-work").hidden = false;
+  $("section-kicker").textContent = cfg.mode === "upsc" ? "02 / The form" : "02 / The motion";
+  const head = cfg.mode === "upsc" ? $("form-panel").querySelector("h2") : $("start");
+  head.tabIndex = -1;
+  head.focus();
+};
 $("start").onclick = start;
 // Stop (defect F): ask the server to end the session and wait for the report before closing
 // the connection, so the judge's report still reaches the page. Closing first lost it.
@@ -301,7 +349,11 @@ async function requestStop() {
   stop();
 }
 $("stop").onclick = () => { requestStop(); };
-init().catch((e) => { $("error").textContent = `Could not load the config: ${e.message}`; });
+init().catch((e) => {
+  const msg = `Could not load the config: ${e.message}`;
+  $("error").textContent = msg;
+  $("boot").textContent = msg;
+});
 </script>
 </body>
 </html>
