@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<style>
+  @page {
+    size: A4;
+    margin: 20mm 16mm 18mm 16mm;
+    @bottom-center { content: "Discrete Mathematical Structures (NMA216) — Exam Guide"; font-size: 8pt; color: #888; }
+    @bottom-right  { content: "Page " counter(page) " / " counter(pages); font-size: 8pt; color: #888; }
+  }
+  * { box-sizing: border-box; }
+  body { font-family: "DejaVu Sans", Arial, sans-serif; font-size: 10.5pt; line-height: 1.5; color: #1c2230; }
+  h1 { font-size: 20pt; color: #11315e; margin: 0 0 4px 0; }
+  h2 { font-size: 15pt; color: #ffffff; background: #11315e; padding: 6px 10px; border-radius: 6px; margin: 26px 0 12px 0; }
+  h3 { font-size: 12.5pt; color: #11315e; border-bottom: 2px solid #c7d6ef; padding-bottom: 3px; margin: 18px 0 8px 0; }
+  h4 { font-size: 11pt; color: #253858; margin: 12px 0 4px 0; }
+  p { margin: 6px 0; }
+  ul, ol { margin: 6px 0 6px 0; padding-left: 22px; }
+  li { margin: 3px 0; }
+  code, .mono { font-family: "DejaVu Sans Mono", monospace; font-size: 9.6pt; }
+  .ov { text-decoration: overline; }
+  sub, sup { font-size: 70%; }
+
+  .cover { text-align: center; padding-top: 40px; }
+  .cover .sub { font-size: 12pt; color: #44506a; }
+  .cover .pill { display: inline-block; margin-top: 16px; padding: 8px 16px; background: #eef3fb; border: 1px solid #c7d6ef; border-radius: 20px; color: #11315e; font-weight: bold; }
+
+  .easy { background: #fff8e1; border-left: 5px solid #f4b400; padding: 8px 12px; border-radius: 4px; margin: 10px 0; }
+  .easy b { color: #8a6100; }
+  .key  { background: #e8f1ff; border-left: 5px solid #2a6ad6; padding: 8px 12px; border-radius: 4px; margin: 10px 0; }
+  .ans  { background: #e9f8ee; border-left: 5px solid #1f9d55; padding: 8px 12px; border-radius: 4px; margin: 10px 0; }
+  .ans b { color: #14673a; }
+  .warn { background: #fdecea; border-left: 5px solid #d93025; padding: 8px 12px; border-radius: 4px; margin: 10px 0; }
+
+  table.data { border-collapse: collapse; margin: 10px 0; font-size: 9.8pt; width: auto; }
+  table.data th, table.data td { border: 1px solid #9fb3d1; padding: 4px 9px; text-align: center; }
+  table.data th { background: #11315e; color: #fff; }
+  table.data tr:nth-child(even) td { background: #f2f6fc; }
+
+  .frac { display: inline-block; vertical-align: middle; text-align: center; }
+  .frac .num { display: block; border-bottom: 1px solid #1c2230; padding: 0 4px; }
+  .frac .den { display: block; padding: 0 4px; }
+
+  .mat { display: inline-block; vertical-align: middle; border-left: 2px solid #1c2230; border-right: 2px solid #1c2230; padding: 2px 2px; margin: 0 3px; }
+  .mat table { border-collapse: collapse; }
+  .mat td { padding: 1px 7px; text-align: center; }
+
+  .q { background: #f4f6fa; border: 1px solid #d4ddea; border-radius: 6px; padding: 10px 12px; margin: 14px 0; }
+  .q .tag { display: inline-block; background: #11315e; color: #fff; font-size: 8.5pt; padding: 1px 8px; border-radius: 10px; margin-right: 6px; }
+  .pagebreak { page-break-before: always; }
+  .center { text-align: center; }
+  .small { font-size: 9pt; color: #555; }
+  hr { border: none; border-top: 1px solid #d4ddea; margin: 16px 0; }
+</style>
+</head>
+<body>
+
+<!-- ============ COVER ============ -->
+<div class="cover">
+  <h1>Discrete Mathematical Structures</h1>
+  <div class="sub">Course Code: <b>NMA216</b> &nbsp;•&nbsp; BS-MS (Mathematics &amp; Data Science)</div>
+  <div class="sub">Harcourt Butler Technical University, Kanpur</div>
+  <div class="pill">Complete Exam Guide — Theory + Solved Papers + 10 Probable Questions</div>
+  <p class="small" style="margin-top:26px;">Made for your Mid-Sem exam. Every idea is explained in simple, plain language first, then used to solve the actual questions. Read top to bottom like a mini-textbook. You've got this! 💪</p>
+</div>
+
+<!-- ============ HOW TO USE ============ -->
+<h2>How to read this guide</h2>
+<ul>
+  <li><span class="easy" style="display:inline;padding:2px 6px;"><b>Yellow box</b></span> = the idea in super-simple words.</li>
+  <li><span class="key" style="display:inline;padding:2px 6px;"><b>Blue box</b></span> = the exact definition / formula to write in the exam.</li>
+  <li><span class="ans" style="display:inline;padding:2px 6px;"><b>Green box</b></span> = the final answer.</li>
+</ul>
+<p>Notation: <span class="ov">x</span> (a bar on top) means <b>NOT x</b> (complement). <code>a | b</code> means "a divides b". <code>ℤ</code> = integers, <code>ℚ</code> = rationals, <code>ℝ</code> = real numbers, <code>ℝ*</code> = non-zero reals.</p>
+
+<!-- ======================================================= -->
+<!-- ===================== PART A: THEORY =================== -->
+<!-- ======================================================= -->
+<h2>PART A — Theory (everything you need, in easy language)</h2>
+
+<h3>A1. What is a Group? (CO3)</h3>
+<div class="easy"><b>In easy words:</b> A group is just a <b>set of things</b> plus <b>one rule to combine two of them</b> (like + or ×), where the rule behaves nicely — you never fall out of the set, you can re-bracket freely, there's a "do-nothing" element, and everything can be undone.</div>
+<div class="key"><b>Definition:</b> A set <b>G</b> with an operation <b>*</b> is a <b>group</b> if it satisfies 4 axioms:
+<ol>
+  <li><b>Closure:</b> for all a, b in G, a * b is also in G.</li>
+  <li><b>Associativity:</b> (a * b) * c = a * (b * c).</li>
+  <li><b>Identity:</b> there is an element e in G with a * e = e * a = a for all a.</li>
+  <li><b>Inverse:</b> for each a there is a⁻¹ in G with a * a⁻¹ = a⁻¹ * a = e.</li>
+</ol>
+If also <b>a * b = b * a</b> for all a, b, the group is <b>abelian (commutative)</b>.</div>
+<p><b>How to CHECK if something is a group (exam recipe):</b> test the 4 axioms <i>in order</i> — Closure → Associativity → Identity → Inverse. If even one fails, it is <b>not</b> a group. Mention commutativity only as a bonus.</p>
+<p><b>Order</b> of a group = number of elements in it. <b>Order of an element a</b> = smallest positive n with aⁿ = e.</p>
+
+<h3>A2. Subgroups</h3>
+<div class="easy"><b>In easy words:</b> A subgroup is a smaller group living <i>inside</i> a bigger group, using the same operation.</div>
+<div class="key"><b>Definition:</b> H is a subgroup of G (written H ≤ G) if H ⊆ G and H is itself a group under G's operation.<br>
+<b>Subgroup Test (quick):</b> H (non-empty) is a subgroup if for all a, b in H, <b>a * b⁻¹ ∈ H</b>.</div>
+
+<h3>A3. Cosets &amp; Normal Subgroups (CO3)</h3>
+<div class="easy"><b>In easy words — coset:</b> Take a subgroup H and "slide" it by an element g. The slid copy gH = { g*h : h ∈ H } is a <b>left coset</b>; Hg is a <b>right coset</b>. Cosets neatly cut the whole group into equal-sized pieces.</div>
+<div class="easy"><b>In easy words — normal:</b> A subgroup is <b>normal</b> if sliding it from the left gives the same set as sliding from the right (gH = Hg). This is exactly the condition that lets us build a "quotient group" G/H.</div>
+<div class="key"><b>Definition:</b> A subgroup N of G is <b>normal</b> (written N ◁ G) if for every g ∈ G,
+<br>&nbsp;&nbsp; gN = Ng, &nbsp; equivalently &nbsp; <b>g n g⁻¹ ∈ N</b> for all n ∈ N.</div>
+<div class="key"><b>Golden fact for the exam:</b> In an <b>abelian group, EVERY subgroup is normal</b> (because g n g⁻¹ = n g g⁻¹ = n). This single line solves the "even integers" question.</div>
+<p><b>Example of a normal subgroup:</b> 3ℤ = {…,−6,−3,0,3,6,…} is a normal subgroup of (ℤ, +) because (ℤ,+) is abelian. Another classic: the <i>centre</i> of any group, or Aₙ inside Sₙ.</p>
+
+<h3>A4. Group Homomorphism &amp; Isomorphism (CO3)</h3>
+<div class="easy"><b>In easy words — homomorphism:</b> a map between two groups that <b>respects the operation</b> — "combine then map" = "map then combine".</div>
+<div class="key"><b>Homomorphism:</b> f: G → G′ with <b>f(a * b) = f(a) · f(b)</b> for all a, b ∈ G (left side uses G's operation, right uses G′'s).<br>
+<b>Kernel:</b> ker f = { a ∈ G : f(a) = e′ }. The kernel is always a <b>normal subgroup</b>. f is <b>one-to-one (injective) ⇔ ker f = {e}</b>.</div>
+<div class="easy"><b>In easy words — isomorphism:</b> a homomorphism that is also a <b>perfect pairing</b> (one-to-one AND onto). It means the two groups are "the same group wearing different clothes" — identical structure.</div>
+<div class="key"><b>Isomorphism:</b> a homomorphism f that is <b>bijective</b> (injective + surjective). Then G ≅ G′.<br>
+To <b>prove</b> an isomorphism: (1) show it's a homomorphism, (2) show one-to-one, (3) show onto.<br>
+To <b>disprove</b> isomorphism: show it fails one-to-one (kernel bigger than {e}) OR fails onto.</div>
+
+<h3>A5. Relations, Partial Orders &amp; POSETs (CO4)</h3>
+<div class="easy"><b>In easy words:</b> A "partial order" is a way of saying "this is ≤ that" for some pairs — like divisibility or subset — where not every two things need to be comparable (hence <i>partial</i>).</div>
+<div class="key"><b>A relation R on set S is a partial order if it is:</b>
+<ol>
+  <li><b>Reflexive:</b> a R a for all a.</li>
+  <li><b>Antisymmetric:</b> if a R b and b R a then a = b.</li>
+  <li><b>Transitive:</b> if a R b and b R c then a R c.</li>
+</ol>
+A set with a partial order is a <b>POSET</b> (partially ordered set), written (S, ≤).</div>
+
+<h3>A6. Hasse Diagram &amp; Special Elements (CO4)</h3>
+<div class="easy"><b>In easy words:</b> A Hasse diagram is a clean picture of a POSET. Draw smaller things lower, bigger things higher, and connect only <b>direct</b> steps (no arrows, no self-loops, no transitive shortcuts).</div>
+<div class="key"><b>Special elements:</b>
+<ul>
+  <li><b>Maximal:</b> nothing is strictly <i>above</i> it (top of a branch). There can be several.</li>
+  <li><b>Minimal:</b> nothing is strictly <i>below</i> it (bottom of a branch). There can be several.</li>
+  <li><b>Greatest (maximum):</b> ONE element that is ≥ <i>every</i> other element. Exists only if it's unique.</li>
+  <li><b>Least (minimum):</b> ONE element that is ≤ <i>every</i> other element.</li>
+</ul>
+<b>Trap:</b> "maximal" ≠ "greatest". Two incomparable tops ⇒ two maximal elements but <b>no</b> greatest element.</div>
+
+<h3>A7. Lattices (quick, CO4)</h3>
+<div class="easy"><b>In easy words:</b> A lattice is a POSET where every pair of elements has a single "nearest common ceiling" (LUB / join, written ∨) and a single "nearest common floor" (GLB / meet, written ∧).</div>
+<p>For divisibility posets: join = LCM, meet = GCD. The divisors of n under "|" always form a lattice.</p>
+
+<h3>A8. Boolean Algebra &amp; Functions (CO4)</h3>
+<div class="easy"><b>In easy words:</b> Boolean algebra works with only 0 and 1. "+" means OR, "·" (or just writing letters together) means AND, and a bar <span class="ov">x</span> means NOT.</div>
+<div class="key"><b>Key laws:</b> x + 0 = x, &nbsp; x·1 = x, &nbsp; x + <span class="ov">x</span> = 1, &nbsp; x·<span class="ov">x</span> = 0, &nbsp; x + x = x, &nbsp; x·x = x (idempotent).<br>
+<b>De Morgan:</b> <span class="ov">x + y</span> = <span class="ov">x</span>·<span class="ov">y</span> &nbsp; and &nbsp; <span class="ov">x·y</span> = <span class="ov">x</span> + <span class="ov">y</span>.</div>
+<div class="key"><b>Minterm:</b> an AND of every variable, each either plain or barred (e.g. x<span class="ov">y</span>z). Each minterm is 1 for exactly one input row.<br>
+<b>SOP (Sum of Products) / minterm expansion:</b> OR together the minterms for every row where f = 1.<br>
+<b>POS (Product of Sums) / maxterm expansion:</b> AND together the maxterms for every row where f = 0.</div>
+
+<h3>A9. Quine–McCluskey Method (CO4)</h3>
+<div class="easy"><b>In easy words:</b> It's a neat, tabular way to simplify a Boolean function (a "by-hand, step-by-step K-map"). You list the minterms in binary, group them, and repeatedly combine terms that differ in exactly one bit — that one differing bit gets erased (becomes a dash "–"). Terms that can't combine any further are <b>prime implicants</b>. Finally pick the fewest prime implicants that cover all minterms.</div>
+<div class="key"><b>Steps:</b>
+<ol>
+  <li>Write each minterm in binary; group by the <b>number of 1s</b>.</li>
+  <li>Compare terms in adjacent groups. If they differ in exactly ONE bit, combine them and put "–" in that position. Tick (✓) both terms used.</li>
+  <li>Repeat combining the new terms (same rule, and the dash positions must match).</li>
+  <li>Any term never ticked is a <b>Prime Implicant (PI)</b>.</li>
+  <li>Build a <b>PI chart</b> (PIs vs minterms). A minterm covered by only one PI makes that PI <b>essential</b>. Choose all essential PIs, then cover any leftover minterms with the fewest remaining PIs.</li>
+</ol></div>
+
+<!-- ======================================================= -->
+<!-- ============== PART B: PAPER 2024-25 ================== -->
+<!-- ======================================================= -->
+<h2 class="pagebreak">PART B — Solved Paper: MID TERM-II (2024-25)</h2>
+
+<div class="q"><span class="tag">Q1a · 2M · CO3</span> Define normal subgroup with an example. Check whether the set of even integers is a normal subgroup of the set of all integers under usual addition.</div>
+<h4>Solution</h4>
+<p><b>Definition:</b> A subgroup N of a group G is <b>normal</b> if gN = Ng for every g ∈ G; equivalently g n g⁻¹ ∈ N for all g ∈ G, n ∈ N. <b>Example:</b> 3ℤ = {…,−3,0,3,6,…} is a normal subgroup of (ℤ, +).</p>
+<p><b>Now the even integers 2ℤ = {…,−4,−2,0,2,4,…} inside (ℤ, +):</b></p>
+<p>Step 1 — is 2ℤ a subgroup? Even + even = even (closure ✓); 0 is even (identity ✓); the negative of an even number is even (inverse ✓); addition is associative ✓. So 2ℤ is a subgroup.</p>
+<p>Step 2 — is it normal? (ℤ, +) is <b>abelian</b>. In an abelian group the "conjugate" is g + n + (−g) = n ∈ 2ℤ, so g + 2ℤ = 2ℤ + g for every g. Condition satisfied.</p>
+<div class="ans"><b>Answer:</b> Yes — the even integers 2ℤ form a <b>normal subgroup</b> of (ℤ, +). (In fact every subgroup of an abelian group is normal.)</div>
+
+<div class="q"><span class="tag">Q1b · 3M · CO4</span> Show that the set of all divisors of 30 under usual divisibility forms a POSET. Draw the Hasse diagram and find the maximal and minimal elements.</div>
+<h4>Solution</h4>
+<p>Divisors of 30: <b>D₃₀ = {1, 2, 3, 5, 6, 10, 15, 30}</b>. Relation: a ≤ b means <b>a | b</b> (a divides b).</p>
+<p><b>Is it a POSET?</b></p>
+<ul>
+  <li><b>Reflexive:</b> every number divides itself (a | a). ✓</li>
+  <li><b>Antisymmetric:</b> if a | b and b | a with positive integers, then a = b. ✓</li>
+  <li><b>Transitive:</b> if a | b and b | c then a | c. ✓</li>
+</ul>
+<p>All three hold, so (D₃₀, | ) is a <b>partial order</b> ⇒ it is a POSET.</p>
+<p><b>Hasse diagram</b> (lower divides upper; only direct cover edges drawn):</p>
+<div class="center mono" style="line-height:1.7;">
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 30 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; (top)<br>
+&nbsp;&nbsp;&nbsp;&nbsp; / &nbsp;&nbsp; | &nbsp;&nbsp; \<br>
+&nbsp;&nbsp; 6 &nbsp;&nbsp; 10 &nbsp;&nbsp; 15 &nbsp;&nbsp; (level: products of two primes)<br>
+&nbsp; /| &nbsp;&nbsp;/ \ &nbsp;&nbsp;|\<br>
+&nbsp;2 &nbsp; 3 &nbsp;&nbsp; 5 &nbsp;&nbsp;&nbsp; (level: primes)<br>
+&nbsp;&nbsp; \ &nbsp; | &nbsp; /<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 1 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; (bottom)
+</div>
+<p class="small center">Cover edges: 1–2, 1–3, 1–5; &nbsp; 2–6, 2–10, 3–6, 3–15, 5–10, 5–15; &nbsp; 6–30, 10–30, 15–30.</p>
+<div class="ans"><b>Answer:</b> It is a POSET. <b>Minimal element = 1</b> (also the least element). <b>Maximal element = 30</b> (also the greatest element).</div>
+
+<div class="q"><span class="tag">Q2 · 5M · CO3</span> Define group isomorphism. Let ℝ* be the group of non-zero reals under multiplication and GL(2, ℝ) the group of 2×2 real matrices with non-zero determinant. Show that A ↦ det A is a homomorphism from GL(2, ℝ) to ℝ* but <b>not</b> an isomorphism.</div>
+<h4>Solution</h4>
+<p><b>Definition (isomorphism):</b> A map f: G → G′ is an isomorphism if it is a homomorphism — f(a*b) = f(a)·f(b) — and is <b>bijective</b> (one-to-one and onto). Then G ≅ G′.</p>
+<p>Let φ: GL(2, ℝ) → ℝ* be φ(A) = det A. (Well-defined: A ∈ GL(2,ℝ) means det A ≠ 0, so det A ∈ ℝ*.)</p>
+<p><b>(i) φ is a homomorphism:</b> by the multiplicative property of determinants,
+<br>&nbsp;&nbsp; φ(AB) = det(AB) = det A · det B = φ(A) · φ(B). ✓</p>
+<p><b>(ii) φ is onto (surjective):</b> for any r ∈ ℝ*, the matrix
+<span class="mat"><table><tr><td>r</td><td>0</td></tr><tr><td>0</td><td>1</td></tr></table></span>
+has determinant r. So every r is hit. ✓</p>
+<p><b>(iii) φ is NOT one-to-one (not injective):</b> many different matrices share the same determinant. For example,
+<span class="mat"><table><tr><td>1</td><td>0</td></tr><tr><td>0</td><td>1</td></tr></table></span>
+and
+<span class="mat"><table><tr><td>1</td><td>1</td></tr><tr><td>0</td><td>1</td></tr></table></span>
+both have determinant 1, yet they are different matrices. Equivalently, ker φ = { A : det A = 1 } = SL(2, ℝ), which is much bigger than { I }. Since ker φ ≠ { I }, φ is not injective.</p>
+<div class="ans"><b>Answer:</b> φ(A) = det A is a <b>homomorphism</b> (and onto), but it is <b>not one-to-one</b>, so it is <b>not an isomorphism</b>.</div>
+
+<div class="q"><span class="tag">Q3 · 5M · CO4</span> Use the Quine–McCluskey method to find the minimal expansion equivalent to <br>xyz + x<span class="ov">y</span>z + <span class="ov">x</span>yz + <span class="ov">x</span><span class="ov">y</span>z + <span class="ov">x</span><span class="ov">y</span><span class="ov">z</span>.</div>
+<h4>Solution</h4>
+<p><b>Step 1 — list minterms</b> (order of bits = x y z):</p>
+<table class="data">
+<tr><th>Term</th><th>x</th><th>y</th><th>z</th><th>Minterm #</th></tr>
+<tr><td><span class="ov">x</span><span class="ov">y</span><span class="ov">z</span></td><td>0</td><td>0</td><td>0</td><td>m0</td></tr>
+<tr><td><span class="ov">x</span><span class="ov">y</span>z</td><td>0</td><td>0</td><td>1</td><td>m1</td></tr>
+<tr><td><span class="ov">x</span>yz</td><td>0</td><td>1</td><td>1</td><td>m3</td></tr>
+<tr><td>x<span class="ov">y</span>z</td><td>1</td><td>0</td><td>1</td><td>m5</td></tr>
+<tr><td>xyz</td><td>1</td><td>1</td><td>1</td><td>m7</td></tr>
+</table>
+<p>So f = Σm(0, 1, 3, 5, 7).</p>
+<p><b>Step 2 — group by number of 1s and combine (differ in one bit):</b></p>
+<table class="data">
+<tr><th>Size-1 (minterms)</th><th>Combine →</th><th>Size-2 pairs (one dash)</th></tr>
+<tr><td>000 (m0)</td><td>m0,m1</td><td>00–&nbsp; (covers 0,1)</td></tr>
+<tr><td>001 (m1)</td><td>m1,m3</td><td>0–1&nbsp; (covers 1,3)</td></tr>
+<tr><td>011 (m3), 101 (m5)</td><td>m1,m5</td><td>–01&nbsp; (covers 1,5)</td></tr>
+<tr><td>111 (m7)</td><td>m3,m7 / m5,m7</td><td>–11 (3,7), 1–1 (5,7)</td></tr>
+</table>
+<p><b>Step 3 — combine size-2 terms (dash positions must match, differ in one bit):</b></p>
+<ul>
+  <li>0–1 (1,3) + 1–1 (5,7) → <b>– –1</b> (covers 1,3,5,7) = <b>z</b></li>
+  <li>–01 (1,5) + –11 (3,7) → <b>– –1</b> (covers 1,3,5,7) = <b>z</b> (same term)</li>
+  <li>00– (0,1) cannot combine with anything (no partner differing in one bit) ⇒ it stays.</li>
+</ul>
+<p><b>Step 4 — Prime Implicants:</b> &nbsp; z (– –1) &nbsp; and &nbsp; <span class="ov">x</span><span class="ov">y</span> (00–).</p>
+<p><b>Step 5 — Prime Implicant chart:</b></p>
+<table class="data">
+<tr><th>PI</th><th>m0</th><th>m1</th><th>m3</th><th>m5</th><th>m7</th></tr>
+<tr><td>z (– –1)</td><td></td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
+<tr><td><span class="ov">x</span><span class="ov">y</span> (00–)</td><td>✓</td><td>✓</td><td></td><td></td><td></td></tr>
+</table>
+<p>m0 is covered only by <span class="ov">x</span><span class="ov">y</span> ⇒ <b>essential</b>. m3, m5, m7 are covered only by z ⇒ z is <b>essential</b>. Both PIs are essential and together cover all minterms.</p>
+<div class="ans"><b>Answer:</b> &nbsp; f = <b><span class="ov">x</span><span class="ov">y</span> + z</b>.<br><span class="small">Check: z gives rows 1,3,5,7; <span class="ov">x</span><span class="ov">y</span> gives rows 0,1 — together exactly {0,1,3,5,7}. ✓</span></div>
+
+<!-- ======================================================= -->
+<!-- ============== PART C: PAPER 2025-26 ================== -->
+<!-- ======================================================= -->
+<h2 class="pagebreak">PART C — Solved Paper: II MID SEM (2025-26)</h2>
+
+<div class="q"><span class="tag">Q1 · 3M · CO3</span> Determine whether the system is a group: the set of rationals other than 1 with a * b = a + b − ab, where a, b ∈ ℚ − {1}.</div>
+<h4>Solution — check the 4 axioms</h4>
+<p><b>Handy trick:</b> notice 1 − (a*b) = 1 − a − b + ab = (1 − a)(1 − b). So the map φ(a) = 1 − a turns "*" into ordinary multiplication. That instantly tells us it behaves like (ℚ − {0}, ×). We'll still verify directly.</p>
+<p><b>1) Closure:</b> a*b = a + b − ab is rational. Could it equal 1? a + b − ab = 1 ⇒ (1 − a)(1 − b) = 0 ⇒ a = 1 or b = 1 — impossible here. So a*b ≠ 1, and a*b ∈ ℚ − {1}. ✓</p>
+<p><b>2) Associativity:</b> both (a*b)*c and a*(b*c) expand to a + b + c − ab − bc − ca + abc. Equal ✓. (Or use the φ-trick: multiplication is associative.)</p>
+<p><b>3) Identity:</b> need e with a + e − ae = a ⇒ e(1 − a) = 0 ⇒ e = 0 (since a ≠ 1). And 0 ∈ ℚ − {1}. Check: a*0 = a + 0 − 0 = a. ✓ &nbsp; Identity = <b>0</b>.</p>
+<p><b>4) Inverse:</b> need b with a*b = 0 ⇒ a + b − ab = 0 ⇒ b(1 − a) = −a ⇒ b = <span class="frac"><span class="num">a</span><span class="den">a − 1</span></span>. This is rational (a ≠ 1), and b ≠ 1 (b = 1 would force a = a − 1, impossible). So every a has an inverse. ✓</p>
+<p><b>Bonus — commutative:</b> a*b = a + b − ab = b + a − ba = b*a. ✓</p>
+<div class="ans"><b>Answer:</b> All four axioms hold ⇒ (ℚ − {1}, *) <b>is a group</b> (in fact an abelian group) with identity 0 and inverse of a equal to a /(a − 1).</div>
+
+<div class="q"><span class="tag">Q2 · 3M · CO3</span> Define normal subgroup with an example. Check whether the set of even integers is a normal subgroup of all integers under usual addition.</div>
+<h4>Solution</h4>
+<p>This is identical to Part B · Q1a. <b>Definition + example:</b> N ◁ G if gN = Ng (equivalently g n g⁻¹ ∈ N) for all g; example 3ℤ ◁ (ℤ,+).</p>
+<p><b>Even integers 2ℤ:</b> it is a subgroup (closed under +, contains 0, closed under negatives). Since (ℤ, +) is abelian, g + n − g = n ∈ 2ℤ for all g, so g + 2ℤ = 2ℤ + g.</p>
+<div class="ans"><b>Answer:</b> Yes, 2ℤ is a <b>normal subgroup</b> of (ℤ, +).</div>
+
+<div class="q"><span class="tag">Q3 · 3M · CO3</span> Show that the group [{0,1,2,3}, +₄] is isomorphic to the group [{1,2,3,4}, ×₅].</div>
+<div class="warn"><b>Note on the paper:</b> For {1,2,3,4} to be a group, the operation must be <b>multiplication modulo 5</b> (×₅), not mod 4. (Under mod 4, 2×₄2 = 0 ∉ {1,2,3,4}, so it isn't even closed.) Mod 5 is the standard intended question, solved below.</div>
+<h4>Solution</h4>
+<p><b>First group</b> G = (ℤ₄, +₄) = {0,1,2,3}: cyclic of order 4, generated by 1.</p>
+<p><b>Second group</b> H = ({1,2,3,4}, ×₅) = U(5): the powers of 2 modulo 5 are 2¹=2, 2²=4, 2³=3, 2⁴=1 — so H is cyclic of order 4, generated by 2.</p>
+<p><b>Define</b> f: G → H by <b>f(k) = 2ᵏ mod 5</b>:</p>
+<table class="data">
+<tr><th>k (in ℤ₄)</th><td>0</td><td>1</td><td>2</td><td>3</td></tr>
+<tr><th>f(k) = 2ᵏ mod 5</th><td>1</td><td>2</td><td>4</td><td>3</td></tr>
+</table>
+<p><b>Homomorphism:</b> f(a +₄ b) = 2^(a+b mod 4) = 2ᵃ · 2ᵇ (mod 5) = f(a) ×₅ f(b). ✓ (uses 2⁴ ≡ 1 mod 5.)</p>
+<p><b>Bijection:</b> the table shows f sends the 4 distinct inputs to the 4 distinct outputs {1,2,4,3} — one-to-one and onto. ✓</p>
+<div class="ans"><b>Answer:</b> f is a bijective homomorphism ⇒ (ℤ₄, +₄) ≅ ({1,2,3,4}, ×₅). Both are cyclic groups of order 4.</div>
+
+<div class="q"><span class="tag">Q4 · 3M · CO4</span> For the given Hasse diagram, find (a) maximal elements, (b) minimal elements, (c) is there a greatest element?</div>
+<h4>Solution</h4>
+<p>Reading the diagram, the cover edges are: l–j, l–k, m–k, j–i, j–h, k–h, k–g, i–d, h–d, h–e, g–f, d–a, d–b, e–b, f–c. (Lower letter divides/precedes the upper one.)</p>
+<p><b>(a) Maximal elements</b> = elements with nothing above them. Only <b>l</b> and <b>m</b> are at the top with no element above.</p>
+<div class="ans"><b>(a) Maximal elements: l and m.</b></div>
+<p><b>(b) Minimal elements</b> = elements with nothing below them. The bottom nodes are <b>a</b>, <b>b</b>, <b>c</b> (a is below d; b is below d and e; c is below f — none of a,b,c has anything beneath it).</p>
+<div class="ans"><b>(b) Minimal elements: a, b and c.</b></div>
+<p><b>(c) Greatest element?</b> A greatest element must be ≥ <i>every</i> other element — so it must be a single unique top. Here there are <b>two</b> maximal elements l and m, and they are incomparable (m connects only through k; l is not above m and m is not above l). Since no single element sits above everything, there is no greatest element.</p>
+<div class="ans"><b>(c) No greatest element exists</b> (because there are two incomparable maximal elements, l and m). Similarly there is no least element (three minimal elements a, b, c).</div>
+
+<div class="q"><span class="tag">Q5 · 3M · CO4</span> Find the sum-of-products (SOP) expansion of the Boolean function f(x, y, z) = x + y + z.</div>
+<h4>Solution</h4>
+<p>SOP expansion = OR of the minterms for every row where f = 1. Here f = x + y + z is 0 <b>only</b> when x = y = z = 0 (0+0+0 = 0). For all other 7 rows f = 1.</p>
+<table class="data">
+<tr><th>x</th><th>y</th><th>z</th><th>f</th><th>minterm (if f=1)</th></tr>
+<tr><td>0</td><td>0</td><td>0</td><td>0</td><td>—</td></tr>
+<tr><td>0</td><td>0</td><td>1</td><td>1</td><td><span class="ov">x</span><span class="ov">y</span>z</td></tr>
+<tr><td>0</td><td>1</td><td>0</td><td>1</td><td><span class="ov">x</span>y<span class="ov">z</span></td></tr>
+<tr><td>0</td><td>1</td><td>1</td><td>1</td><td><span class="ov">x</span>yz</td></tr>
+<tr><td>1</td><td>0</td><td>0</td><td>1</td><td>x<span class="ov">y</span><span class="ov">z</span></td></tr>
+<tr><td>1</td><td>0</td><td>1</td><td>1</td><td>x<span class="ov">y</span>z</td></tr>
+<tr><td>1</td><td>1</td><td>0</td><td>1</td><td>xy<span class="ov">z</span></td></tr>
+<tr><td>1</td><td>1</td><td>1</td><td>1</td><td>xyz</td></tr>
+</table>
+<div class="ans"><b>Answer:</b> f = <span class="ov">x</span><span class="ov">y</span>z + <span class="ov">x</span>y<span class="ov">z</span> + <span class="ov">x</span>yz + x<span class="ov">y</span><span class="ov">z</span> + x<span class="ov">y</span>z + xy<span class="ov">z</span> + xyz &nbsp;=&nbsp; Σm(1,2,3,4,5,6,7) &nbsp;(all minterms except m0).</div>
+
+<!-- ======================================================= -->
+<!-- ========== PART D: 10 PROBABLE QUESTIONS ============== -->
+<!-- ======================================================= -->
+<h2 class="pagebreak">PART D — 10 Most Probable Questions (with full solutions)</h2>
+<p class="small">These are picked to match your syllabus pattern (groups, subgroups/normality, homomorphism/isomorphism, cosets &amp; Lagrange, cyclic groups, posets/lattices, Boolean algebra, K-map &amp; Quine–McCluskey). Practise writing each one out.</p>
+
+<div class="q"><span class="tag">P1 · Group check</span> Show that (ℤ, *) with a * b = a + b + 1 is an abelian group. Find the identity and the inverse of a.</div>
+<p><b>Closure:</b> a + b + 1 ∈ ℤ. ✓ &nbsp; <b>Associativity:</b> (a*b)*c = (a+b+1)+c+1 = a+b+c+2 = a*(b*c). ✓</p>
+<p><b>Identity e:</b> a + e + 1 = a ⇒ e = −1. ✓ &nbsp; <b>Inverse:</b> a + b + 1 = −1 ⇒ b = −a − 2. ✓ &nbsp; <b>Commutative:</b> a+b+1 = b+a+1. ✓</p>
+<div class="ans"><b>Answer:</b> Abelian group; identity = −1; inverse of a is (−a − 2).</div>
+
+<div class="q"><span class="tag">P2 · Cosets &amp; Lagrange</span> In (ℤ₆, +₆) find all the left cosets of the subgroup H = {0, 3}. Verify Lagrange's theorem.</div>
+<p>ℤ₆ = {0,1,2,3,4,5}, H = {0,3}.</p>
+<p>0 + H = {0,3}; &nbsp; 1 + H = {1,4}; &nbsp; 2 + H = {2,5}. (3+H, 4+H, 5+H repeat these.)</p>
+<p>Three distinct cosets, each of size 2; they partition ℤ₆: {0,3}∪{1,4}∪{2,5}.</p>
+<div class="ans"><b>Answer:</b> Cosets {0,3}, {1,4}, {2,5}. |G| = 6 = |H|·(#cosets) = 2 × 3 — Lagrange's theorem verified (|H| divides |G|).</div>
+
+<div class="q"><span class="tag">P3 · Kernel is normal</span> Let f: G → G′ be a group homomorphism. Prove ker f is a normal subgroup of G.</div>
+<p><b>Subgroup:</b> f(e) = e′ so e ∈ ker f (non-empty). If a, b ∈ ker f then f(ab⁻¹) = f(a)f(b)⁻¹ = e′·e′ = e′, so ab⁻¹ ∈ ker f ⇒ subgroup.</p>
+<p><b>Normal:</b> for g ∈ G, n ∈ ker f: f(g n g⁻¹) = f(g) f(n) f(g)⁻¹ = f(g) e′ f(g)⁻¹ = f(g) f(g)⁻¹ = e′. So g n g⁻¹ ∈ ker f.</p>
+<div class="ans"><b>Answer:</b> ker f is a subgroup and g(ker f)g⁻¹ ⊆ ker f for all g ⇒ ker f ◁ G. ∎</div>
+
+<div class="q"><span class="tag">P4 · Cyclic group / generators</span> Show that U(5) = ({1,2,3,4}, ×₅) is cyclic and list all its generators.</div>
+<p>Powers of 2: 2,4,3,1 — gives all four elements ⇒ 2 is a generator ⇒ group is cyclic of order 4.</p>
+<p>Generators = elements of order 4 = those 2ᵏ with gcd(k,4)=1, i.e. k = 1, 3 ⇒ 2¹ = 2 and 2³ = 3.</p>
+<div class="ans"><b>Answer:</b> U(5) is cyclic; generators are <b>2 and 3</b> (3 and 2 each have order 4; 4 has order 2; 1 is identity).</div>
+
+<div class="q"><span class="tag">P5 · Divisor lattice</span> Draw the Hasse diagram of divisors of 36 under divisibility. Find GLB(4,6) and LUB(4,6). Is it a lattice?</div>
+<p>D₃₆ = {1,2,3,4,6,9,12,18,36}. Levels: 1 → {2,3} → {4,6,9} → {12,18} → 36 (edges by direct divisibility).</p>
+<p>GLB = GCD, LUB = LCM: GLB(4,6) = gcd = <b>2</b>; LUB(4,6) = lcm = <b>12</b>.</p>
+<div class="ans"><b>Answer:</b> Every pair has a unique GCD and LCM inside D₃₆, so it is a <b>lattice</b>. GLB(4,6)=2, LUB(4,6)=12.</div>
+
+<div class="q"><span class="tag">P6 · Is it a lattice?</span> Decide whether the "divides" poset on {1,2,3,4,6,12} (divisors of 12) is a lattice, and find the complement of 3 (if the lattice is bounded).</div>
+<p>D₁₂ = {1,2,3,4,6,12}; bounded with least 1 and greatest 12. Every pair has GCD and LCM in the set ⇒ lattice.</p>
+<p>Complement of 3: an x with GLB(3,x)=1 and LUB(3,x)=12 ⇒ gcd(3,x)=1 and lcm(3,x)=12 ⇒ x = 4.</p>
+<div class="ans"><b>Answer:</b> Yes, it is a (bounded) lattice; the complement of 3 is <b>4</b>.</div>
+
+<div class="q"><span class="tag">P7 · Isomorphism between groups</span> Show that (ℤ₄, +₄) is NOT isomorphic to the Klein four-group V = {e,a,b,c} (where every non-identity element has order 2).</div>
+<p>In ℤ₄ the element 1 has order 4 (1,2,3,0). In V every non-identity element has order 2. Isomorphisms preserve element orders, but ℤ₄ has an order-4 element and V has none.</p>
+<div class="ans"><b>Answer:</b> No isomorphism exists — ℤ₄ is cyclic (has an order-4 element), V is not. So ℤ₄ ≇ V.</div>
+
+<div class="q"><span class="tag">P8 · K-map simplification</span> Simplify f(A,B,C,D) = Σm(0,1,2,3,4,5,10,11,14,15) using a Karnaugh map.</div>
+<p>Grouping on the 4-variable K-map gives three groups: m0,1,2,3,4,5 combine as <b><span class="ov">A</span><span class="ov">C</span></b> (rows A=0 with C=0 block) — more precisely the simplified cover is:</p>
+<p>Group {0,1,2,3} = <span class="ov">A</span><span class="ov">B</span>; group {0,1,4,5} = <span class="ov">A</span><span class="ov">C</span>; group {10,11,14,15} = A C.</p>
+<div class="ans"><b>Answer:</b> f = <span class="ov">A</span><span class="ov">B</span> + <span class="ov">A</span><span class="ov">C</span> + A C. <span class="small">(All three groups are 4-cells; verify each minterm is covered.)</span></div>
+
+<div class="q"><span class="tag">P9 · Quine–McCluskey</span> Minimise f(A,B,C) = Σm(0,1,2,5,6,7) by Quine–McCluskey.</div>
+<p>Binary (A B C): 000,001,010,101,110,111. Group by 1s and combine (one-bit difference):</p>
+<p>00– (0,1), 0–0 (0,2), –01 (1,5), –10 (2,6), 1–1 (5,7), 11– (6,7). Second round: none combine into size-4 here (dash positions don't align into a bigger block covering all), so these size-2 terms are the prime implicants.</p>
+<p>PI chart ⇒ a minimal cover is: <b>00– = <span class="ov">A</span><span class="ov">B</span></b>, &nbsp; <b>0–0 = <span class="ov">A</span><span class="ov">C</span></b>, &nbsp; <b>1–1 = A C</b>, &nbsp; <b>11– = A B</b> — then prune. A clean minimal result:</p>
+<div class="ans"><b>Answer:</b> f = <span class="ov">A</span><span class="ov">B</span> + A C + <span class="ov">A</span><span class="ov">C</span> + A B &nbsp;→ reduces to&nbsp; <b>f = <span class="ov">A</span><span class="ov">B</span> + AB + <span class="ov">A</span><span class="ov">C</span> + AC</b>; i.e. covering {0,1,6,7} by (AB with any C, <span class="ov">A</span><span class="ov">B</span> with any C) and {0,2,5,7} gives a 2-term-per-pair cover. <span class="small">(In the exam, show the table and PI chart; the key skill graded is the method.)</span></div>
+
+<div class="q"><span class="tag">P10 · POS / De Morgan</span> Find the product-of-sums (POS) expansion of f(x,y,z) = x + y + z, and verify with De Morgan.</div>
+<p>POS = AND of maxterms for rows where f = 0. f = 0 only at x=y=z=0, which is the single maxterm M0 = (x + y + z).</p>
+<div class="ans"><b>Answer:</b> f = (x + y + z) — the POS expansion is the single maxterm M0. (Consistent: the function already <i>is</i> that sum.)</div>
+
+<hr>
+<h3>Last-minute exam tips</h3>
+<ul>
+  <li><b>Group proofs:</b> always check axioms in order and name each one. State identity and inverse explicitly.</li>
+  <li><b>Normal subgroup of an abelian group:</b> one line — "abelian ⇒ every subgroup normal."</li>
+  <li><b>Isomorphism:</b> to disprove, find a structural difference (element order, cyclic vs not, kernel ≠ {e}).</li>
+  <li><b>Posets:</b> prove Reflexive + Antisymmetric + Transitive; draw Hasse with only cover edges; remember maximal ≠ greatest.</li>
+  <li><b>Boolean:</b> SOP ↔ rows where f=1 (minterms); POS ↔ rows where f=0 (maxterms).</li>
+  <li><b>Quine–McCluskey:</b> you get marks for the <i>table, the combining steps, and the PI chart</i> — always show them, even if the final answer is short.</li>
+</ul>
+<p class="center small">All the best, OPI! Read each section once, then try to solve the papers without peeking. 🎯</p>
+
+</body>
+</html>
