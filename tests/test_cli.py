@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 
@@ -12,6 +13,7 @@ from mockboard.config import REPO_ROOT
 from mockboard.session import split_segments
 
 SCRIPT = REPO_ROOT / "examples" / "fake_session.txt"
+ANSWERS = REPO_ROOT / "examples" / "fake_panel.txt"
 
 
 def test_split_segments():
@@ -173,3 +175,35 @@ def test_debate_refuses_a_form_file(capsys):
     with pytest.raises(SystemExit):
         cli.parse_args(["--mode", "debate", "--form-file", str(SAMPLE_FORM)])
     assert "--form-file" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    "hobbies", ["aa, bb, cc, dd", ["aa", "bb", "cc", "dd"]], ids=["text", "list"]
+)
+def test_form_file_refuses_more_than_three_hobbies_without_echoing_them(tmp_path, hobbies):
+    good = json.loads(SAMPLE_FORM.read_text(encoding="utf-8"))
+    path = write_form(tmp_path, {**good, "hobbies": hobbies})
+    with pytest.raises(SystemExit, match="hobbies") as exc:
+        cli.load_form_file(path)
+    assert "dd" not in str(exc.value)
+
+
+def test_form_file_accepts_three_hobbies_as_text(tmp_path):
+    good = json.loads(SAMPLE_FORM.read_text(encoding="utf-8"))
+    form = cli.load_form_file(write_form(tmp_path, {**good, "hobbies": "aa, bb, cc"}))
+    assert form.hobbies == ["aa", "bb", "cc"]
+
+
+def test_typed_forms_still_keep_the_first_three_hobbies():
+    assert cli._form_values({"hobbies": "aa, bb, cc, dd"})["hobbies"] == ["aa", "bb", "cc"]
+
+
+def test_answers_only_example_gives_the_same_board_lines_as_the_form_script(capsys):
+    assert "Uttar Pradesh" not in ANSWERS.read_text(encoding="utf-8").splitlines()
+    rc = cli.main(
+        ["--fake", "--form-file", str(SAMPLE_FORM), "--script", str(ANSWERS), "--no-trace"]
+    )
+    out = capsys.readouterr().out
+    board = "".join(line + "\n" for line in out.splitlines() if line.startswith("["))
+    assert rc == 0
+    assert hashlib.md5(board.encode("utf-8")).hexdigest() == "826ef550999cc34d9018806dce1b665e"

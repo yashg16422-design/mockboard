@@ -120,8 +120,11 @@ def load_form_file(path: str | Path) -> CandidateForm:
         raise SystemExit(f"form file {path} is not valid JSON: {exc}") from exc
     if not isinstance(doc, dict):
         raise SystemExit(f"form file {path} must hold one JSON object")
+    values = _form_values(doc)
+    if isinstance(doc.get("hobbies"), str):  # no silent cut here: the schema refuses a fourth
+        values["hobbies"] = _split_hobbies(doc["hobbies"])
     try:
-        return CandidateForm.model_validate(_form_values(doc))
+        return CandidateForm.model_validate(values)
     except ValidationError as exc:
         problems = "; ".join(
             f"{'.'.join(str(part) for part in e['loc'])}: {e['msg']}" for e in exc.errors()
@@ -129,10 +132,14 @@ def load_form_file(path: str | Path) -> CandidateForm:
         raise SystemExit(f"form file {path} was refused: {problems}") from exc
 
 
+def _split_hobbies(text: str) -> list[str]:
+    return [h.strip() for h in text.split(",") if h.strip()]
+
+
 def _form_values(raw: dict[str, object]) -> dict[str, object]:
     out = dict(raw)
     if isinstance(out.get("hobbies"), str):
-        out["hobbies"] = [h.strip() for h in str(out["hobbies"]).split(",") if h.strip()][:3]
+        out["hobbies"] = _split_hobbies(str(out["hobbies"]))[:3]
     if "interview_language" in out:
         out["interview_language"] = str(out["interview_language"]).lower()
     return out
@@ -336,7 +343,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument(
         "--form-file",
         help="application form as JSON (see examples/forms/sample_form.json); UPSC mode only. "
-        "With it, --script holds only the answers, no form lines",
+        "With it, --script holds only the answers, no form lines "
+        "(see examples/fake_panel.txt)",
     )
     p.add_argument("--language", choices=["en", "hi"], help="report language (default: settings)")
     p.add_argument("--max-turns", type=int, default=9, help="hard cap on candidate turns")
