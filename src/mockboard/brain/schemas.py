@@ -716,6 +716,41 @@ class ComposureMoment(_Model):
     note: str
 
 
+class MemberReport(_Model):
+    """One panel member's block in the session report (P10, WEB_REQUESTS.md). Built by code."""
+
+    name: str
+    segment: str = ""
+    notes: str = ""
+    questions: list[str] = Field(default_factory=list)
+    weakest_question: str = ""
+    outline: list[str] = Field(default_factory=list)
+    evidence: list[str] = Field(default_factory=list)
+
+
+class WeakestMoment(_Model):
+    """The turn chosen as weakest, by code, never by the model (CTO_NOTES_06 §8)."""
+
+    turn_id: str
+    segment: str
+    member: str = ""
+    question: str
+    answer: str = ""
+    outline: list[str] = Field(default_factory=list)
+    score: int = 0
+
+
+class PracticeCompare(_Model):
+    """Text-only replay comparison (Ruling 48). No audio."""
+
+    before_words: int
+    after_words: int
+    before_balance: str = ""
+    after_balance: str = ""
+    after_reasons: list[str] = Field(default_factory=list)
+    word_gain: int = 0
+
+
 class SessionReport(_Model):
     session_id: str
     created_at: str = Field(default_factory=lambda: datetime.now(UTC).isoformat())
@@ -735,6 +770,11 @@ class SessionReport(_Model):
     # The panel's detected candidate requests and how each was found (Ruling 51). Empty for the
     # old board, so its report is unchanged.
     requests: list[PanelRequest] = Field(default_factory=list)
+    # P10: empty defaults keep debate and fallback reports in the old shape.
+    by_member: list[MemberReport] = Field(default_factory=list)
+    weakest: WeakestMoment | None = None
+    practice_plan: list[str] = Field(default_factory=list)
+    form: CandidateForm | None = None
 
     @field_validator("scores")
     @classmethod

@@ -127,6 +127,22 @@ class AppConfig:
         return out
 
 
+UTILITY_LIKELY = "likely_questions"  # the `kind` access counts the likely-questions calls under
+
+
+def _limit_message(decision, config: AccessConfig) -> str:
+    """Why a likely-questions call got the standard hints: plain, polite, and true. It never says
+    error, denied or blocked, and it says the interview is not affected."""
+    if decision.reason == "likely_ip_full":
+        why = "The model-written hints have reached their limit for this network"
+    elif decision.reason == "likely_daily_full":
+        why = "Today's model-written hints are all used"
+    else:
+        why = (f"You have used the {config.utility_per_visitor} model-written hint lists each "
+               "visitor gets")
+    return f"{why}, so this list comes with our standard hints. Your interviews are not affected."
+
+
 def _static_path(asset: str) -> Path | None:  # access: an allowlist, so no lab page and no subpaths
     return _STATIC / asset if asset in _STATIC_FILES else None
 
@@ -471,6 +487,65 @@ def create_app(cfg: AppConfig) -> FastAPI:
         decision = book.admit(identity, now)
         answer = JSONResponse({**decision.public(), "code": result})
         return _stamp_cookie(answer, token, request)
+
+    utility: dict[str, Any] = {}  # model client and prompt kit, built by the first admitted call
+
+    def utility_model():
+        """What a likely-questions call needs, built once: the client (real Nova, or the offline
+        stand-in with --fake-llm), the prompt kit with the `summary` prompt, the members' names."""
+        if not utility:
+            from mockboard.brain.likely_questions import kit_with_summary
+
+            s = cfg.settings
+            cards, _origin = load_cards_or_builtin(s.cards_dir)
+            recorder = TraceRecorder(s.trace_dir, "likely", enabled=False)
+            deps = build_deps(s, build_llm(s, cfg.fake_llm, cards, recorder), cards=cards)
+            rt = deps.mode(cfg.mode)
+            utility.update(
+                llm=deps.llm, kit=kit_with_summary(rt.kit, s.prompt_summary_version),
+                names={p.id: p.name for p in rt.personas.values()},
+            )
+        return utility["llm"], utility["kit"], utility["names"]
+
+    @app.post("/api/likely-questions")
+    async def likely_questions_route(request: Request):
+        """Utility A (P9, WEB_REQUESTS.md): `{ "form": {...} }` (the offer's form object) in,
+        `{ "questions": [ { "member", "text", ... } ] }` out. Writing the hints on Nova costs
+        credits, so the call goes through access admission and is counted before the model is
+        called. When it is not admitted (limits reached) the questions still come back, with the
+        standard hints and no model call, and a polite `limit` note; nothing here is an error."""
+        from mockboard.brain.likely_questions import likely_questions
+
+        if cfg.mode == "debate":
+            return JSONResponse({"error": "mode"}, status_code=404)  # debate has no form
+        try:
+            body = await request.json()
+        except ValueError:
+            body = None
+        body = body if isinstance(body, dict) else {}
+        data = body.get("form", (body.get("request_data") or {}).get("form"))
+        try:
+            form = parse_form(data if isinstance(data, dict) else None, allow_default=cfg.fake_llm)
+        except ValidationError as e:
+            problems = [f"{'.'.join(map(str, x['loc']))}: {x['msg']}" for x in e.errors()]
+            return JSONResponse({"error": "form", "problems": problems}, status_code=400)
+        identity, token = _identity(request, book)
+        decision = book.admit_utility(identity, datetime.now(UTC), UTILITY_LIKELY)
+        admitted = decision.allowed and decision.commit()  # counted BEFORE the model is called
+        if admitted:
+            llm, kit, names = utility_model()
+            result = await likely_questions(form, names, llm=llm, kit=kit,
+                                            timeout_s=cfg.settings.likely_questions_timeout_s)
+        else:
+            from mockboard.brain.personas import load_personas
+
+            names = {p.id: p.name for p in load_personas().values()}
+            result = await likely_questions(form, names)  # template hints: no call, no cost
+        payload = result.as_json()
+        if not admitted:
+            payload["limit"] = {"reason": decision.reason or "likely_used",
+                                "message": _limit_message(decision, book.config)}
+        return _stamp_cookie(JSONResponse(payload), token, request)
 
     @app.post("/api/offer")
     async def offer(request: Request):

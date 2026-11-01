@@ -734,6 +734,30 @@ def agenda_plan_responder(system: str, user: str) -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
+# Likely-question hints (summary.v1)
+# ---------------------------------------------------------------------------
+
+
+def summary_responder(system: str, user: str) -> dict[str, Any]:
+    """A stand-in for Nova's `record_hints`: one hint per question, taken from the template hints
+    but shifted by one place, so a test can tell the model's hints from the templates' own. Word
+    lists, not a model."""
+    from mockboard.brain.likely_questions import TEMPLATE_HINTS
+
+    rows = json.loads(_tag(user, "questions") or "[]")
+    seen: dict[str, int] = {}
+    hints = []
+    for row in rows:
+        part = row.get("part", "")
+        options = TEMPLATE_HINTS.get(part) or TEMPLATE_HINTS["form_hr"]
+        if part == "form_hr":
+            options = options[:2]  # the third is the work-experience question's own hint
+        k = seen[part] = seen.get(part, -1) + 1
+        hints.append(options[(k + 1) % len(options)])
+    return {"hints": hints}
+
+
+# ---------------------------------------------------------------------------
 # Judge
 # ---------------------------------------------------------------------------
 
@@ -979,6 +1003,7 @@ def fake_responders(
         "actor": make_actor_responder(),
         "opener": opener_responder,
         "plan_agenda": agenda_plan_responder,
+        "summary": summary_responder,
         "judge": judge_responder,
         "judge_debate": debate_judge_responder,
         "motion_screen": motion_screen_responder,

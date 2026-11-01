@@ -38,8 +38,10 @@ from pipecat.turns.user_stop.turn_analyzer_user_turn_stop_strategy import (
     TurnAnalyzerUserTurnStopStrategy,
 )
 
-# What the board is doing, as the start strategy needs to know it.
-IDLE, THINKING, SPEAKING = "idle", "thinking", "speaking"
+# What the board is doing, as the start strategy needs to know it. LOCKED (P9) is the Chairperson's
+# close: nothing the candidate says starts a turn or interrupts it (Ruling 61: a close cannot be
+# interrupted), so a cough or a "thank you" does not cut the last line.
+IDLE, THINKING, SPEAKING, LOCKED = "idle", "thinking", "speaking", "locked"
 
 
 class BoardAwareStartStrategy(BaseUserTurnStartStrategy):
@@ -61,14 +63,18 @@ class BoardAwareStartStrategy(BaseUserTurnStartStrategy):
         self._clock = clock
         self._speech_since: float | None = None
         self.ignored: list[float] = []  # speech bursts too short to count (ms), for the trace
+        self.ignored_locked = 0  # speech that began while the close was being said (P9)
 
     async def reset(self):
         await super().reset()
         self._speech_since = None
 
-    def _needed_ms(self) -> int:
+    def _needed_ms(self) -> int | None:
+        """Milliseconds of speech that start a turn now, or None: nothing does (the close)."""
         resume_ms, barge_ms = self._thresholds()
         phase = self._phase()
+        if phase == LOCKED:
+            return None
         if phase == SPEAKING:
             return barge_ms
         if phase == THINKING:
@@ -78,7 +84,12 @@ class BoardAwareStartStrategy(BaseUserTurnStartStrategy):
     async def _maybe_start(self) -> ProcessFrameResult:
         if self._speech_since is None:
             return ProcessFrameResult.CONTINUE
-        if (self._clock() - self._speech_since) * 1000 >= self._needed_ms():
+        needed = self._needed_ms()
+        if needed is None:  # the close is being said: this speech is never a turn
+            self._speech_since = None
+            self.ignored_locked += 1
+            return ProcessFrameResult.CONTINUE
+        if (self._clock() - self._speech_since) * 1000 >= needed:
             self._speech_since = None
             await self.trigger_user_turn_started()
             return ProcessFrameResult.STOP

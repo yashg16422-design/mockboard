@@ -41,9 +41,13 @@ with the Chairperson's fixed ritual line, spoken while the opening question is s
 
 Time (panel): at the wrap-up (16 minutes) the session is asked to close with the next finished
 turn, so the candidate is never cut off mid-answer; at the hard stop (17 minutes) a silent
-candidate is closed at once with the Chairperson's time line, and one who is talking is treated
-as having stopped. Debate keeps its single 10-minute stop. The page's `answers` and `closing`
-events come from the session just before each line is spoken.
+candidate is closed at once with the Chairperson's time line. One who is talking is given
+`voice_hard_stop_grace_s` (20 s) to finish, then the Chairperson closes after their answer; only
+one who talks on past the grace is treated as having stopped (`grace_over`). A board line in the
+middle of being said when the hard stop comes is finished first, then the time line follows.
+From the `closing` event on, the board is LOCKED: nothing the candidate says starts a turn or
+interrupts the close (P9). Debate keeps its single 10-minute stop. The page's `answers` and
+`closing` events come from the session just before each line is spoken.
 
 Voice per member (P8): with `voice_for` set (the panel; debate gives none), each line starts
 with a `TTSUpdateSettingsFrame` naming the speaker's voice, and another whenever the speaker
@@ -92,7 +96,7 @@ from pipecat.services.settings import TTSSettings
 from mockboard.session import InterviewSession, TurnOutcome
 from mockboard.speech.prisma_stt import PrismaProcessingFrame
 from mockboard.voice.lines import PlaybackLedger, split_sentences
-from mockboard.voice.strategies import IDLE, SPEAKING, THINKING
+from mockboard.voice.strategies import IDLE, LOCKED, SPEAKING, THINKING
 
 TTS_UNITS = ("sentence", "line", "first_rest")  # ruling 38, TTS_REQUEST_UNIT
 
@@ -131,6 +135,7 @@ class BrainProcessor(FrameProcessor):
         tts_idle_cap_s: float = 9.0,
         line_cap_s: float = 90.0,
         orphan_close_s: float = 1.5,
+        hard_stop_grace_s: float | None = None,
         session_max_s: float | None = None,
         wrap_up_s: float | None = None,
         report_dir: Path | None = None,
@@ -166,6 +171,9 @@ class BrainProcessor(FrameProcessor):
         self._line_cap_s = line_cap_s
         self._orphan_close_s = orphan_close_s
         self._session_max_s = session_max_s
+        self._hard_stop_grace_s = hard_stop_grace_s if hard_stop_grace_s is not None else float(
+            getattr(settings, "voice_hard_stop_grace_s", 0.0)
+        )
         self._wrap_up_s = wrap_up_s
         self._report_dir = report_dir
         self._on_report = on_report
@@ -205,7 +213,11 @@ class BrainProcessor(FrameProcessor):
     # ------------------------------------------------------------------ for strategies
 
     def board_phase(self) -> str:
-        """IDLE, THINKING or SPEAKING, for `BoardAwareStartStrategy` (V4 thresholds)."""
+        """IDLE, THINKING, SPEAKING or LOCKED, for `BoardAwareStartStrategy` (V4 thresholds).
+        LOCKED from the moment the page is told the interview is closing, so the Chairperson's
+        close, and the report wait after it, cannot be interrupted (P9, Ruling 61)."""
+        if self._closing_sent or (self.state == FINISHED and self.session.panel_members()):
+            return LOCKED  # the panel's close; debate's verdict keeps the thresholds it had
         if self.state in (CLOSING, THINKING_S):
             return THINKING
         if self.state in (BOARD, STARTING, FINISHED):
@@ -682,7 +694,16 @@ class BrainProcessor(FrameProcessor):
         if self.state == LISTENING or (self.state == USER and not wrap_up):
             self._end_task = self.create_task(self._end_session(), "brain-end")
         elif self.state == USER:
-            self._start_turn_task()  # a candidate still talking is treated as having stopped
+            # P9: a candidate in the middle of speaking is not cut off. They get the grace to finish
+            # (their turn then ends as any turn does, and `_time_up` makes the director close with
+            # the time line after their answer); only one who talks on past it is treated as
+            # having stopped.
+            deadline = time.monotonic() + self._hard_stop_grace_s
+            while self.state == USER and time.monotonic() < deadline:
+                await asyncio.sleep(0.05)
+            if self.state == USER:
+                await self.emit("grace_over", seconds=self._hard_stop_grace_s)
+                self._start_turn_task()
 
     async def speech_lost(self, message: str) -> None:
         """Prisma gave up reconnecting (ruling 30): tell the candidate and end cleanly."""
@@ -784,8 +805,12 @@ class BrainProcessor(FrameProcessor):
             path.write_text(self.report_text + "\n", encoding="utf-8")
             path.with_suffix(".json").write_text(report.model_dump_json(indent=2),
                                                  encoding="utf-8")
+        extra = {}
+        if getattr(report, "by_member", None):
+            from mockboard.brain.report_panel import page_fields
+            extra = page_fields(report)
         await self.emit("report", text=self.report_text, path=str(path) if path else None,
-                        trace=str(self.session.recorder.path))
+                        trace=str(self.session.recorder.path), **extra)
         if self._on_report is not None:
             await self._on_report(report, self.report_text)
 

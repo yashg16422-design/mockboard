@@ -173,6 +173,12 @@ class AccessConfig:
     db_path: Path = Path("runs/access.sqlite")
     code_attempt_limit: int = 8
     code_window_s: int = 600
+    # Utilities that spend Nova credits outside an interview (P9: "likely questions"). Each call
+    # is counted against its own limits, because a visitor could otherwise spend credits without
+    # ever starting an interview: per cookie, per IP hash, and for everyone per day.
+    utility_per_visitor: int = 3
+    utility_per_ip: int = 9
+    utility_daily: int = 60
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> AccessConfig:
@@ -187,6 +193,9 @@ class AccessConfig:
             # cap could not start a session, after it had been counted.
             max_answers=_number(source, "ACCESS_MAX_ANSWERS", 10, minimum=5),
             daily_sessions=_number(source, "ACCESS_DAILY_SESSIONS", 30),
+            utility_per_visitor=_number(source, "ACCESS_LIKELY_QUESTIONS", 3),
+            utility_per_ip=_number(source, "ACCESS_LIKELY_IP", 9),
+            utility_daily=_number(source, "ACCESS_LIKELY_DAILY", 60),
             secret=source.get("ACCESS_SECRET", "").strip(),
             codes=codes,
             db_path=Path(source.get("ACCESS_DB", "").strip() or "runs/access.sqlite"),
@@ -242,6 +251,34 @@ class Decision:
         }
 
 
+@dataclass
+class UtilityDecision:
+    """May this visitor spend Nova credits on a utility call (P9)? `commit()` counts the call and
+    must run before the model is called; False means the quota ran out meanwhile (a parallel
+    request took the last one) and the call must not be made. Disabled mode and reviewers are
+    always allowed and write nothing."""
+
+    allowed: bool
+    reason: str | None
+    used: int
+    limit: int
+    remaining: int | None
+    reviewer: bool
+    enabled: bool
+    _commit: Any = field(default=None, repr=False, compare=False)
+
+    def commit(self) -> bool:
+        if self._commit is None:
+            return bool(self.allowed)
+        return bool(self._commit())
+
+    def public(self) -> dict[str, Any]:
+        return {
+            "enabled": self.enabled, "reviewer": self.reviewer, "reason": self.reason,
+            "used": self.used, "limit": self.limit, "remaining": self.remaining,
+        }
+
+
 class Limits:
     def __init__(self, config: AccessConfig, *, clock: Callable[[], datetime] | None = None):
         self.config = config
@@ -262,6 +299,13 @@ class Limits:
             """
             CREATE TABLE IF NOT EXISTS sessions (
                 id INTEGER PRIMARY KEY,
+                visitor_id TEXT NOT NULL,
+                ip_hash TEXT NOT NULL,
+                counted_at TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS utility_calls (
+                id INTEGER PRIMARY KEY,
+                kind TEXT NOT NULL,
                 visitor_id TEXT NOT NULL,
                 ip_hash TEXT NOT NULL,
                 counted_at TEXT NOT NULL
@@ -311,6 +355,66 @@ class Limits:
             _commit=lambda: self._commit(identity, self._clock()),
             **base,
         )
+
+    def admit_utility(self, identity: Identity, now: datetime, kind: str) -> UtilityDecision:
+        """The decision for one call of a utility that spends Nova credits (`kind` names it, so
+        each utility has its own count). Not counted until `commit()`."""
+        cfg = self.config
+        if not cfg.enabled or identity.reviewer:
+            return UtilityDecision(
+                True, None, 0, cfg.utility_per_visitor, None, identity.reviewer, cfg.enabled,
+            )
+        with self._lock:
+            used, ip_used, daily = self._utility_counts(identity, now, kind)
+        reason = _utility_reason(used, ip_used, daily, cfg)
+        return UtilityDecision(
+            reason is None, reason, used, cfg.utility_per_visitor,
+            max(0, cfg.utility_per_visitor - used), False, True,
+            lambda: self._commit_utility(identity, self._clock(), kind),
+        )
+
+    def _commit_utility(self, identity: Identity, now: datetime, kind: str) -> bool:
+        if not self.config.enabled or identity.reviewer or self._db is None:
+            return True
+        now = _utc(now)
+        with self._lock:
+            assert self._db is not None
+            self._db.execute("BEGIN IMMEDIATE")
+            try:
+                if _utility_reason(*self._utility_counts(identity, now, kind), self.config):
+                    self._db.execute("ROLLBACK")
+                    return False
+                self._db.execute(
+                    "INSERT INTO utility_calls (kind, visitor_id, ip_hash, counted_at) "
+                    "VALUES (?, ?, ?, ?)",
+                    (kind, identity.visitor_id, identity.ip_hash, _stamp(now)),
+                )
+                self._db.commit()
+                return True
+            except Exception:
+                self._db.execute("ROLLBACK")
+                raise
+
+    def _utility_counts(
+        self, identity: Identity, now: datetime, kind: str
+    ) -> tuple[int, int, int]:
+        """Calls of this utility by this cookie, by this IP hash, and by everyone today."""
+        assert self._db is not None
+        start, end = _day_bounds(now)
+        one = self._db.execute(
+            "SELECT COUNT(*) FROM utility_calls WHERE kind = ? AND visitor_id = ?",
+            (kind, identity.visitor_id),
+        ).fetchone()[0]
+        ip = self._db.execute(
+            "SELECT COUNT(*) FROM utility_calls WHERE kind = ? AND ip_hash = ?",
+            (kind, identity.ip_hash),
+        ).fetchone()[0]
+        daily = self._db.execute(
+            "SELECT COUNT(*) FROM utility_calls WHERE kind = ? AND counted_at >= ? "
+            "AND counted_at < ?",
+            (kind, start, end),
+        ).fetchone()[0]
+        return int(one), int(ip), int(daily)
 
     def check_code(self, ip_hash: str, code: str, now: datetime) -> str:
         """"ok", "wrong" or "locked". Wrong codes are rate limited.
@@ -404,4 +508,14 @@ def _reason(used: int, ip_used: int, daily: int, cfg: AccessConfig) -> str | Non
         return "ip_full"
     if daily >= cfg.daily_sessions:
         return "daily_full"
+    return None
+
+
+def _utility_reason(used: int, ip_used: int, daily: int, cfg: AccessConfig) -> str | None:
+    if used >= cfg.utility_per_visitor:
+        return "likely_used"
+    if ip_used >= cfg.utility_per_ip:
+        return "likely_ip_full"
+    if daily >= cfg.utility_daily:
+        return "likely_daily_full"
     return None

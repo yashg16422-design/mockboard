@@ -158,6 +158,13 @@ class Settings(BaseSettings):
     # UNVERIFIED: rotation has never run in a live session.
     voice_wrap_up_s: float = Field(default=960.0, gt=0)
     voice_hard_stop_s: float = Field(default=1020.0, gt=0)
+    # P9: at the hard stop a candidate who is in the middle of speaking is given this long to finish
+    # the sentence before the turn is closed for them; the Chairperson's close then follows their
+    # answer. 0 closes at once, as P7 did. Our choice, unmeasured.
+    voice_hard_stop_grace_s: float = Field(default=20.0, ge=0)
+    # P9: how long the likely-questions route waits for Nova's hints before it shows the standard
+    # ones. A guess until an approved real run.
+    likely_questions_timeout_s: float = Field(default=20.0, gt=0)
     # Debate keeps the 10-minute stop it always had (ADR-009: debate is unchanged).
     voice_debate_max_s: float = Field(default=600.0, gt=0)
     # Defect D: a WebRTC connection that is not `connected` within this time is closed and
@@ -279,6 +286,7 @@ class Settings(BaseSettings):
     prompt_actor_version: int = 5  # v4 + Namaste only at the first hand-off (Ruling 73)
     prompt_judge_version: int = 1
     prompt_opener_version: int = 2  # no greeting: the ritual line is said by code
+    prompt_summary_version: int = 1  # likely-question hints (P9); not in a session's trace map
     prompt_agenda_plan_version: int = 2  # Nova's seed questions (P6); v2: never names the place
     # Debate mode (ADR-009, CTO_NOTES_04).
     prompt_shared_debate_version: int = 1

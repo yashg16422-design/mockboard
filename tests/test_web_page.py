@@ -26,7 +26,9 @@ def test_form_is_one_column_of_the_contract_fields():
     assert 'name="interview_language"' in PAGE
     assert "kisi aur topic pe baat karte hain" in PAGE
     assert "Likely questions" in PAGE
-    assert "Not available in this version" in PAGE
+    assert "Not available in this version" not in PAGE
+    assert 'id="likely-btn"' in PAGE
+    assert 'id="replay"' in PAGE
     assert 'name="name"' not in PAGE
     assert 'type="email"' not in PAGE
     assert 'name="phone"' not in PAGE
@@ -51,6 +53,8 @@ def test_report_can_be_printed_and_grouped_when_the_server_sends_members():
     js = Path("src/mockboard/voice/static/app.js").read_text(encoding="utf-8")
     assert "weakest_question" in js
     assert "practice_plan" in js
+    assert "/api/likely-questions" in js
+    assert "Practise this moment" in PAGE
     assert "window.print" in js
     assert "m.text" in js
 

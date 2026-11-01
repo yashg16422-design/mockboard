@@ -95,9 +95,12 @@
           <option value="hindi">Hindi</option>
         </select>
       </label>
-      <fieldset class="slot" disabled>
+      <fieldset class="slot" id="likely-slot">
         <legend>Likely questions</legend>
-        <p>Not available in this version. The board does not send a list of likely questions yet.</p>
+        <p>Questions the board prepares from this form. It may word them differently and it will ask follow-ups, so use them to practise, not to memorise.</p>
+        <button type="button" class="ghost" id="likely-btn">Show likely questions</button>
+        <p class="quiet" id="likely-note" hidden></p>
+        <ol id="likely-list" hidden></ol>
       </fieldset>
       <p class="hint" id="topic-hint">To leave a subject at any time, say: kisi aur topic pe baat karte hain.</p>
       <div id="access-slot" hidden>
@@ -166,6 +169,8 @@
       <div id="report-grouped" hidden></div>
       <pre class="report-text" id="report"></pre>
     </div>
+    <button type="button" class="ghost no-print" id="replay" hidden>Practise this moment</button>
+    <div id="replay-box" hidden></div>
   </section>
 
   <audio id="bot" autoplay></audio>

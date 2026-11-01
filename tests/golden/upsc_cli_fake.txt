@@ -94,6 +94,27 @@ Claims checked against fact cards:
   [contradicted     ] Exampleland mein tourism GDP ka 30 percent hai in 2023, isliye tourism  <- card test_tourism_gdp_share (SYNTHETIC TEST CARD (no real source))
 NOTE: every fact card in this run is a SYNTHETIC TEST CARD, not a real fact.
 Model answer: Rule-based offline stand-in score from the session transcript (not a model judgement).
+By panel member:
+  Chairperson Sharma (form_hr)
+    Candidate spoke about electronics, training, badhaunga. Candidate spoke about exampleland, tourism, percent.
+  Shrimati Menon (home_district)
+    Candidate spoke about environment, carrying, capacity. Candidate spoke about karunga, tourism, important. Candidate spoke about homestays, chahiye, management.
+  Doctor Iyer (degree)
+    Candidate spoke about electronics, padhne, system. Candidate spoke about please, repeat. Candidate spoke about technology, daftaron, training. Candidate spoke about digital, system, chahiye.
+  Professor Sen (interests)
+    Candidate spoke about seekha, jaldbaazi, chahiye. Candidate spoke about chess, alawa, topic. The candidate asked to change topic.
+  Shri Rathore (current_affairs)
+    Candidate spoke about public, administration, zameeni. Candidate spoke about samasya, samajhni, chahiye. Candidate spoke about samagri, zaroorat, pahunchaunga. Candidate spoke about pakshon, karunga, dekhunga.
+    Weakest question: Samajh mein aata hai. Agar yeh tareeka na chale, to aapka doosra raasta kya hoga?
+      - Define the terms you will use, in one sentence.
+      - Name two sides of the question and who is affected.
+      - Say what you would do first, and why.
+      - Name one trade-off you would not ignore.
+Practice plan:
+  - Practise answering in two breaths: the point, then one reason.
+  - Take one claim you made and name the strongest objection to it.
+  - Say the same answer once more, in three short sentences only.
+Replay this moment (text): Samajh mein aata hai. Agar yeh tareeka na chale, to aapka doosra raasta kya hoga?
 note: Request at t6: repeat, found by the board's rules (repeat_bare).
 note: Request at t10: change_topic, found by the board's rules (change_other_baat).
 note: Listed request sentences work every time, in our tests, with the listener up or down, in Latin and Devanagari. Rephrased requests are caught less often: 0.75 on held-out synthetic lines by rules alone. Accuracy on real speech has not been measured yet.

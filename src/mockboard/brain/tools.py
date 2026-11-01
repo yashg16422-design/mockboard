@@ -519,6 +519,44 @@ AGENDA_TOOL = ToolSpec(
 
 
 # ---------------------------------------------------------------------------
+# Likely questions: one short hint per question (P9, `summary.v1`)
+# ---------------------------------------------------------------------------
+
+
+class HintsOutput(_ToolModel):
+    """One hint per question, in the order the questions were given. Anything but a list of
+    strings is an empty list, and a missing or unfit hint is replaced by its template hint."""
+
+    hints: list[str] = Field(default_factory=list)
+
+    @field_validator("hints", mode="before")
+    @classmethod
+    def _list_of_text(cls, v: object) -> list[str]:
+        if not isinstance(v, list):
+            return []
+        return [x if isinstance(x, str) else "" for x in v]
+
+
+HINTS_TOOL = ToolSpec(
+    name="record_hints",
+    description=(
+        "Record one short hint for each practice question, in the same order: how to organise the "
+        "answer, never a fact."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "hints": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "One sentence per question, in the order the questions were given.",
+            },
+        },
+        "required": ["hints"],
+    },
+)
+
+# ---------------------------------------------------------------------------
 # Debate mode: motion screen and custom case file (CTO_NOTES_04 §5, §2)
 # ---------------------------------------------------------------------------
 
@@ -597,6 +635,7 @@ ALL_TOOLS: dict[str, tuple[ToolSpec, type[BaseModel]]] = {
     "listener": (LISTENER_TOOL, ListenerOutput),
     "listener_panel": (PANEL_LISTENER_TOOL, PanelListenerOutput),
     "agenda_plan": (AGENDA_TOOL, AgendaOutput),
+    "summary": (HINTS_TOOL, HintsOutput),
     "listener_debate": (DEBATE_LISTENER_TOOL, DebateListenerOutput),
     "librarian": (LIBRARIAN_TOOL, LibrarianOutput),
     "judge": (JUDGE_TOOL, JudgeOutput),

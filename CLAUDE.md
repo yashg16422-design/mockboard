@@ -28,7 +28,8 @@ Mock Board is a voice-first, Hinglish UPSC Personality Test (interview) board, w
 
 ## Known state (Nov 1, 2026)
 - `make test` passes offline; 913 tests with the voice extra installed at P1, Nov 1 (the count grows, so trust the run, not this line). Only Python 3.14 has been run; 3.12 is unverified.
-- **P7 (Nov 1): the panel is the UPSC path** on text, `make voice-fake` and `make voice-upsc` (the owner's Round 20 complaints, fixed topics, ignored requests, no memory, no panel, are what it fixes: `docs/tasks/PANEL_PHASE.md`). `Settings.topics` and the three old personas are gone; interview limit 17 minutes (wrap-up 960 s, hard stop 1020 s); the answer cap comes from admission (`pending_limits`, missing means capped); the page gets `members`, `segment`, `answers`, `closing`. The UPSC golden changed on purpose (board-line md5 `e748940f...`, transcript in `docs/tasks/P7_FAKE_TRANSCRIPT.md`); debate md5 `f2a23f33...` is unchanged. Nothing of the panel has run on real Nova, Prisma or Timbre; Prisma rotation is UNVERIFIED.
+- **P7 (Nov 1): the panel is the UPSC path** on text, `make voice-fake` and `make voice-upsc`. Interview limit 17 minutes (wrap-up 960 s, hard stop 1020 s, 20 s grace at the hard stop). The UPSC golden is board-line md5 `e32140d5...` after Ruling 76; debate md5 `f2a23f33...` is unchanged.
+- **P8–P11 (Nov 1, fake only):** a voice per member (placeholder table; real choice is `make voice-lab`); likely questions (`make likely-questions`, `/api/likely-questions`, counted by access); report grouped by member with a text-only replay (`--replay`); `make check-trace TRACE=traces/<id>.jsonl`. Nothing of the new prompts has run on real Nova. Per-request Timbre voice switch is UNVERIFIED on the real socket.
 - Owner still to report: voice lab choice (`make voice-lab`), Prisma mode choice (`make stt-ab`).
 - No real fact cards yet; real sessions run without fact checks and say so.
 
@@ -36,6 +37,8 @@ Mock Board is a voice-first, Hinglish UPSC Personality Test (interview) board, w
 - `make venv` then `make voice-install` — environment (Python 3.12+).
 - `make test`, `make lint`, `make eval-gate`, `make eval-debate`.
 - `make cli-fake`, `make cli-fake-debate` — offline text runs; `make cli-real` — text on Nova.
+- `make likely-questions` — questions from the sample form, with hints (fake, free).
+- `make check-trace TRACE=traces/<session>.jsonl` — check a panel session trace.
 - `make voice-fake` — free voice run; `make voice-upsc`; `make voice-debate MOTION=1 SIDE=for`.
 - `make voice-record`, `make stt-ab`, `make voice-lab`, `make voice-summary`.
 - Traces: `traces/*.jsonl` (read them to diagnose real sessions; they contain no secrets).

@@ -29,8 +29,10 @@ from typing import TYPE_CHECKING, Any
 from mockboard.brain.actor import FILLER_TEMPLATES, LineResult, language_mix
 from mockboard.brain.agenda import (
     NEUTRAL_SEEDS,
+    SEGMENT_MEMBERS,
     build_fallback_agenda,
     capped_budgets,
+    one_question_agenda,
     seed_alternatives,
 )
 from mockboard.brain.agenda_plan import PlanReport, plan_agenda, upgrade_agenda
@@ -105,7 +107,12 @@ class PanelHooks:
         self.personas = runtime.personas
         self.kit = runtime.kit
         self.chair_id = chairman(self.personas).id
-        self.agenda = build_fallback_agenda(s.form, capped_budgets(self.setup.max_answers))
+        if self.setup.replay_segment and self.setup.replay_question:
+            self.agenda = one_question_agenda(
+                self.setup.replay_segment, self.setup.replay_question, s.form
+            )
+        else:
+            self.agenda = build_fallback_agenda(s.form, capped_budgets(self.setup.max_answers))
         self.mix = language_mix(self.personas[self.chair_id], s.form)
         self.cfg = PanelSettings(
             chairman=self.chair_id,
@@ -239,6 +246,9 @@ class PanelHooks:
     def _start_plan(self) -> None:
         """Begin planning, once. Needs a running loop; without one `open()` starts it."""
         if self._plan is not None or self._plan_report is not None:
+            return
+        if self.setup.replay_segment:
+            self._plan_report = PlanReport("skipped", error="replay uses the flagged question")
             return
         s = self.session
         if not self.settings.agenda_plan_enabled:
@@ -618,14 +628,41 @@ class PanelHooks:
     async def report(self, language: Any = None):
         s = self.session
         await self.aclose()
-        report = await generate_report(
-            s.deps,
-            session_id=s.session_id,
-            turns=s.state.turns,
-            ledger=s.state.claim_ledger,
-            moves=s.state.moves,
-            language=language,
-            callbacks=s.callbacks,
+        if self.setup.skip_judge:
+            from mockboard.brain.judge import fallback_report
+            from mockboard.brain.schemas import ReportLanguage
+
+            lang = ReportLanguage(language or s.deps.settings.report_language)
+            report = fallback_report(
+                session_id=s.session_id,
+                ledger=s.state.claim_ledger,
+                moves=s.state.moves,
+                language=lang,
+                reason="replay: no judge",
+                feature_flags=s.deps.settings.feature_flags(),
+                prompt_versions=self.prompt_versions(),
+            )
+        else:
+            report = await generate_report(
+                s.deps,
+                session_id=s.session_id,
+                turns=s.state.turns,
+                ledger=s.state.claim_ledger,
+                moves=s.state.moves,
+                language=language,
+                callbacks=s.callbacks,
+            )
+        from mockboard.brain.report_panel import PRESSURE_MOVES, decorate_report
+
+        pressure = {m.for_turn for m in s.state.moves if m.move in PRESSURE_MOVES}
+        report = decorate_report(
+            report,
+            s.state.turns,
+            names=self.cfg.names,
+            segment_members=dict(SEGMENT_MEMBERS),
+            requests=self.director.requests,
+            pressure_turns=pressure,
+            form=s.form,
         )
         return report.model_copy(
             update={

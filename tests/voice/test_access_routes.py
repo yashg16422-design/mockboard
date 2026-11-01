@@ -415,3 +415,35 @@ def test_uvicorn_gets_no_access_log_when_limits_are_on(ran, monkeypatch):
 def test_work_experience_reaches_the_form():
     form = server.parse_form({**FORM, "work_experience": "Taught for a year"}, allow_default=False)
     assert form.work_experience == "Taught for a year"
+
+
+def test_likely_questions_return_a_list(ran, settings):
+    with TestClient(app_for(settings)) as client:
+        res = client.post("/api/likely-questions", json={"form": FORM})
+    assert res.status_code == 200
+    body = res.json()
+    assert body["questions"] and body["questions"][0]["member"]
+    assert "hint" in body["questions"][0]
+    assert "error" not in body
+
+
+def test_likely_questions_over_the_utility_cap_still_return_templates(ran, settings):
+    with TestClient(app_for(settings)) as client:
+        for _ in range(3):
+            assert client.post("/api/likely-questions", json={"form": FORM}).status_code == 200
+        last = client.post("/api/likely-questions", json={"form": FORM})
+    assert last.status_code == 200
+    message = last.json()["limit"]["message"].lower()
+    assert last.json()["limit"]["reason"]
+    assert last.json()["questions"]
+    for word in ("error", "denied", "blocked"):
+        assert word not in message
+
+
+def test_likely_questions_are_absent_in_debate(settings):
+    cfg = server.parse_args(
+        ["--mode", "debate", "--motion", "1", "--side", "for", "--fake-llm", "--fake-speech"]
+    )
+    cfg.settings = settings
+    with TestClient(server.create_app(cfg)) as client:
+        assert client.post("/api/likely-questions", json={"form": FORM}).status_code == 404

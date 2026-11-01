@@ -6,6 +6,7 @@
     python -m mockboard.cli --mode debate --fake        # debate mode (curated motions)
     python -m mockboard.cli --fake --form-file examples/forms/sample_form.json
     python -m mockboard.cli --fake --script examples/fake_panel.txt   # the UPSC panel, scripted
+    python -m mockboard.cli --fake --likely-questions --form-file examples/forms/sample_form.json
 
 Flow: application form (no names) -> opener -> typed answers -> fast analysis graph per
 segment (background fact checks) -> delayed fact challenge phrased as a question citing the
@@ -204,6 +205,24 @@ def format_report(report: SessionReport | DebateReport, cards) -> str:
         lines.append("NOTE: every fact card in this run is a SYNTHETIC TEST CARD, not a real fact.")
     if report.model_answer:
         lines.append(f"Model answer: {report.model_answer}")
+    if report.by_member:
+        lines.append("By panel member:")
+        for block in report.by_member:
+            lines.append(f"  {block.name} ({block.segment})")
+            if block.notes:
+                lines.append(f"    {block.notes}")
+            if block.weakest_question:
+                lines.append(f"    Weakest question: {block.weakest_question}")
+            for point in block.outline:
+                lines.append(f"      - {point}")
+    if report.practice_plan:
+        lines.append("Practice plan:")
+        for item in report.practice_plan:
+            lines.append(f"  - {item}")
+    if report.weakest:
+        lines.append(
+            f"Replay this moment (text): {report.weakest.question}"
+        )
     lines.extend(f"note: {n}" for n in report.notes)
     return "\n".join(lines)
 
@@ -234,9 +253,14 @@ async def run(args: argparse.Namespace) -> int:
     lines = None
     if args.script:
         lines = Path(args.script).read_text(encoding="utf-8").splitlines()
-    elif not sys.stdin.isatty():
+    elif not args.likely_questions and not args.replay and not sys.stdin.isatty():
         lines = sys.stdin.read().splitlines()
     ask = InputSource(lines)
+
+    if args.likely_questions:  # P9, Utility A: no interview, no session, no trace
+        return await _likely_questions(args, settings, ask, file_form, cards, origin)
+    if args.replay:
+        return await _replay(args, settings, file_form, cards)
 
     session_id = args.session_id
     recorder = TraceRecorder(settings.trace_dir, session_id or "pending", enabled=not args.no_trace)
@@ -289,6 +313,96 @@ async def run(args: argparse.Namespace) -> int:
         return await _interview(args, settings, session, rt, ask, lines, recorder, cards)
     finally:
         await session.close()  # the panel's checkpointer thread, on every exit path
+
+
+async def _replay(args, settings, file_form, cards) -> int:
+    """`--replay <report.json>`: sit the weakest question once more, text only (P10, Ruling 48)."""
+    from mockboard.brain.graphs import TurnAnalyzer
+    from mockboard.brain.report_panel import TextReplay
+    from mockboard.modes.upsc_panel.setup import PanelSetup
+    from mockboard.session import InterviewSession
+
+    source = TextReplay()
+    report = source.load(Path(args.replay))
+    if report.weakest is None:
+        print("This report has no weakest moment to replay.")
+        return 1
+    form = file_form or report.form
+    if form is None:
+        print("--replay needs the form: pass --form-file or a report that stored it.")
+        return 1
+    print(f"Replay (text only) | {report.weakest.member or report.weakest.segment}")
+    print(f"Question: {report.weakest.question}")
+    for point in report.weakest.outline:
+        print(f"  - {point}")
+    recorder = TraceRecorder(settings.trace_dir, args.session_id or "replay",
+                             enabled=not args.no_trace)
+    llm = build_llm(settings, args.fake, cards, recorder)
+    deps = build_deps(settings, llm, cards=cards)
+    session = InterviewSession(
+        deps=deps, form=form, recorder=recorder, analyzer=TurnAnalyzer(deps),
+        session_id=recorder.session_id, mode=DEFAULT_MODE,
+        mode_options=PanelSetup(
+            replay_segment=report.weakest.segment,
+            replay_question=report.weakest.question,
+            skip_judge=True,
+        ),
+    )
+    try:
+        line = await session.open()
+        print(f"[{session.speaker_name('chairman')}] {line.text}")
+        lines = Path(args.script).read_text(encoding="utf-8").splitlines() if args.script else None
+        ask = InputSource(lines)
+        text = ask("\nYou: ")
+        if text:
+            for index, part in enumerate(typed_segments(text)):
+                session.submit_segment(part, segment_index=index)
+            await session.end_of_turn(args.deadline_s or settings.text_move_deadline_s)
+            out = await session.speak()
+            print(f"[{session.speaker_name(out.move.member)}] {out.line.text}")
+        replay_report = await session.finish()
+        if session.state.turns:
+            compared = source.compare(report.weakest, session.state.turns[-1])
+            print(
+                f"\nCompare: {compared.before_words} words then, "
+                f"{compared.after_words} now ({compared.word_gain:+d}). "
+                f"Balance now: {compared.after_balance}."
+            )
+        print(format_report(replay_report, cards))
+    finally:
+        await session.close()
+    return 0
+
+
+async def _likely_questions(args, settings, ask, file_form, cards, origin) -> int:
+    """`--likely-questions`: the questions the panel prepares from the form, with a hint on how to
+    approach each. `--template-only` and `--fake` make no real call; a real run calls Nova Pro once
+    (the `summary` prompt, credits) and every hint it writes is checked by code."""
+    from mockboard.brain.likely_questions import (
+        format_likely_questions,
+        kit_with_summary,
+        likely_questions,
+    )
+
+    form = file_form if file_form is not None else read_form(ask, use_defaults=args.fake)
+    recorder = TraceRecorder(settings.trace_dir, "likely", enabled=False)
+    llm = None if args.template_only else build_llm(settings, args.fake, cards, recorder)
+    deps = build_deps(settings, llm or make_fake_llm(cards), cards=cards)
+    rt = deps.mode(DEFAULT_MODE)
+    names = {p.id: p.name for p in rt.personas.values()}
+    kit = kit_with_summary(rt.kit, settings.prompt_summary_version)
+    how = (
+        "template hints, no model call" if args.template_only
+        else "hints from the FAKE offline LLM" if args.fake
+        else f"hints from {settings.nova_model_id} ({settings.aws_region}): one call, costs credits"
+    )
+    print(f"Mock Board likely questions | {how} | cards: {origin}")
+    result = await likely_questions(form, names, llm=llm, kit=kit)
+    print(format_likely_questions(result))
+    if result.report.status == "failed":
+        print(f"\nThe model's hints were not used ({result.report.error or 'none was fit'}); "
+              "these are the standard hints.")
+    return 0
 
 
 def _print_panel_line(session: InterviewSession, line, tag: str = "") -> None:
@@ -385,6 +499,24 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "each member); the agenda spends the cap, so the panel still reaches a proper close. "
         "Default: no cap, as for an owner or reviewer",
     )
+    p.add_argument(
+        "--likely-questions",
+        action="store_true",
+        help="UPSC only: print the questions the panel prepares from the form, each with a hint "
+        "on how to approach it, and stop (no interview). With --fake the hints come from the "
+        "offline stand-in; without it, one Nova Pro call writes them (costs credits); "
+        "--template-only makes no call at all",
+    )
+    p.add_argument(
+        "--template-only",
+        action="store_true",
+        help="with --likely-questions: standard hints only, no model call",
+    )
+    p.add_argument(
+        "--replay",
+        help="UPSC only: sit the weakest moment from this report JSON once more, text only "
+        "(no audio). Needs --form-file if the report did not store the form",
+    )
     p.add_argument("--language", choices=["en", "hi"], help="report language (default: settings)")
     p.add_argument(
         "--max-turns",
@@ -415,6 +547,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         p.error("--form-file is for the UPSC interview; debate has no application form")
     if args.panel and args.mode == DEBATE_MODE:
         p.error("--panel is for the UPSC interview; debate has no panel")
+    if args.likely_questions and args.mode == DEBATE_MODE:
+        p.error("--likely-questions is for the UPSC interview; debate has no application form")
+    if args.template_only and not args.likely_questions:
+        p.error("--template-only goes with --likely-questions")
+    if args.replay and args.mode == DEBATE_MODE:
+        p.error("--replay is for the UPSC interview")
+    if args.replay and args.likely_questions:
+        p.error("--replay and --likely-questions cannot be combined")
     if args.mode != DEBATE_MODE and args.max_turns is not None:
         p.error("--max-turns does not apply to the UPSC panel: the agenda sets the turn cap "
                 "(use --max-answers to shorten it)")

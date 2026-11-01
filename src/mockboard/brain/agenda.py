@@ -578,6 +578,25 @@ def _aliases(segment_id: str, form: CandidateForm) -> tuple[str, ...]:
     return tuple(found)[:5]
 
 
+def one_question_agenda(segment_id: str, question: str, form: CandidateForm) -> Agenda:
+    """The replay agenda (CTO_NOTES_06 §8): one segment, one seed, budget 1."""
+    if segment_id not in SEGMENT_MEMBERS:
+        raise ValueError(f"unknown segment {segment_id!r}")
+    terms = _form_terms(form)
+    return Agenda(
+        segments=[
+            AgendaSegment(
+                id=segment_id,
+                member=SEGMENT_MEMBERS[segment_id],
+                title=_title(segment_id, terms),
+                budget=1,
+                seeds=[AgendaSeed(text=question)],
+                aliases=_aliases(segment_id, form),
+            )
+        ]
+    )
+
+
 def build_fallback_agenda(
     form: CandidateForm, budgets: Mapping[str, int] | None = None
 ) -> Agenda:

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
 
 import pytest
 
@@ -160,17 +161,114 @@ async def test_the_hard_stop_with_a_silent_candidate_says_the_time_line_and_ends
     assert " ".join(c["text"] for c in confer) == TIME_CLOSE
 
 
-async def test_a_candidate_still_talking_at_the_hard_stop_is_treated_as_having_stopped(
+async def test_a_candidate_who_talks_on_past_the_grace_at_the_hard_stop_is_treated_as_stopped(
     settings, cards, fake_llm, form, tmp_path
 ):
     s = upsc_session(settings, cards, fake_llm, form, tmp_path)
-    async with Rig(s, tts_ms_per_word=5, wrap_up_s=0.3, session_max_s=1.5,
+    async with Rig(s, tts_ms_per_word=5, wrap_up_s=0.3, session_max_s=1.5, hard_stop_grace_s=0.4,
                    report_dir=tmp_path / "reports") as rig:
         await rig.until(lambda: rig.brain.state == LISTENING)
         await rig.worker.queue_frame(VADUserStartedSpeakingFrame())
         await rig.worker.queue_frame(UserStartedSpeakingFrame())  # talking, and never stops
         await rig.until(lambda: rig.brain.report is not None, timeout=15)
     assert rig.events("time_up") and [e["reason"] for e in rig.events("closing")] == ["time"]
+    assert [e["seconds"] for e in rig.events("grace_over")] == [0.4]
+    order = names(rig.brain.events)
+    assert order.index("time_up") < order.index("grace_over") < order.index("closing")
+
+
+async def test_a_candidate_mid_sentence_at_the_hard_stop_finishes_and_is_closed_after_the_answer(
+    settings, cards, fake_llm, form, tmp_path
+):
+    """P9: the hard stop does not cut a sentence. The turn ends when the candidate stops, their
+    words are in the answer, and the Chairperson's time line closes the interview after it."""
+    s = upsc_session(settings, cards, fake_llm, form, tmp_path)
+    async with Rig(s, tts_ms_per_word=5, wrap_up_s=0.3, session_max_s=2.0, hard_stop_grace_s=5.0,
+                   report_dir=tmp_path / "reports") as rig:
+        await rig.until(lambda: rig.brain.state == LISTENING)
+        await rig.worker.queue_frame(VADUserStartedSpeakingFrame())
+        await rig.worker.queue_frame(UserStartedSpeakingFrame())
+        await rig.until(lambda: rig.events("time_up"), timeout=5)  # the hard stop, mid-sentence
+        await asyncio.sleep(0.5)  # still talking after it
+        assert rig.brain.state == "user" and not rig.events("grace_over")
+        assert not [e for e in rig.events("state") if e["state"] == "closing"]  # not cut
+        stopped_at = time.monotonic()
+        await rig.worker.queue_frame(VADUserStoppedSpeakingFrame())
+        await rig.worker.queue_frame(UserStoppedSpeakingFrame())
+        await rig.until(lambda: rig.brain.report is not None, timeout=15)
+    assert not rig.events("grace_over")
+    first_close = next(e for e in rig.events("state") if e["state"] == "closing")
+    assert first_close["t"] >= stopped_at
+    assert len(rig.brain.outcomes) == 1 and s.state.turns[0].transcript  # their words are kept
+    assert [e["reason"] for e in rig.events("closing")] == ["time"]
+    said = " ".join(e["text"] for e in rig.events("caption")
+                    if e["side"] == "board" and e["t"] > first_close["t"])
+    assert said == TIME_CLOSE
+
+
+async def test_a_board_line_in_progress_at_the_hard_stop_is_finished_then_the_time_line_follows(
+    settings, cards, fake_llm, form, tmp_path
+):
+    s = upsc_session(settings, cards, fake_llm, form, tmp_path)
+    async with Rig(s, tts_ms_per_word=200, wrap_up_s=0.3, session_max_s=0.8,
+                   report_dir=tmp_path / "reports") as rig:  # a slow opener: still talking at 0.8 s
+        await rig.until(lambda: rig.brain.report is not None, timeout=30)
+    board = [e["text"] for e in rig.events("caption") if e["side"] == "board"]
+    ritual_and_opener = " ".join(board[: len(board) - len(TIME_CLOSE.split(". ")) - 1])
+    assert "Please be seated" in ritual_and_opener  # the ritual was not cut short
+    assert " ".join(board).endswith(TIME_CLOSE)
+    assert [e["reason"] for e in rig.events("closing")] == ["time"]
+
+
+async def test_the_close_cannot_be_interrupted_and_a_question_before_it_still_can(
+    settings, cards, fake_llm, form, tmp_path
+):
+    s = upsc_session(settings, cards, fake_llm, form, tmp_path)
+    async with Rig(s, tts_ms_per_word=5) as rig:
+        await rig.until(lambda: rig.brain.state == LISTENING)
+        assert rig.brain.board_phase() == "idle"
+        rig.tts.ms_per_word = 120
+        s.request_wrap_up()
+        await rig.speak(0.1)  # the answer after the wrap-up: the close is the next line
+        await rig.until(lambda: rig.events("closing"), timeout=15)
+        assert rig.brain.board_phase() == "locked"  # from the `closing` event on
+        await rig.until(lambda: rig.brain.report is not None, timeout=30)
+        assert rig.brain.board_phase() == "locked"  # and while the report is made
+    assert rig.brain.board_phase() == "locked"
+
+
+async def test_a_question_that_is_not_a_close_is_not_locked(
+    settings, cards, fake_llm, form, tmp_path
+):
+    s = upsc_session(settings, cards, fake_llm, form, tmp_path)
+    async with Rig(s, tts_ms_per_word=200) as rig:
+        await rig.until(lambda: rig.ledger.playback_started_at is not None, timeout=10)
+        assert rig.brain.board_phase() in ("speaking", "thinking")  # the ritual: a candidate may
+        assert not rig.events("closing")  # cut in on it, as before P9
+
+
+async def test_a_debates_verdict_keeps_the_thresholds_it_had(
+    settings, cards, fake_llm, tmp_path
+):
+    from mockboard.brain.deps import build_deps
+    from mockboard.brain.graphs import TurnAnalyzer
+    from mockboard.modes.debate.motions import Side, load_curated_motions
+    from mockboard.modes.debate.session import DebateSetup
+    from mockboard.obs.trace import TraceRecorder
+    from mockboard.session import InterviewSession
+    from mockboard.voice.brain_processor import FINISHED
+
+    deps = build_deps(settings, fake_llm, cards=cards)
+    motion = load_curated_motions()["smartphones_in_schools"]
+    s = InterviewSession(
+        deps=deps, form=None, recorder=TraceRecorder(tmp_path, "deb2"),
+        analyzer=TurnAnalyzer(deps), mode="debate",
+        mode_options=DebateSetup(motion=motion, user_side=Side.for_),
+    )
+    async with Rig(s, session_max_s=1.0, report_dir=tmp_path / "reports") as rig:
+        await rig.until(lambda: rig.brain.report is not None, timeout=15)
+        assert rig.brain.state == FINISHED
+        assert rig.brain.board_phase() in ("speaking", "thinking")  # never "locked"
 
 
 async def test_debate_keeps_its_single_stop_with_no_wrap_up(settings, cards, fake_llm, tmp_path):

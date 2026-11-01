@@ -357,6 +357,20 @@ def test_offer_refuses_before_webrtc_and_the_page_can_read_status(tmp_path, monk
 @pytest.mark.skipif(
     importlib.util.find_spec("pipecat") is None, reason="voice extra is not installed"
 )
+def test_likely_questions_are_counted_separately_and_reviewers_are_free(tmp_path):
+    book = _book(tmp_path, utility_per_visitor=2)
+    who = _person()
+    for _ in range(2):
+        decision = book.admit_utility(who, NOW, "likely_questions")
+        assert decision.allowed and decision.commit()
+    blocked = book.admit_utility(who, NOW, "likely_questions")
+    assert blocked.allowed is False and blocked.reason == "likely_used"
+    assert blocked.commit() is False
+    reviewer = book.admit_utility(_person("owner", reviewer=True), NOW, "likely_questions")
+    assert reviewer.allowed and reviewer.commit()
+    assert book.admit(who, NOW).allowed  # interviews are a different count
+
+
 def test_disabled_access_leaves_the_voice_app_unchanged(monkeypatch, settings):
     for key in ("ACCESS_ENABLED", "ACCESS_SECRET", "ACCESS_DB"):
         monkeypatch.delenv(key, raising=False)

@@ -303,6 +303,74 @@ function outlineList(parent, outline) {
   if (outline) addLine(parent, String(outline));
 }
 
+async function loadLikely() {
+  const fresh = readForm();
+  if (!fresh) return;
+  const btn = $("likely-btn");
+  const note = $("likely-note");
+  const list = $("likely-list");
+  btn.disabled = true;
+  note.hidden = false;
+  note.textContent = "Preparing the list.";
+  try {
+    const res = await fetch("/api/likely-questions", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(fresh),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      note.textContent = "The list could not be prepared from this form. Please check the required fields.";
+      return;
+    }
+    list.replaceChildren();
+    for (const q of data.questions || []) {
+      const item = document.createElement("li");
+      const who = q.member ? String(q.member) + ". " : "";
+      item.textContent = who + String(q.text || "");
+      if (q.hint) {
+        const hint = document.createElement("p");
+        hint.className = "quiet";
+        hint.textContent = "How to approach it: " + String(q.hint);
+        item.append(hint);
+      }
+      list.append(item);
+    }
+    list.hidden = !(data.questions && data.questions.length);
+    if (data.limit && data.limit.message) {
+      note.textContent = String(data.limit.message);
+    } else {
+      note.textContent = data.note ? String(data.note) : "";
+    }
+    note.hidden = !note.textContent;
+  } catch (e) {
+    note.textContent = "The list could not be prepared just now. You can still enter the room.";
+    note.hidden = false;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function renderReplay(m) {
+  const btn = $("replay");
+  const box = $("replay-box");
+  if (!btn || !box) return;
+  const weakest = m.weakest && m.weakest.question ? m.weakest : null;
+  if (!weakest) {
+    btn.hidden = true;
+    box.hidden = true;
+    return;
+  }
+  btn.hidden = false;
+  btn.onclick = () => {
+    box.hidden = false;
+    box.replaceChildren();
+    addLine(box, weakest.question);
+    outlineList(box, weakest.outline);
+    addLine(box, "Text only. Say your answer out loud, then compare it with what you said in the sitting.");
+  };
+}
+
 function renderReport(m) {
   // Plain text until the server sends members. Nothing here is invented.
   const members = Array.isArray(m.members)
@@ -343,6 +411,7 @@ function renderReport(m) {
   // A local run only: on a server this path is neither on the reader's computer nor theirs.
   const local = access && !access.enabled;
   $("report-path").textContent = m.path && local ? "Saved on this computer at " + m.path : "";
+  renderReplay(m);
   show("report");
 }
 
@@ -747,6 +816,7 @@ async function init() {
     $("steps-debate").hidden = false;
     $("motion").textContent = "#" + cfg.motion_number + ": " + cfg.motion + " You speak " + cfg.side + " it.";
     $("room-title").textContent = "The motion";
+    if ($("likely-slot")) $("likely-slot").hidden = true;
   }
 }
 
@@ -766,6 +836,7 @@ $("form").addEventListener("submit", (e) => {
 $("start").addEventListener("click", start);
 $("stop").addEventListener("click", () => { requestStop(); });
 $("print").addEventListener("click", () => { window.print(); });
+if ($("likely-btn")) $("likely-btn").addEventListener("click", () => { loadLikely(); });
 
 init().catch((e) => {
   const msg = "Could not load the config: " + e.message;

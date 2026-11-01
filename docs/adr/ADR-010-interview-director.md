@@ -1,6 +1,6 @@
 # ADR-010: The interview director
 
-- **Status:** Draft (chunk P0), cut over in P7 on November 1, 2026. Finalised in chunk P11, when the design is measured.
+- **Status:** Accepted for the fake path (P7 cut over, P11 checker in `eval/panel/check_trace.py`). Still unmeasured on real Nova, Prisma and Timbre.
 - **Date:** November 1, 2026
 - **Source:** [CTO_NOTES_06.md](../CTO_NOTES_06.md), sections 2, 4, 7 and 11; [ORCHESTRATOR_LOG.md](../ORCHESTRATOR_LOG.md), rounds 23 and 24, rulings 41 to 43.
 

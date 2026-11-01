@@ -6,7 +6,7 @@ VENV_PY := .venv/bin/python
 PYTHON ?= $(if $(wildcard $(VENV_PY)),$(VENV_PY),python3)
 export PYTHONPATH := src:.
 
-.PHONY: help venv hooks verify-range install test lint format cli cli-fake cli-fake-hi cli-real cli-fake-debate cli-debate cli-real-debate eval eval-gate eval-motions eval-debate clean-traces voice-install voice-fake voice-upsc voice-debate voice-summary voice-record stt-ab voice-lab voice-lab-fake
+.PHONY: help venv hooks verify-range install test lint format cli cli-fake cli-fake-hi cli-real cli-fake-debate cli-debate cli-real-debate likely-questions check-trace eval eval-gate eval-motions eval-debate clean-traces voice-install voice-fake voice-upsc voice-debate voice-summary voice-record stt-ab voice-lab voice-lab-fake
 
 help:
 	@echo "venv         create .venv and install everything (run this first on macOS)"
@@ -18,6 +18,8 @@ help:
 	@echo "cli          interactive text interview, fake offline LLM"
 	@echo "cli-fake     scripted fake interview (examples/fake_session.txt)"
 	@echo "cli-real     interactive text interview on Nova Pro (costs money; needs AWS creds)"
+	@echo "likely-questions the panel's likely questions for the sample form, with hints (fake, free)"
+	@echo "check-trace      check a panel session trace: make check-trace TRACE=traces/<id>.jsonl"
 	@echo "cli-fake-debate  scripted fake debate (examples/fake_debate.txt)"
 	@echo "cli-debate       interactive text debate, fake offline LLM"
 	@echo "cli-real-debate  interactive text debate on Nova Pro (costs money; needs AWS creds)"
@@ -74,6 +76,17 @@ cli-fake-hi:
 
 cli-real:
 	$(PYTHON) -m mockboard.cli
+
+# P9, Utility A: likely questions from the form. Free: the offline stand-in writes the hints.
+# For the real thing (one Nova Pro call, costs credits):
+#   .venv/bin/python -m mockboard.cli --likely-questions --form-file <your form>.json
+likely-questions:
+	$(PYTHON) -m mockboard.cli --fake --likely-questions --form-file examples/forms/sample_form.json
+
+TRACE ?=
+check-trace:
+	@test -n "$(TRACE)" || (echo "usage: make check-trace TRACE=traces/<session>.jsonl" && exit 2)
+	$(PYTHON) -m eval.panel.check_trace $(TRACE)
 
 # Debate mode (ruling 19, CTO_NOTES_04): the board argues the other side of a curated motion.
 cli-fake-debate:

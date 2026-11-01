@@ -16,3 +16,7 @@ class PanelSetup:
 
     max_answers: int | None = None
     free_turns: int = PANEL_FREE_TURNS
+    # P10: a one-question replay of the weakest moment. Empty means a normal interview.
+    replay_segment: str | None = None
+    replay_question: str | None = None
+    skip_judge: bool = False
