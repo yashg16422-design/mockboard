@@ -271,3 +271,11 @@ Orchestrator read trace voice-32a441f916 and the server log from the owner's Mac
 - Standing synthetic figures: 28/33 on the orchestrator's holdout before P1.2's changes; recall on real speech is not measured.
 - Next: P2, P3, then P0.2 before P4.
 
+## Round 32 — Nov 1, 2026 (P2 accepted; P2.1 required before P4; capped interview designed)
+
+- **Accepted** P2 (d113e7e, 469a254, 40567c2); review and design in `docs/CTO_NOTES_12.md`. Orchestrator re-ran at 40567c2: `make test` 1427 passed, `make lint` exit 0, UPSC and form-file md5 826ef550..., debate f2a23f33.... It read the sample agenda: formal, form-based, open-ended, no invented fact. d113e7e alone fails one test (the only red commit; history not rewritten).
+- **Ruling 59:** P2.1 fixes M1 (undotted names, because "Smt." splits hand-offs into fragments), M2 (seeds that dangle after a skip), M3 (`capped_budgets`, budgets summing to the cap: 1/2/2/2/3 at 10), plus section 4's cheap should-fixes.
+- **Ruling 60 (commit discipline):** a versioned pre-commit hook tests the index, `--no-verify` is banned, and `make verify-range` checks each commit. It goes in with P2.1.
+- **Ruling 61 (provisional, owner to confirm):** "10 messages" means 10 answers; repeat, clarify and silence are free, up to 4 (`PANEL_FREE_TURNS`, 0 = strict). The cap comes only from server admission and fails closed; uncapped sessions get 15. New page events `answers` and `closing`. Closes cannot be interrupted.
+- **Ruling 62:** section 12 items 2 to 5 are accepted: garbled clarify and silence use no budget; `must_ask` sits inside the budget; wrap-up at 960 s and hard stop at 1020 s; Nova writes no `current_affairs` seeds, and `hi` keeps templates. P3 builds section 9.4.
+
