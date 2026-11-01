@@ -3,7 +3,8 @@
 The golden transcripts lock today's behaviour: `make cli-fake` and `make cli-fake-debate` with
 a fixed session id must print exactly `tests/golden/upsc_cli_fake.txt` and
 `tests/golden/debate_cli_fake.txt` (timings are not printed without --print-trace, and the
-repository path is normalised).
+repository path and the frozen cards folder are normalised, so both files still read
+`<repo>/data/cards`).
 
 The debate lock (CTO_NOTES_06 section 7) also hashes what reaches the model: the shared prefix,
 the tool schemas and the prompts. The Panel phase must not move any of them. If one of these
@@ -17,6 +18,7 @@ import json
 
 import pytest
 
+from conftest import LOCK_CARDS_DIR
 from mockboard import cli
 from mockboard.brain.deps import build_deps
 from mockboard.brain.graphs import TurnAnalyzer
@@ -24,7 +26,7 @@ from mockboard.brain.prompts import PROMPT_DIR
 from mockboard.brain.schemas import VoiceSignals
 from mockboard.brain.strategist import decide_move
 from mockboard.brain.tools import ALL_TOOLS
-from mockboard.config import REPO_ROOT
+from mockboard.config import REPO_ROOT, Settings
 from mockboard.modes import DEFAULT_MODE, get_profile, mode_ids
 from mockboard.modes.upsc import UPSC_MOVES
 from mockboard.obs.trace import TraceRecorder
@@ -48,6 +50,11 @@ DEBATE_TOOLS_SHA256 = {
 DEBATE_PROMPTS_SHA256 = "c03eda960fc0f9339d5b176060be7e378ef579926f54b6ff8037fcbf2e0699a9"
 
 
+def normalise_paths(out: str) -> str:
+    frozen_cards = str(Settings(_env_file=None).cards_dir)
+    return out.replace(frozen_cards, "<repo>/data/cards").replace(str(REPO_ROOT), "<repo>")
+
+
 def run_upsc_cli(tmp_path, capsys, *extra: str) -> str:
     rc = cli.main(
         [
@@ -61,7 +68,7 @@ def run_upsc_cli(tmp_path, capsys, *extra: str) -> str:
         ]
     )
     assert rc == 0
-    return capsys.readouterr().out.replace(str(REPO_ROOT), "<repo>")
+    return normalise_paths(capsys.readouterr().out)
 
 
 def run_debate_cli(capsys) -> str:
@@ -78,7 +85,7 @@ def run_debate_cli(capsys) -> str:
         ]
     )
     assert rc == 0
-    return capsys.readouterr().out.replace(str(REPO_ROOT), "<repo>")
+    return normalise_paths(capsys.readouterr().out)
 
 
 def sha256(text: str | bytes) -> str:
@@ -163,9 +170,15 @@ def test_debate_golden_file_holds_the_recorded_board_lines():
     assert hashlib.md5(board.encode("utf-8")).hexdigest() == DEBATE_BOARD_LINES_MD5
 
 
+def test_every_test_reads_the_frozen_cards_not_data_cards():
+    assert Settings(_env_file=None).cards_dir == LOCK_CARDS_DIR
+
+
 def test_debate_shared_prefix_hash_is_locked(settings, fake_llm):
-    """`cards=None` loads data/cards the way the CLI does, so this also proves that replacing
-    `Settings.topics` with card discovery (P7) leaves debate's cached prefix alone."""
+    """`cards=None` loads `settings.cards_dir` the way the CLI does: under test that is the
+    frozen tests/data/lock_cards, so real cards added to data/cards cannot move this hash.
+    It proves nothing yet about card discovery: P7 must run discovery over the frozen folder
+    and compare this hash."""
     deps = build_deps(settings, fake_llm)
     assert sha256(deps.mode(DEBATE_MODE).kit.shared_prefix) == DEBATE_PREFIX_SHA256
 
