@@ -37,13 +37,14 @@ import operator
 import re
 import unicodedata
 from collections.abc import Callable, Sequence
+from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import Annotated, Any, TypedDict
 
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import END, START, StateGraph
 
-from mockboard.brain.affairs import words_heard
+from mockboard.brain.affairs import AffairsNote, words_heard
 from mockboard.brain.graphs import make_serde
 from mockboard.brain.panel_lines import (
     CAP_CLOSE_LINES,
@@ -88,6 +89,11 @@ from mockboard.brain.schemas import (
 from mockboard.brain.strategist import CLOSE_TARGET, PRESSURE
 
 logger = logging.getLogger("mockboard.brain.director")
+
+# The notes for this sitting, set by PanelDirector.decide_turn. None means the file.
+_SITTING_BRIEFING: ContextVar[tuple[AffairsNote, ...] | None] = ContextVar(
+    "sitting_briefing", default=None
+)
 
 __all__ = [
     "PANEL_FREE_TURNS",
@@ -216,7 +222,7 @@ def _briefing_probe_due(
     """One follow-up when the answer names a prepared subject and a later question remains."""
     if memory.probes_on_seed >= 1 or _questions_left(segment, turn, cfg) <= 1:
         return False
-    return bool(words_heard(turn.raw_text))
+    return bool(words_heard(turn.raw_text, _SITTING_BRIEFING.get()))
 
 
 def _questions_left(segment: AgendaSegment, turn: DirectorTurn, cfg: PanelSettings) -> int:
@@ -877,6 +883,8 @@ class PanelDirector:
         self._queued: list[CompletedTurn] = []
         self._seeded = False
         self._config = {"configurable": {"thread_id": session_id}}
+        # This sitting's news notes. None keeps the file briefing for a follow-up.
+        self.briefing: tuple[AffairsNote, ...] | None = None
 
     def queue_completed(self, done: CompletedTurn) -> None:
         self._queued.append(done)
@@ -904,6 +912,13 @@ class PanelDirector:
     async def decide_turn(self, turn: DirectorTurn) -> PanelDecision:
         """Never raises. A broken graph falls back to the pure function, so a request is still
         honoured; a broken agenda falls back to the strategist's move. Both are `director_error`."""
+        token = _SITTING_BRIEFING.set(self.briefing)
+        try:
+            return await self._decide(turn)
+        finally:
+            _SITTING_BRIEFING.reset(token)
+
+    async def _decide(self, turn: DirectorTurn) -> PanelDecision:
         try:
             out = await self._graph.ainvoke(self._input(turn), self._config)
         except Exception as exc:  # the fallback is the point: this must not stop an interview

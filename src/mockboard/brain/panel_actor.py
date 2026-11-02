@@ -43,7 +43,7 @@ from mockboard.brain.actor import (
     preface_text,
     stream_line,
 )
-from mockboard.brain.affairs import affairs_line
+from mockboard.brain.affairs import AffairsNote, affairs_line
 from mockboard.brain.agenda import NEUTRAL_SEEDS
 from mockboard.brain.avoid_terms import find_avoided, prompt_terms
 from mockboard.brain.cards import CardSet
@@ -279,6 +279,7 @@ def build_panel_user(
     claim: Claim | None = None,
     card: FactCard | None = None,
     mix: str = "hi-en",
+    briefing: tuple[AffairsNote, ...] | None = None,
 ) -> str:
     """The panel actor's user message. Every block is built with `tag()`, never an f-string: form
     text, gists and avoid terms are untrusted (CTO_NOTES_12 §7)."""
@@ -291,7 +292,8 @@ def build_panel_user(
         tag("agenda_item", json.dumps(item, ensure_ascii=False)),
     ]
     # Every member has read the same briefing. It is background, not the question.
-    line = affairs_line()
+    # `briefing` is this sitting's search notes; None keeps the file.
+    line = affairs_line(briefing)
     if line:
         parts.append(tag("affairs", line))
     summary = render_summary(memory.notes)
@@ -376,6 +378,7 @@ async def compose_panel_line(
     first_token_budget_s: float | None = None,
     filler_played: Callable[[], bool] | None = None,
     fast_throttle_retry_window_s: float | None = None,
+    briefing: tuple[AffairsNote, ...] | None = None,
 ) -> PanelLine:
     """One panel turn. `preface` is the director's fixed lines; a conceded error adds the
     acknowledgement first, by `ack_member`, as in the UPSC board."""
@@ -401,7 +404,7 @@ async def compose_panel_line(
     user = build_panel_user(
         persona, move, panel, memory, form=form, spoken=[p.text for p in fixed],
         after_handoff=after_handoff, last_question=last_question, last_answer=last_answer,
-        avoid=avoid, claim=claim, card=card, mix=mix,
+        avoid=avoid, claim=claim, card=card, mix=mix, briefing=briefing,
     )
     cap = max(max_words, SEED_LINE_WORDS) if seeded else max_words
     call = await call_actor(

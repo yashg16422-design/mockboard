@@ -1,8 +1,10 @@
 """A short briefing every member has read before the sitting.
 
-This is not a web search and not a fact card, and it is not the subject of the interview.
+The file here is the fallback. A real sitting may replace it, once, at the opening, with
+a few digit-free headlines (`news_search`). Either way this is not a fact card and it is
+not the subject of the interview.
 Each note is one sentence with no digit, kept next to the URL it came from. Only the
-sentences reach the actor. The URL, the date and any name of a real person stay in the file.
+sentences reach the actor. The URL, the date and any name of a real person stay out of the line.
 
 The candidate still chooses the issue. A member may use one clause from one sentence only
 after the candidate has already brought that subject up (actor.v8). Prisma hears a note's

@@ -287,7 +287,7 @@ class Settings(BaseSettings):
     prompt_judge_version: int = 1
     prompt_opener_version: int = 2  # no greeting: the ritual line is said by code
     prompt_summary_version: int = 1  # likely-question hints (P9); not in a session's trace map
-    prompt_agenda_plan_version: int = 2  # Nova's seed questions (P6); v2: never names the place
+    prompt_agenda_plan_version: int = 3  # v2, plus a briefing the planner must not copy into a seed
     # Debate mode (ADR-009, CTO_NOTES_04).
     prompt_shared_debate_version: int = 1
     prompt_listener_debate_version: int = 2  # Round 20: Devanagari

@@ -297,9 +297,10 @@ SEGMENT_FIELDS = {
 }
 
 
-def build_plan_user(form: CandidateForm, fallback: Agenda) -> str:
+def build_plan_user(form: CandidateForm, fallback: Agenda, briefing: str = "") -> str:
     """The planner's user message. The form goes in through `tag()` only: it is the candidate's own
-    text and the main way into this prompt (CTO_NOTES_12 §7)."""
+    text and the main way into this prompt (CTO_NOTES_12 §7). `briefing` is the same: recent public
+    lines, present only on a real sitting, and never an order."""
     segments = [
         {
             "id": s.id,
@@ -310,19 +311,21 @@ def build_plan_user(form: CandidateForm, fallback: Agenda) -> str:
         for s in fallback.segments
         if s.id in PLANNED_SEGMENTS
     ]
-    return "\n".join(
-        [
-            tag("application_form", form.as_prompt_lines()),
-            tag("segments", json.dumps(segments, ensure_ascii=False)),
-            "Call the record_agenda tool now.",
-        ]
-    )
+    parts = [
+        tag("application_form", form.as_prompt_lines()),
+        tag("segments", json.dumps(segments, ensure_ascii=False)),
+    ]
+    if briefing.strip():
+        parts.append(tag("briefing", briefing.strip()))
+    parts.append("Call the record_agenda tool now.")
+    return "\n".join(parts)
 
 
 class PlanState(TypedDict, total=False):
     form: CandidateForm
     fallback: Agenda
     avoid: tuple[str, ...]
+    briefing: str
     llm: LLMClient
     kit: PromptKit
     started: float
@@ -339,7 +342,7 @@ async def plan_node(state: PlanState) -> dict[str, Any]:
         out = await state["llm"].structured(
             name="plan_agenda",
             system=state["kit"].system("agenda_plan"),
-            user=build_plan_user(state["form"], state["fallback"]),
+            user=build_plan_user(state["form"], state["fallback"], state.get("briefing", "")),
             tool=AGENDA_TOOL,
             output_model=AgendaOutput,
             tag="plan",
@@ -396,17 +399,19 @@ async def plan_agenda(
     fallback: Agenda,
     *,
     avoid: Sequence[str] = (),
+    briefing: str = "",
 ) -> tuple[Agenda, PlanReport]:
     """The planned agenda and what came of it. Never raises (a cancelled call does): any failure
-    returns `fallback` itself. A Hindi interview is not planned: no call is made."""
+    returns `fallback` itself. A Hindi interview is not planned: no call is made. `briefing` is
+    attached only when a real sitting fetched usable headlines."""
     if form.interview_language == "hindi":
         return fallback, PlanReport("skipped", error="hindi interviews keep the template questions")
     started = time.monotonic()
     try:
         state = await _compiled().ainvoke(
             {
-                "form": form, "fallback": fallback, "avoid": tuple(avoid), "llm": llm, "kit": kit,
-                "started": started,
+                "form": form, "fallback": fallback, "avoid": tuple(avoid), "briefing": briefing,
+                "llm": llm, "kit": kit, "started": started,
             }
         )
         return state["agenda"], state["report"]

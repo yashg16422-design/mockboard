@@ -588,6 +588,24 @@ async def test_an_ordinary_answer_is_not_a_briefing_follow_up():
     assert d.move.rule_id != "D-BRIEF"
 
 
+async def test_a_search_briefing_follows_its_own_words_and_not_the_file():
+    from mockboard.brain.affairs import AffairsNote
+
+    note = AffairsNote(
+        id="news-0", as_of="2026-11-03", field="news", words=("monsoon", "surplus"),
+        line="The papers are arguing about a monsoon surplus.",
+        source="Example Paper", source_url="https://example.com/monsoon",
+    )
+    sim = Sim(agenda=custom_agenda(3))
+    sim.director.briefing = (note,)
+    heard = await sim.say("I have been reading about the monsoon surplus in the papers.")
+    assert heard.move.move == Move.probe and heard.move.rule_id == "D-BRIEF"
+    other = Sim(agenda=custom_agenda(3))
+    other.director.briefing = (note,)
+    gig = await other.say("Maine gig workers ke social security boards ko follow kiya hai.")
+    assert gig.move.rule_id != "D-BRIEF"
+
+
 async def test_a_seed_resets_the_probe_count():
     sim = Sim()
     await answers(sim, 2 + 2)

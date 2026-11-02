@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from mockboard.brain.affairs import words_heard
+from mockboard.brain.affairs import AffairsNote, words_heard
 
 # Words a UPSC board and candidate use whatever the topic.
 UPSC_COMMON = [
@@ -59,7 +59,7 @@ def speech_context(session: Any) -> tuple[list[str], str]:
     terms = list(UPSC_COMMON) + UPSC_TOPICS.get(topic, [])
     # Prisma v3.0 favours a briefing word only after the candidate has said it, on any
     # member's turn. v2.5 never receives the list. UNVERIFIED: whether the terms help Hinglish.
-    terms.extend(words_heard(_candidate_text(session)))
+    terms.extend(words_heard(_candidate_text(session), _sitting_notes(session)))
     form = getattr(session, "form", None)
     if form is not None:
         for name in ("home_state", "district", "degree_subject", "optional_subject"):
@@ -68,6 +68,12 @@ def speech_context(session: Any) -> tuple[list[str], str]:
                 terms.append(str(value))
         terms.extend(getattr(form, "hobbies", []) or [])
     return _clean(terms), UPSC_TOPIC_TEXT
+
+
+def _sitting_notes(session: Any) -> tuple[AffairsNote, ...] | None:
+    """This sitting's search notes, or None so Prisma follows the file."""
+    hooks = getattr(session, "hooks", None)
+    return getattr(hooks, "_briefing", None) if hooks is not None else None
 
 
 def _candidate_text(session: Any) -> str:

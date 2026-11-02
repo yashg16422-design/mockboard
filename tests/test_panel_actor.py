@@ -93,7 +93,7 @@ def test_upsc_prompt_versions_are_the_panels_and_the_old_board_files_stay_on_dis
     deleted (the prompt rule), they are simply no longer named."""
     versions = settings.prompt_versions()
     assert versions["listener"] == 4 and versions["actor"] == 8
-    assert versions["opener"] == 2 and versions["agenda_plan"] == 2
+    assert versions["opener"] == 2 and versions["agenda_plan"] == 3
     for old in ("listener.v3.md", "actor.v3.md", "actor.v5.md", "actor.v6.md", "actor.v7.md",
                 "opener.v1.md"):
         assert (PROMPT_DIR / old).exists(), old
@@ -172,6 +172,23 @@ def test_every_member_reads_the_same_briefing_and_it_has_no_digit(form):
     )
     assert quiet.split("<affairs>")[1].split("</affairs>")[0] == block
     assert '"manner": "quiet"' in quiet
+
+
+def test_a_sitting_briefing_replaces_the_file_for_every_member(form):
+    from mockboard.brain.affairs import AffairsNote
+
+    note = AffairsNote(
+        id="news-0", as_of="2026-11-03", field="news", words=("monsoon", "surplus"),
+        line="The papers are arguing about a monsoon surplus.",
+        source="Example Paper", source_url="https://example.com/monsoon",
+    )
+    user = build_panel_user(
+        PERSONAS["chairman"], move_of(), panel(), PanelMemory(),
+        form=form, spoken=[], after_handoff=False, last_question="Q?", last_answer="A.",
+        briefing=(note,),
+    )
+    block = user.split("<affairs>")[1].split("</affairs>")[0]
+    assert "monsoon surplus" in block and "Upper Siang" not in block and "gig" not in block
 
 
 def test_the_five_members_keep_distinct_manners():

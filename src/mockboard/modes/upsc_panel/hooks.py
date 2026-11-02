@@ -39,6 +39,7 @@ from mockboard.brain.agenda_plan import PlanReport, plan_agenda, upgrade_agenda
 from mockboard.brain.avoid_terms import expand_terms, find_avoided, topics_in_play
 from mockboard.brain.director import PanelDirector, opening_memory
 from mockboard.brain.graphs import generate_report
+from mockboard.brain.news_search import prepare_briefing
 from mockboard.brain.panel_actor import (
     PanelLine,
     compose_panel_line,
@@ -134,6 +135,8 @@ class PanelHooks:
         self._plan_applied = False
         self._opened = False  # True once `open()` has had its say: a plan after that is late
         self._plan_report: PlanReport | None = None
+        self._briefing = None  # this sitting's news notes; None keeps the file
+        self._briefing_source = ""  # "", "search", or "file"
         self._row: dict[str, Any] = {}
         self._finished = False
 
@@ -250,7 +253,6 @@ class PanelHooks:
         if self.setup.replay_segment:
             self._plan_report = PlanReport("skipped", error="replay uses the flagged question")
             return
-        s = self.session
         if not self.settings.agenda_plan_enabled:
             self._plan_report = PlanReport("skipped", error="agenda planning is switched off")
             return
@@ -258,10 +260,21 @@ class PanelHooks:
             asyncio.get_running_loop()
         except RuntimeError:
             return
-        self._plan = asyncio.ensure_future(
-            plan_agenda(s.deps.llm, self.kit, s.form, self.agenda, avoid=tuple(self._refused))
-        )
+        self._plan = asyncio.ensure_future(self._plan_job())
         self._plan.add_done_callback(self._plan_finished)
+
+    async def _plan_job(self):
+        """Fetch a briefing only for a live Bedrock client, then plan. A stub does not fetch."""
+        s = self.session
+        notes, briefing, source = await prepare_briefing(s.deps.llm)
+        if notes:
+            self._briefing = notes
+            self.director.briefing = notes
+        self._briefing_source = source
+        return await plan_agenda(
+            s.deps.llm, self.kit, s.form, self.agenda,
+            avoid=tuple(self._refused), briefing=briefing,
+        )
 
     def _plan_finished(self, task: asyncio.Task) -> None:
         """A plan that ended after `open()` stopped waiting upgrades the segments not begun."""
@@ -309,12 +322,21 @@ class PanelHooks:
         if report is None:
             return f"Agenda: {self.agenda.source} (plan still pending)"
         if report.status == "used":
-            return (
+            text = (
                 f"Agenda: {self.agenda.source} ({report.accepted} questions written by the planner,"
                 f" {len(report.rejected)} replaced by templates, {report.ms:.0f} ms)"
             )
+            return self._with_briefing(text)
         why = f": {report.error}" if report.error else ""
-        return f"Agenda: {self.agenda.source} (plan {report.status}{why})"
+        text = f"Agenda: {self.agenda.source} (plan {report.status}{why})"
+        return self._with_briefing(text)
+
+    def _with_briefing(self, text: str) -> str:
+        if self._briefing_source == "search":
+            return text + " The members' briefing came from a news search at the start."
+        if self._briefing_source == "file":
+            return text + " A news search returned nothing usable, so the saved briefing stands."
+        return text
 
     async def _await_plan(self) -> None:
         """Wait at most `agenda_plan_wait_s` for the plan; the interview starts either way."""
@@ -480,6 +502,7 @@ class PanelHooks:
                 if tuning.actor_fast_throttle_retry
                 else None
             ),
+            briefing=self._briefing,
         )
         tr.mark("actor_done")
         self._line = line
@@ -623,6 +646,12 @@ class PanelHooks:
         if not notes:
             notes.append("No candidate request was detected in this session.")
         notes.append(REQUEST_ACCURACY_NOTE)
+        if self._briefing_source == "search":
+            notes.append(
+                "The members' briefing came from a news search at the start of the sitting."
+            )
+        elif self._briefing_source == "file":
+            notes.append("A news search returned nothing usable, so the saved briefing stands.")
         return notes
 
     async def report(self, language: Any = None):
