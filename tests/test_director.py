@@ -31,6 +31,7 @@ from mockboard.brain.panel_lines import (
     END_CLOSE_LINES,
     END_CONFIRM_LINES,
     END_DECLINED_LINES,
+    REGISTER_LINES,
     REPEAT_PREFIX_LINES,
     SKIP_ACK_LINES,
     WRAP_UP_CLOSE_LINES,
@@ -67,6 +68,14 @@ def texts(decision) -> list[str]:
 
 def speakers(decision) -> list[str]:
     return [part.member for part in decision.preface]
+
+
+async def test_slang_is_one_sentence_and_the_question_still_comes():
+    sim = Sim()
+    decision = await sim.say("Bro yeh toh bahut easy hai, log khud dekh lenge.")
+    assert texts(decision)[0] == line_for(REGISTER_LINES, "hi-en")
+    assert decision.node != "close"
+    assert decision.seed or decision.move.move != Move.move_on or decision.preface
 
 
 async def answers(sim: Sim, count: int) -> None:

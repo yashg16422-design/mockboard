@@ -53,6 +53,7 @@ from mockboard.brain.panel_lines import (
     END_CONFIRM_LINES,
     END_DECLINED_LINES,
     HANDOFF_LINES,
+    REGISTER_LINES,
     REPEAT_PREFIX_LINES,
     SKIP_ACK_LINES,
     WRAP_UP_CLOSE_LINES,
@@ -60,6 +61,7 @@ from mockboard.brain.panel_lines import (
     handoff_line,
     line_for,
 )
+from mockboard.brain.register import register_hit
 from mockboard.brain.requests import ChangeStrength, RequestKind, detect_request, word_count
 from mockboard.brain.schemas import (
     PANEL_FREE_TURNS,
@@ -427,11 +429,16 @@ class _Plan:
     ) -> PanelDecision:
         now = target or self.segment
         avoid = dict.fromkeys((*self.memory.avoid_terms, *self.u.avoid_terms))
+        parts = tuple(preface)
+        # A close is the last line. On every other reply, clear slang gets one sentence
+        # from the member who heard it, and the planned question still follows.
+        if node != "close" and register_hit(self.turn.raw_text):
+            parts = (self.own(REGISTER_LINES), *parts)
         return PanelDecision(
             turn_id=self.turn.ctx.turn_id,
             move=move,
             node=node,
-            preface=tuple(preface),
+            preface=parts,
             seed=seed[1].text if seed else None,
             seed_segment=now.id if seed else None,
             seed_index=seed[0] if seed else None,

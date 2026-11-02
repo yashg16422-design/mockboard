@@ -203,6 +203,27 @@ CLARIFY_PANEL_LINES = LineSet(
         ),
     },
 )
+# A clear slang or an abuse. One sentence, then the question continues. Not a lecture.
+REGISTER_LINES = LineSet(
+    "register",
+    {
+        "hi-en": (
+            "Kya aap apne senior se isi tarah baat karenge?",
+            "Board ke saamne yeh shabd theek nahi baithte. Seedhe point par aaiye.",
+            "Isi bhaasha mein aap ek senior officer se baat karenge?",
+        ),
+        "en": (
+            "Is that how you would speak to a senior?",
+            "Those words do not belong in front of a board. Please come to the point.",
+            "Would you use that language with a senior officer?",
+        ),
+        "hi": (
+            "क्या आप अपने सीनियर से इसी तरह बात करेंगे?",
+            "बोर्ड के सामने ये शब्द ठीक नहीं बैठते। सीधे बिंदु पर आइए।",
+            "इसी भाषा में आप एक सीनियर अधिकारी से बात करेंगे?",
+        ),
+    },
+)
 # The Chairperson's normal close, when the agenda is done.
 CLOSE_LINES = _once(
     "close",
@@ -243,6 +264,7 @@ ALL_LINE_TABLES: tuple[LineSet, ...] = (
     END_CONFIRM_LINES,
     END_DECLINED_LINES,
     CLARIFY_PANEL_LINES,
+    REGISTER_LINES,
     CLOSE_LINES,
     END_CLOSE_LINES,
     WRAP_UP_CLOSE_LINES,
