@@ -363,3 +363,9 @@ Orchestrator read trace voice-32a441f916 and the server log from the owner's Mac
 - The scripted answers were not lined up with the later questions, so the scores are a smoke test, not a candidate's result. The detector stays frozen (Ruling 57): there is no `voice-record` yet.
 - `python -m probes.selftest` was 19/22 offline. The two `--app-prompts` checks still look for `Settings.topics`, removed at P7. The cards check still calls `load_cards` with a topic list. Those probes were not used for the live run.
 - **Ruling 78:** still needs the owner at the microphone, and not started: `make voice-lab` (the ear decides the voices), `make voice-record` then `make stt-ab`, one short `make voice-upsc`, one session past 12 minutes for Prisma rotation, and about 30 request lines plus 10 answers. Real recall stays unmeasured until that recording.
+
+## Round 45 — Nov 2, 2026 (register line and actor v6)
+
+- **Ruling 79:** clear slang is one courteous sentence, then the question. The list is closed (`register.py`): bro, yaar, and a few abuses, whole words, Latin or Devanagari. "tum" and "bhai" about other people are not hits. The member who heard it says the line. It does not end the interview and it does not change a score by itself. `eef302d`. Hook: 2749 passed.
+- `actor.v6` is the UPSC actor. It may make one specific observation, follow a domain the candidate brings for that question, and tie it back to who is affected. It must not joke at them, take a party line, invent a fact, or claim it searched. There is still no web search and no real fact cards, so a live fact check still does not run. v6 has not been run on Nova.
+- Not ready for a public check: voice choice, Prisma A/B, a real voice session, rotation past 12 minutes, the recall recording, deploy.
