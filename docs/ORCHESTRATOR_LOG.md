@@ -369,3 +369,8 @@ Orchestrator read trace voice-32a441f916 and the server log from the owner's Mac
 - **Ruling 79:** clear slang is one courteous sentence, then the question. The list is closed (`register.py`): bro, yaar, and a few abuses, whole words, Latin or Devanagari. "tum" and "bhai" about other people are not hits. The member who heard it says the line. It does not end the interview and it does not change a score by itself. `eef302d`. Hook: 2749 passed.
 - `actor.v6` is the UPSC actor. It may make one specific observation, follow a domain the candidate brings for that question, and tie it back to who is affected. It must not joke at them, take a party line, invent a fact, or claim it searched. There is still no web search and no real fact cards, so a live fact check still does not run. v6 has not been run on Nova.
 - Not ready for a public check: voice choice, Prisma A/B, a real voice session, rotation past 12 minutes, the recall recording, deploy.
+
+## Round 46 — Nov 2, 2026 (the sitting plan is the board's material)
+
+- **Ruling 80:** the agenda built from the form is the board's material, not a fact card and not a search. Each member holds their questions. As answers are folded, the note and the still-unasked question update. At the end the members compare those notes. The talk adds no fact and no number. `e8ed47e`. Hook: 2752 passed. Board-line md5 `e32140d5...` unchanged.
+- This is not five models arguing. It is the notes they already kept. A live search is still not in the product. The judge still writes the scores.
