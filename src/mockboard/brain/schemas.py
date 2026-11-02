@@ -775,6 +775,8 @@ class SessionReport(_Model):
     weakest: WeakestMoment | None = None
     practice_plan: list[str] = Field(default_factory=list)
     form: CandidateForm | None = None
+    # The members' closing talk, built from their notes and the plan. Empty for debate.
+    discussion: list[str] = Field(default_factory=list)
 
     @field_validator("scores")
     @classmethod

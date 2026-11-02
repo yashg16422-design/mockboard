@@ -205,6 +205,10 @@ def format_report(report: SessionReport | DebateReport, cards) -> str:
         lines.append("NOTE: every fact card in this run is a SYNTHETIC TEST CARD, not a real fact.")
     if report.model_answer:
         lines.append(f"Model answer: {report.model_answer}")
+    if report.discussion:
+        lines.append("Board discussion:")
+        for line in report.discussion:
+            lines.append(f"  {line}")
     if report.by_member:
         lines.append("By panel member:")
         for block in report.by_member:

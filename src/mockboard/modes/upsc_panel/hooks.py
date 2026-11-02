@@ -652,6 +652,7 @@ class PanelHooks:
                 language=language,
                 callbacks=s.callbacks,
             )
+        from mockboard.brain.board_brief import discussion_lines
         from mockboard.brain.report_panel import PRESSURE_MOVES, decorate_report
 
         pressure = {m.for_turn for m in s.state.moves if m.move in PRESSURE_MOVES}
@@ -664,10 +665,14 @@ class PanelHooks:
             pressure_turns=pressure,
             form=s.form,
         )
+        weakest = report.weakest.question if report.weakest is not None else None
         return report.model_copy(
             update={
                 "requests": list(self.director.requests),
                 "notes": [*report.notes, *self.request_notes()],
                 "prompt_versions": self.prompt_versions(),
+                "discussion": discussion_lines(
+                    self.agenda, self.director.memory, self.cfg.names, weakest
+                ),
             }
         )

@@ -94,6 +94,19 @@ Claims checked against fact cards:
   [contradicted     ] Exampleland mein tourism GDP ka 30 percent hai in 2023, isliye tourism  <- card test_tourism_gdp_share (SYNTHETIC TEST CARD (no real source))
 NOTE: every fact card in this run is a SYNTHETIC TEST CARD, not a real fact.
 Model answer: Rule-based offline stand-in score from the session transcript (not a model judgement).
+Board discussion:
+  Chairperson: The plan came from the form. Each of us held our questions, and we did not chase a number.
+  Chairperson Sharma: I heard this. Candidate spoke about exampleland, tourism, percent.
+  Chairperson Sharma still had ready: Agar civil services ka sapna poora na ho, to aap samaj ke liye kaunsa kaam chunenge, aur kyun?
+  Shrimati Menon: I heard this. Candidate spoke about homestays, chahiye, management.
+  Shrimati Menon still had ready: Agar aap apne zile ke prashasan mein hote, to sabse pehle kis ek cheez ko badalna chahenge, aur kyun?
+  Doctor Iyer: I heard this. Candidate spoke about digital, system, chahiye.
+  Doctor Iyer still had ready: Electronics ki kaunsi samajh aapko prashasan ke kisi faisle mein kaam aa sakti hai, aur kyun?
+  Professor Sen: I heard this. Candidate spoke about chess, alawa, topic.
+  Professor Sen still had ready: Cycling mein aapko kya kathin laga, aur usse aapne dhairya ke baare mein kaise seekha?
+  Shri Rathore: I heard this. Candidate spoke about pakshon, karunga, dekhunga.
+  Shri Rathore still had ready: Apni pasand ke kisi rashtriya mudde par aap doosre paksh ki baat ko kaise tolte hain?
+  Chairperson: The thin moment to practise is this question. Agar yeh tareeka na chale, to aapka doosra raasta kya hoga?
 By panel member:
   Chairperson Sharma (form_hr)
     Candidate spoke about electronics, training, badhaunga. Candidate spoke about exampleland, tourism, percent.
