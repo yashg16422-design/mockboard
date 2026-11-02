@@ -379,6 +379,11 @@ class Persona(_Model):
     # The member's field, in plain words, for the panel actor's agenda item (CTO_NOTES_06 §6).
     # Empty for the old UPSC board and debate personas; `render_persona_pack` does not print it.
     domain: str = ""
+    # How this member holds the room (actor.v7). Empty on the old board and on debate.
+    # quiet: few words, view stays hidden. pressing: one consequence, then stop.
+    # personal: what this means for the candidate. steady: the district, nothing else.
+    # chair: open, hand over, close. Does not ask a member's question.
+    manner: str = ""
     # Short acknowledgements for the voice loop's masking filler (played if the actor's first
     # sentence is late). Not used in text mode yet.
     filler_lines: list[str] = Field(default_factory=list)
@@ -386,6 +391,14 @@ class Persona(_Model):
     # fails or misses its budget ("Ek minute... aap apni baat jaari rakhiye"). Data, so they
     # can be synthesised once and cached as audio.
     fallback_lines: list[str] = Field(default_factory=list)
+
+    @field_validator("manner")
+    @classmethod
+    def _manner(cls, v: str) -> str:
+        allowed = {"", "quiet", "pressing", "personal", "steady", "chair"}
+        if v not in allowed:
+            raise ValueError(f"manner must be one of {sorted(allowed)}")
+        return v
 
 
 class CandidateForm(_Model):

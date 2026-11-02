@@ -10,6 +10,7 @@ voice_id: "PLACEHOLDER_SET_AFTER_TIMBRE_PROBE"
 # Timbre v2.5 Hindi male voices from the Gnani voice list.
 voice_candidates: ["Deepak", "Hemraj"]
 language: "hi-en"
+manner: pressing
 style: >-
   Direct and practical. Lets the candidate choose the issue, then asks about ground realities,
   trade-offs between security and rights, and what they would do as a district officer. Names

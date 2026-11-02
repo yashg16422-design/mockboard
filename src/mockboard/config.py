@@ -283,7 +283,7 @@ class Settings(BaseSettings):
     # never edited, and are no longer used.
     prompt_listener_version: int = 4  # v3 + the candidate's request, English-only notes
     prompt_librarian_version: int = 1
-    prompt_actor_version: int = 6  # v5 + follow their point, no invented search (not yet on Nova)
+    prompt_actor_version: int = 7  # v6 + manner and one sourced affairs line (not yet on Nova)
     prompt_judge_version: int = 1
     prompt_opener_version: int = 2  # no greeting: the ritual line is said by code
     prompt_summary_version: int = 1  # likely-question hints (P9); not in a session's trace map

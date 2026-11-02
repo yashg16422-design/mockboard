@@ -16,6 +16,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from mockboard.brain.affairs import affairs_words
+
 # Words a UPSC board and candidate use whatever the topic.
 UPSC_COMMON = [
     "UPSC", "IAS", "IPS", "IFS", "civil services", "Collector", "District Magistrate",
@@ -55,6 +57,10 @@ def speech_context(session: Any) -> tuple[list[str], str]:
     state = getattr(session, "state", None)
     topic = getattr(state, "topic", "") or ""
     terms = list(UPSC_COMMON) + UPSC_TOPICS.get(topic, [])
+    if topic == "current_affairs":
+        # The same words the pressing member may offer, so Prisma v3.0 can favour them.
+        # v2.5 never receives this list. UNVERIFIED: whether the terms help Hinglish.
+        terms.extend(affairs_words())
     form = getattr(session, "form", None)
     if form is not None:
         for name in ("home_state", "district", "degree_subject", "optional_subject"):

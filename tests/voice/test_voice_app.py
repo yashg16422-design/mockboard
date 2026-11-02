@@ -177,6 +177,7 @@ def test_speech_context_per_topic_and_for_a_motion(settings, cards, fake_llm, fo
     s.state.topic_index = s.state.topics.index("current_affairs")
     later = speech_context(s)[0]
     assert "Superintendent of Police" in later and "Kanpur Nagar" in later
+    assert "Siang" in later and "Siang" not in terms
     # P7: the words follow the panel's segments, and no old fixed topic is in them.
     assert not {"Naxalism", "tourism", "heritage"} & set(later + terms)
     deb = server.make_session(cfg_for(settings, ["--mode", "debate", "--motion", "1",

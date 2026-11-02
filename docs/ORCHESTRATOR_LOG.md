@@ -374,3 +374,9 @@ Orchestrator read trace voice-32a441f916 and the server log from the owner's Mac
 
 - **Ruling 80:** the agenda built from the form is the board's material, not a fact card and not a search. Each member holds their questions. As answers are folded, the note and the still-unasked question update. At the end the members compare those notes. The talk adds no fact and no number. `e8ed47e`. Hook: 2752 passed. Board-line md5 `e32140d5...` unchanged.
 - This is not five models arguing. It is the notes they already kept. A live search is still not in the product. The judge still writes the scores.
+
+## Round 47 — Nov 2, 2026 (manners, and one sourced affairs sentence)
+
+- **Ruling 81:** the board does not search the web. Shri Rathore (pressing) may offer one sourced sentence, with no digit and no URL in the prompt: people in Upper Siang have been protesting a proposed dam on the Siang, and the chief minister has said no construction decision has been taken and that public consent would be needed. Source on file: India Today North East, 2 Nov 2026. If the candidate names another issue, he leaves the sentence. The same words are Prisma v3.0 keyterms on that turn only. v2.5 never receives them. Whether they help Hinglish is still unverified.
+- Manners, so members do not cross: Professor Sen quiet, Shri Rathore pressing, Doctor Iyer personal, Shrimati Menon steady, Chairperson Sharma holds the room. Only the named member speaks. The manner is a field the actor reads. The persona-pack text is unchanged, so the debate request hash stays locked. `actor.v7` has not run on Nova. Board-line md5 `e32140d5...` unchanged.
+- "Too buggy" is read as the member who keeps one uncomfortable point and then stops (Rathore), not as a broken member. The owner can correct that reading.

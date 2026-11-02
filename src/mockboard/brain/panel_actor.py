@@ -43,6 +43,7 @@ from mockboard.brain.actor import (
     preface_text,
     stream_line,
 )
+from mockboard.brain.affairs import affairs_line
 from mockboard.brain.agenda import NEUTRAL_SEEDS
 from mockboard.brain.avoid_terms import find_avoided, prompt_terms
 from mockboard.brain.cards import CardSet
@@ -250,6 +251,7 @@ def board_context(
         "speaker": f"{persona.name}, {persona.title}",
         "speaker_style": persona.style,
         "speaker_domain": persona.domain,
+        "manner": persona.manner,
         "move": actor_move.value,
         "move_reason": move.reason,
         "interview_language": form.interview_language,
@@ -288,6 +290,12 @@ def build_panel_user(
         ),
         tag("agenda_item", json.dumps(item, ensure_ascii=False)),
     ]
+    # The pressing member alone may offer the sourced sentence. Other members never see it,
+    # so they cannot lecture it or cross him.
+    if persona.id == "ips_officer":
+        line = affairs_line()
+        if line:
+            parts.append(tag("affairs", line))
     summary = render_summary(memory.notes)
     if summary:
         parts.append(tag("conversation_summary", summary))

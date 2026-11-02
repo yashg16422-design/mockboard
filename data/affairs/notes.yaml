@@ -1,0 +1,13 @@
+# One sentence the current-affairs member may offer. No digit in `line` or `words`:
+# the actor is not allowed to say a number, and this file is the only source.
+# Replace the note when it goes stale. Do not add a second issue until this one is heard.
+# Sources read on 2026-11-02. The spoken line does not name a person or a capacity.
+- id: siang-upper-2026-11-02
+  as_of: "2026-11-02"
+  words: ["Siang", "Upper Siang", "Arunachal Pradesh", "dam", "public consent"]
+  line: >
+    People in Upper Siang have been protesting a proposed dam on the Siang, and the
+    chief minister has said that no construction decision has been taken and that
+    public consent would be needed.
+  source: "India Today North East, 2 November 2026"
+  source_url: "https://www.indiatodayne.in/arunachal-pradesh/story/no-decision-on-siang-dam-construction-public-consent-essential-arunachal-cm-pema-khandu-1470669-2026-11-02"

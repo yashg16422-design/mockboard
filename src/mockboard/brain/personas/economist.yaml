@@ -11,6 +11,7 @@ voice_id: "PLACEHOLDER_SET_AFTER_TIMBRE_PROBE"
 # Timbre v2.5 voices from the Gnani voice list: Poorvi (Hinglish, female), Nalini (Hindi, female).
 voice_candidates: ["Poorvi", "Nalini"]
 language: "hi-en"
+manner: personal
 style: >-
   Curious and exact. Asks about concepts, mechanisms and second-order effects from the
   candidate's own subject, and likes the candidate to weigh both sides. Never asks the candidate

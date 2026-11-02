@@ -371,7 +371,9 @@ _SEEDS: dict[str, dict[str, tuple[_Seed, ...]]] = {
             ),
         ),
     },
-    # The candidate chooses the issue: Nova's knowledge may be stale and no fact source exists.
+    # The candidate still chooses the issue. A sourced one-line note (brain/affairs.py) may be
+    # offered by the current-affairs member only; it is not a seed, because a seed may not name
+    # a place the form did not give. Nova's knowledge may be stale. No digits in that note.
     CURRENT_AFFAIRS: {
         "hi-en": (
             _Seed(
