@@ -43,6 +43,7 @@ from typing import Annotated, Any, TypedDict
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import END, START, StateGraph
 
+from mockboard.brain.affairs import words_heard
 from mockboard.brain.graphs import make_serde
 from mockboard.brain.panel_lines import (
     CAP_CLOSE_LINES,
@@ -209,6 +210,15 @@ def _cap_left(turn: DirectorTurn, cfg: PanelSettings) -> int | None:
     return cfg.max_answers - turn.answers_used - 1
 
 
+def _briefing_probe_due(
+    turn: DirectorTurn, segment: AgendaSegment, memory: PanelMemory, cfg: PanelSettings
+) -> bool:
+    """One follow-up when the answer names a prepared subject and a later question remains."""
+    if memory.probes_on_seed >= 1 or _questions_left(segment, turn, cfg) <= 1:
+        return False
+    return bool(words_heard(turn.raw_text))
+
+
 def _questions_left(segment: AgendaSegment, turn: DirectorTurn, cfg: PanelSettings) -> int:
     """Questions this segment can still put after a counted turn."""
     left = segment.budget - turn.ctx.turns_in_topic - 1
@@ -366,7 +376,11 @@ def understand(
     if free_kind:  # free turns have run out: an answer now, with the same response
         return _handle(priced)
     # Step 6. A `move_on` with budget left still lets the situation be asked (§9.4).
-    if turn.base_move.move == Move.move_on and not _must_ask_unasked(segment, memory):
+    # One briefing follow-up stays, when the candidate has named a prepared subject and
+    # this segment still has a later question. It does not replace the last question.
+    briefing = _briefing_probe_due(turn, segment, memory, cfg)
+    leaving = turn.base_move.move == Move.move_on and not _must_ask_unasked(segment, memory)
+    if leaving and not briefing:
         return spend_out()
     return TurnUnderstanding(node="next_question", **priced)
 
@@ -578,6 +592,12 @@ def plan_handoff(p: _Plan) -> PanelDecision:
 
 
 def plan_next_question(p: _Plan) -> PanelDecision:
+    if _briefing_probe_due(p.turn, p.segment, p.memory, p.cfg):
+        move = p.board_move(
+            Move.probe, p.segment.member, "D-BRIEF",
+            "the answer touches the briefing; one follow-up, then the plan",
+        )
+        return p.decision(move, "next_question")
     forced = p.forced_seed()
     if forced is not None:
         return p.ask_seed(forced, "the situation must be asked within the budget")
@@ -720,7 +740,7 @@ def _fold_one(memory: PanelMemory, done: CompletedTurn) -> PanelMemory:
         update["last_question"] = done.asked or d.seed
     elif done.asked and not _keeps_last_question(done):
         update["last_question"] = done.asked
-    if d.move.move == Move.probe and d.move.rule_id == "R8":
+    if d.move.move == Move.probe and d.move.rule_id in {"R8", "D-BRIEF"}:
         update["probes_on_seed"] = memory.probes_on_seed + 1
     return memory.model_copy(update=update)
 

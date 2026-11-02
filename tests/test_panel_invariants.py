@@ -305,7 +305,7 @@ async def test_the_session_start_line_names_the_agenda_and_the_openers_member(
     assert [s["id"] for s in first["agenda"]["segments"]] == SEGMENTS
     assert first["agenda"]["source"] == "nova" and first["agenda_plan"]["status"] == "used"
     assert first["segment_id"] == "form_hr" and first["member"] == "chairman"
-    assert first["prompt_versions"]["actor"] == 7 and first["prompt_versions"]["opener"] == 2
+    assert first["prompt_versions"]["actor"] == 8 and first["prompt_versions"]["opener"] == 2
     assert opener.parts[0].text == line_for(RITUAL_LINES, "hi-en")
     assert not opener.text.lower().startswith("namaste. namaste")
 
@@ -540,7 +540,7 @@ async def test_the_report_lists_each_detected_request_with_its_source(
     assert "Request at t1: repeat" in notes and "Request at t2: change_topic" in notes
     assert REQUEST_ACCURACY_NOTE in report.notes
     assert "Accuracy on real speech has not been measured yet." in notes
-    assert report.prompt_versions["actor"] == 7
+    assert report.prompt_versions["actor"] == 8
 
 
 async def test_a_session_with_no_request_says_so(settings, cards, form, tmp_path):

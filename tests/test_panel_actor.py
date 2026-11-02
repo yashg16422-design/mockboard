@@ -92,9 +92,10 @@ def test_upsc_prompt_versions_are_the_panels_and_the_old_board_files_stay_on_dis
     """P7: one version map for UPSC. The old board's v3, v3 and v1 files are never edited and never
     deleted (the prompt rule), they are simply no longer named."""
     versions = settings.prompt_versions()
-    assert versions["listener"] == 4 and versions["actor"] == 7
+    assert versions["listener"] == 4 and versions["actor"] == 8
     assert versions["opener"] == 2 and versions["agenda_plan"] == 2
-    for old in ("listener.v3.md", "actor.v3.md", "actor.v5.md", "actor.v6.md", "opener.v1.md"):
+    for old in ("listener.v3.md", "actor.v3.md", "actor.v5.md", "actor.v6.md", "actor.v7.md",
+                "opener.v1.md"):
         assert (PROMPT_DIR / old).exists(), old
     assert "agenda_plan" not in settings.prompt_versions("debate")
 
@@ -102,7 +103,7 @@ def test_upsc_prompt_versions_are_the_panels_and_the_old_board_files_stay_on_dis
 def test_changelog_lists_every_new_version():
     log = (PROMPT_DIR / "CHANGELOG.md").read_text(encoding="utf-8")
     assert "| actor | 4 |" in log and "| opener | 2 |" in log and "| actor | 5 |" in log
-    assert "| actor | 6 |" in log and "| actor | 7 |" in log
+    assert "| actor | 6 |" in log and "| actor | 7 |" in log and "| actor | 8 |" in log
 
 
 # --- actor.v5 (Ruling 73 item 4): Namaste only at the first hand-off ----------------------------
@@ -140,7 +141,18 @@ def test_actor_v7_gives_each_member_a_manner_and_one_affairs_sentence():
     assert v6.body != v7.body
 
 
-def test_only_the_pressing_member_sees_the_affairs_line_and_it_has_no_digit(form):
+def test_actor_v8_keeps_the_briefing_behind_the_candidate():
+    v7, v8 = load_prompt("actor", 7), load_prompt("actor", 8)
+    assert v8.meta["version"] == 8 and (PROMPT_DIR / "actor.v7.md").exists()
+    body = " ".join(v8.body.split())
+    assert "It is not the subject of the interview" in body
+    assert "only when the candidate has already brought that subject up" in body
+    assert "Do not open with the briefing" in body
+    assert "You have no web search" in body
+    assert v7.body != v8.body
+
+
+def test_every_member_reads_the_same_briefing_and_it_has_no_digit(form):
     ctx = PanelContext(
         segment_id="current_affairs", segment_title="Current affairs", member="ips_officer",
         seed="Haal ke samay mein aapne kis rashtriya mudde ko follow kiya hai, aur kyun?",
@@ -150,14 +162,16 @@ def test_only_the_pressing_member_sees_the_affairs_line_and_it_has_no_digit(form
         form=form, spoken=[], after_handoff=True, last_question="Q?", last_answer="A.",
     )
     block = ips.split("<affairs>")[1].split("</affairs>")[0]
-    assert "Upper Siang" in block and "https://" not in block and "November" not in block
+    assert "Upper Siang" in block and "gig" in block and "decent work" in block
+    assert "https://" not in block and "November" not in block
     assert not any(ch.isdigit() for ch in block)
     assert '"manner": "pressing"' in ips
     quiet = build_panel_user(
         PERSONAS["humanities"], move_of(), panel(), PanelMemory(),
         form=form, spoken=[], after_handoff=False, last_question="Q?", last_answer="A.",
     )
-    assert "<affairs>" not in quiet and '"manner": "quiet"' in quiet
+    assert quiet.split("<affairs>")[1].split("</affairs>")[0] == block
+    assert '"manner": "quiet"' in quiet
 
 
 def test_the_five_members_keep_distinct_manners():

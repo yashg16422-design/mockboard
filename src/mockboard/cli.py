@@ -372,7 +372,7 @@ async def _replay(args, settings, file_form, cards) -> int:
                 f"{compared.after_words} now ({compared.word_gain:+d}). "
                 f"Balance now: {compared.after_balance}."
             )
-        print(format_report(replay_report, cards))
+        print(format_report(replay_report, session.deps.cards))
     finally:
         await session.close()
     return 0
@@ -452,7 +452,7 @@ async def _interview(args, settings, session, rt, ask, lines, recorder, cards) -
     report = await session.finish(args.language)
     if isinstance(report, DebateReport):  # the Moderator reads the verdict aloud
         print(f"[{session.speaker_name(rt.strategy.chairman)}] {report.verdict.text}")
-    print(format_report(report, cards))
+    print(format_report(report, session.deps.cards))
     if args.report_json:
         Path(args.report_json).write_text(report.model_dump_json(indent=2), encoding="utf-8")
     if recorder.enabled:

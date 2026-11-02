@@ -290,12 +290,10 @@ def build_panel_user(
         ),
         tag("agenda_item", json.dumps(item, ensure_ascii=False)),
     ]
-    # The pressing member alone may offer the sourced sentence. Other members never see it,
-    # so they cannot lecture it or cross him.
-    if persona.id == "ips_officer":
-        line = affairs_line()
-        if line:
-            parts.append(tag("affairs", line))
+    # Every member has read the same briefing. It is background, not the question.
+    line = affairs_line()
+    if line:
+        parts.append(tag("affairs", line))
     summary = render_summary(memory.notes)
     if summary:
         parts.append(tag("conversation_summary", summary))

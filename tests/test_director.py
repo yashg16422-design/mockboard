@@ -574,6 +574,20 @@ async def test_a_second_r8_probe_on_one_seed_becomes_the_next_seed():
     assert d.move.pressure == PRESSURE[Move.next_question]
 
 
+async def test_a_prepared_subject_gets_one_follow_up_when_a_later_question_remains():
+    sim = Sim(agenda=custom_agenda(3))
+    d = await sim.say("Maine gig workers ke social security boards ko follow kiya hai.")
+    assert d.move.move == Move.probe and d.move.rule_id == "D-BRIEF"
+    again = await sim.say("Gig workers ki income uncertain rehti hai, registration door hai.")
+    assert again.move.rule_id != "D-BRIEF"
+
+
+async def test_an_ordinary_answer_is_not_a_briefing_follow_up():
+    sim = Sim(agenda=custom_agenda(3))
+    d = await sim.say("Chess se maine yeh seekha ki jaldi faisla galat hota hai.")
+    assert d.move.rule_id != "D-BRIEF"
+
+
 async def test_a_seed_resets_the_probe_count():
     sim = Sim()
     await answers(sim, 2 + 2)

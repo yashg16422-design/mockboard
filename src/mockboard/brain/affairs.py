@@ -1,12 +1,12 @@
-"""One sourced current-affairs note the pressing member may offer.
+"""A short briefing every member has read before the sitting.
 
-This is not a web search and not a fact card. The note is a single sentence with no digit,
-kept next to the URL it came from. Only the sentence reaches the actor. The URL, the date and
-any name of a real person stay in the file, so the spoken line cannot pick up a number.
+This is not a web search and not a fact card, and it is not the subject of the interview.
+Each note is one sentence with no digit, kept next to the URL it came from. Only the
+sentences reach the actor. The URL, the date and any name of a real person stay in the file.
 
-The seed still asks which issue the candidate has followed. If they name another issue, the
-actor leaves this sentence (actor.v7). A note goes stale; replace the file, do not edit a
-spoken line into the seed.
+The candidate still chooses the issue. A member may use one clause from one sentence only
+after the candidate has already brought that subject up (actor.v8). Prisma hears a note's
+words only after the candidate has said one of them. A note goes stale; replace the file.
 """
 
 from __future__ import annotations
@@ -22,13 +22,14 @@ from mockboard.config import REPO_ROOT
 DEFAULT_PATH = REPO_ROOT / "data" / "affairs" / "notes.yaml"
 _DIGIT = re.compile(r"\d")
 _MAX_WORDS = 45
-_MAX_NOTES = 3
+_MAX_NOTES = 6
 
 
 @dataclass(frozen=True)
 class AffairsNote:
     id: str
     as_of: str
+    field: str
     words: tuple[str, ...]
     line: str
     source: str
@@ -52,13 +53,13 @@ def load_affairs(path: Path = DEFAULT_PATH) -> tuple[AffairsNote, ...]:
 
 
 def affairs_line(notes: tuple[AffairsNote, ...] | None = None) -> str:
-    """The sentences the actor may say. No URL, no date, no digit."""
+    """The sentences the actor may draw on. No URL, no date, no digit."""
     notes = load_affairs() if notes is None else notes
-    return "\n".join(n.line for n in notes)
+    return "\n".join(f"[{n.field}] {n.line}" if n.field else n.line for n in notes)
 
 
 def affairs_words(notes: tuple[AffairsNote, ...] | None = None) -> tuple[str, ...]:
-    """Words Prisma v3.0 may favour while the current-affairs member is speaking."""
+    """Every briefing word. Prisma does not receive these until the candidate says one."""
     notes = load_affairs() if notes is None else notes
     words: list[str] = []
     seen: set[str] = set()
@@ -71,10 +72,30 @@ def affairs_words(notes: tuple[AffairsNote, ...] | None = None) -> tuple[str, ..
     return tuple(words)
 
 
+def words_heard(text: str, notes: tuple[AffairsNote, ...] | None = None) -> tuple[str, ...]:
+    """Briefing words to favour in Prisma, only for a note the candidate has already named."""
+    notes = load_affairs() if notes is None else notes
+    hay = text or ""
+    out: list[str] = []
+    seen: set[str] = set()
+    for note in notes:
+        if any(_mentioned(hay, word) for word in note.words):
+            for word in note.words:
+                key = word.lower()
+                if key not in seen:
+                    seen.add(key)
+                    out.append(word)
+    return tuple(out)
+
+
+def _mentioned(hay: str, word: str) -> bool:
+    return re.search(rf"(?i)(?<!\w){re.escape(word)}(?!\w)", hay) is not None
+
+
 def _one(item: object) -> AffairsNote:
     if not isinstance(item, dict):
         raise ValueError("each affairs note must be a mapping")
-    needed = ("id", "as_of", "words", "line", "source", "source_url")
+    needed = ("id", "as_of", "field", "words", "line", "source", "source_url")
     missing = [k for k in needed if not item.get(k)]
     if missing:
         raise ValueError(f"affairs note missing {missing}")
@@ -94,9 +115,13 @@ def _one(item: object) -> AffairsNote:
     as_of = str(item["as_of"]).strip()
     if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", as_of):
         raise ValueError("affairs as_of must be YYYY-MM-DD")
+    field = str(item["field"]).strip()
+    if not field or _DIGIT.search(field) or " " in field:
+        raise ValueError("affairs field must be one word and must not contain a digit")
     return AffairsNote(
         id=str(item["id"]).strip(),
         as_of=as_of,
+        field=field,
         words=words,
         line=line,
         source=" ".join(str(item["source"]).split()),

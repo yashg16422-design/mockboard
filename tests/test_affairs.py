@@ -1,4 +1,4 @@
-"""The current-affairs note: one sourced sentence, no digit, and it is not a seed."""
+"""The board's briefing: several sourced sentences, no digit, not a seed, not the interview."""
 
 from __future__ import annotations
 
@@ -7,19 +7,25 @@ from pathlib import Path
 import pytest
 import yaml
 
-from mockboard.brain.affairs import affairs_line, affairs_words, load_affairs
+from mockboard.brain.affairs import affairs_line, load_affairs, words_heard
 
 
-def test_the_shipped_note_is_one_sentence_with_a_source_and_no_digit():
+def test_the_briefing_is_several_fields_and_the_spoken_part_has_no_digit():
     notes = load_affairs()
-    assert len(notes) == 1
-    note = notes[0]
-    assert note.id == "siang-upper-2026-11-02"
-    assert note.source_url.startswith("https://")
-    assert "Siang" in note.line and not any(ch.isdigit() for ch in note.line)
+    assert {n.field for n in notes} == {"governance", "economy", "work"}
+    assert all(n.source_url.startswith("https://") for n in notes)
     spoken = affairs_line(notes)
-    assert "https://" not in spoken and note.as_of not in spoken
-    assert "Siang" in affairs_words(notes)
+    assert "Upper Siang" in spoken and "gig" in spoken and "decent work" in spoken
+    assert "https://" not in spoken and not any(ch.isdigit() for ch in spoken)
+    assert notes[0].as_of not in spoken
+
+
+def test_prisma_hears_a_note_only_after_the_candidate_names_it():
+    assert words_heard("Mera hobby chess hai.") == ()
+    assert words_heard("The damage was small.") == ()  # "dam" is not inside another word
+    heard = words_heard("I have been following the Siang dam and public consent.")
+    assert "Siang" in heard and "Upper Siang" in heard and "gig" not in heard
+    assert "social security" in words_heard("Gig workers need social security.")
 
 
 def test_a_digit_in_the_line_is_refused(tmp_path: Path):
@@ -28,6 +34,7 @@ def test_a_digit_in_the_line_is_refused(tmp_path: Path):
         yaml.safe_dump([{
             "id": "bad",
             "as_of": "2026-11-02",
+            "field": "economy",
             "words": ["dam"],
             "line": "The dam is 100 metres high.",
             "source": "a paper",

@@ -371,9 +371,9 @@ _SEEDS: dict[str, dict[str, tuple[_Seed, ...]]] = {
             ),
         ),
     },
-    # The candidate still chooses the issue. A sourced one-line note (brain/affairs.py) may be
-    # offered by the current-affairs member only; it is not a seed, because a seed may not name
-    # a place the form did not give. Nova's knowledge may be stale. No digits in that note.
+    # The candidate still chooses the issue. A sourced briefing (brain/affairs.py) is background
+    # for every member, not a seed: a seed may not name a place the form did not give, and the
+    # briefing is not the subject of the interview. Nova's knowledge may be stale. No digits.
     CURRENT_AFFAIRS: {
         "hi-en": (
             _Seed(
