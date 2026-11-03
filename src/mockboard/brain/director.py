@@ -343,7 +343,10 @@ def understand(
         free_kind = kind.value
     elif kind is None and (turn.base_move.rule_id == "R1" or turn.analysis.garbled):
         # `analysis` too: on the last allowed turn the session's cap has replaced R1's move.
-        free_kind = "garbled"
+        # A second unclear hearing is not another free "please repeat": it counts, and the
+        # planner asks the next question.
+        if not (turn.base_move.rule_id == "R1" and memory.unclear_hearings >= 1):
+            free_kind = "garbled"
     elif kind is None and _is_silence(turn):
         free_kind = "silence"
     free = free_kind is not None and turn.free_used < cfg.free_turns
@@ -598,6 +601,13 @@ def plan_handoff(p: _Plan) -> PanelDecision:
 
 
 def plan_next_question(p: _Plan) -> PanelDecision:
+    if p.turn.base_move.rule_id == "R1" and p.memory.unclear_hearings >= 1:
+        seed = next_seed(
+            p.segment, p.memory, _questions_left(p.segment, p.turn, p.cfg)
+        )
+        if seed is not None:
+            return p.ask_seed(seed, "heard once and still unclear; ask the next question")
+        return p.advance((), "agenda")
     if _briefing_probe_due(p.turn, p.segment, p.memory, p.cfg):
         move = p.board_move(
             Move.probe, p.segment.member, "D-BRIEF",
@@ -748,6 +758,10 @@ def _fold_one(memory: PanelMemory, done: CompletedTurn) -> PanelMemory:
         update["last_question"] = done.asked
     if d.move.move == Move.probe and d.move.rule_id in {"R8", "D-BRIEF"}:
         update["probes_on_seed"] = memory.probes_on_seed + 1
+    if d.move.rule_id == "R1" and d.move.move == Move.clarify:
+        update["unclear_hearings"] = memory.unclear_hearings + 1
+    else:
+        update["unclear_hearings"] = 0
     return memory.model_copy(update=update)
 
 

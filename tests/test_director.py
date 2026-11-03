@@ -157,6 +157,17 @@ async def test_garbled_is_free_and_keeps_the_fixed_clarify():
     assert (d.counted, d.free) == (False, True)
 
 
+async def test_a_second_unclear_hearing_asks_the_next_question():
+    sim = Sim()
+    first = await sim.say("xx yy zz", garbled=True)
+    assert first.free and first.move.rule_id == "R1"
+    second = await sim.say("aa bb cc", garbled=True)
+    assert second.move.rule_id == "D-SEED" and second.move.move == Move.next_question
+    assert second.seed and (second.counted, second.free) == (True, False)
+    third = await sim.say("qq rr ss", garbled=True)
+    assert third.move.rule_id == "R1" and third.free
+
+
 async def test_repeat_is_free_verbatim_and_needs_no_actor():
     sim = Sim()
     opener = sim.director.memory.last_question

@@ -581,6 +581,9 @@ class PanelMemory(_Model):
     last_question: str = ""  # the question itself: no preface, ack, repeat prefix or fallback
     pending_end: bool = False  # the board has asked "end here?" (Ruling 52)
     probes_on_seed: int = 0  # R8 probes since the last seed was asked
+    # R1 "please say that again" on this question. A second unclear hearing asks the next
+    # question instead of another repeat. Any other folded turn resets it.
+    unclear_hearings: int = 0
     # As spoken and unfiltered. P4 applies CTO_NOTES_09 §9 before any of it reaches a prompt.
     avoid_terms: list[str] = Field(default_factory=list)
     notes: list[TurnNote] = Field(default_factory=list)

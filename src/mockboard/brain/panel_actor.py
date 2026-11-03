@@ -438,6 +438,15 @@ async def compose_panel_line(
         return fallback(call.error, call.guard, call.retried)
     text = undotted_titles(call.text)
     if not text:  # every sentence was refused by the gate
+        # Quoting the candidate is how a specific follow-up dies and becomes "please finish
+        # your point". Keep a real question for that move, still without their words.
+        if call.guard == "quotes_answer":
+            question = FILLER_TEMPLATES.get(move.move, FILLER_TEMPLATES[Move.probe])
+            return say(
+                question, is_fallback=True, guard="quotes_answer",
+                error="every sentence refused", fallback_kind="move_template",
+                retried=call.retried,
+            )
         return fallback("every sentence refused", call.guard or "gate", call.retried)
     if is_fact and claim and card:
         checked = guard_fact_challenge(text, claim, card, mix)

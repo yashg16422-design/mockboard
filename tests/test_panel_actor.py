@@ -92,7 +92,7 @@ def test_upsc_prompt_versions_are_the_panels_and_the_old_board_files_stay_on_dis
     """P7: one version map for UPSC. The old board's v3, v3 and v1 files are never edited and never
     deleted (the prompt rule), they are simply no longer named."""
     versions = settings.prompt_versions()
-    assert versions["listener"] == 4 and versions["actor"] == 8
+    assert versions["listener"] == 4 and versions["actor"] == 9
     assert versions["opener"] == 2 and versions["agenda_plan"] == 3
     for old in ("listener.v3.md", "actor.v3.md", "actor.v5.md", "actor.v6.md", "actor.v7.md",
                 "opener.v1.md"):
@@ -330,6 +330,18 @@ def test_gate_refuses_a_refused_topic_in_any_script(word):
     gate = PanelGate(answer="", avoid=("tourism", "paryatan", "पर्यटन", "टूरिज्म"))
     assert not gate.ok(f"Aap {word} ke baare mein kya sochte hain?")
     assert gate.reason == "avoid_topic"
+
+
+async def test_a_line_that_only_quotes_the_candidate_asks_the_move(form, kit):
+    answer = "paani ki ladai mein gaon wale ek doosre par bahut gussa hain"
+    reply = "Aapne kaha paani ki ladai mein gaon wale, to aap kya karenge?"
+    out, _ = await line_for_move(kit, form, reply, kind=Move.counter, answer=answer)
+    assert out.is_fallback and out.guard == "quotes_answer"
+    assert out.fallback_kind == "move_template"
+    assert "Aapne" not in out.text
+    assert out.text == (
+        "Lekin doosra paksh bhi hai. Uske baare mein aap kya kahenge?"
+    )
 
 
 def test_gate_still_refuses_a_quiz_question_and_a_quoted_answer():
