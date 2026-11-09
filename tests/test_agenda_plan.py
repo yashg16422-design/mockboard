@@ -119,7 +119,7 @@ def test_the_planner_prompt_exists_and_says_what_it_may_not_do():
 
 def test_settings_name_the_planner_and_its_wait(settings):
     assert settings.agenda_plan_enabled and settings.agenda_plan_wait_s == 1.5
-    assert settings.prompt_versions()["agenda_plan"] == 3
+    assert settings.prompt_versions()["agenda_plan"] == 5
     assert "agenda_plan" not in settings.prompt_versions("debate")  # debate never plans
 
 

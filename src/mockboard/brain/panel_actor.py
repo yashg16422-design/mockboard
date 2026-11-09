@@ -135,13 +135,102 @@ def without_greeting(text: str) -> str:
     return _strip_window(text, GREETING_WINDOW_WORDS)
 
 
+# Three more things a member's line must not open with (the owner's live sitting, Nov 9):
+# a sentence that grades the answer ("Aapka jawab sahi hai": a board never says so aloud); after a
+# hand-off, a thanks that echoes the Chairperson's own thanks word ("Shukriya. Ab Doctor Iyer ki
+# baari hai." then "Shukriya."; actor.v5 already asks for different words), and "Aapke is point
+# par," before a new member's first question, which has no point of the candidate's to be on.
+_GRADING = re.compile(
+    r"\b(?:jawab|jawaab|uttar|answer)\b.{0,40}\b(?:sahi|galat|theek|correct|right|wrong|"
+    r"accha|achha|acha|badhiya|good|excellent|great|perfect|shandaar)\b"
+    r"|^(?:bilkul\s+sahi|sahi\s+kaha|bahut\s+(?:accha|achha|badhiya|khoob)|shabash|well\s+said|"
+    r"very\s+good|good\s+answer|excellent|perfect|correct)\b"
+    r"|(?:जवाब|उत्तर).{0,40}(?:सही|ग़लत|गलत|अच्छा|बढ़िया)|^(?:बिल्कुल सही|सही कहा|बहुत अच्छा|बहुत बढ़िया)",
+    re.IGNORECASE,
+)
+_GRADING_MAX_WORDS = 10
+THANKS_WORDS = ("shukriya", "dhanyavaad", "dhanyawad", "thank you", "thanks", "शुक्रिया",
+                "धन्यवाद", "நன்றி")  # fmt: skip
+_THANKS_ONLY = re.compile(
+    r"^(?:ji|जी)?[\s,]*(?:bahut\s+)?(?:shukriya|dhanyavaad|dhanyawad|thank\s+you|thanks|शुक्रिया|"
+    r"धन्यवाद|நன்றி)(?:[\s,]+(?:ji|sir|madam|chairperson|जी))?[\s.!।]*$",
+    re.IGNORECASE,
+)
+_POINT_LEAD = re.compile(
+    r"^(?:aapke|aapki|aapne)\s+(?:is|us)\s+(?:point|baat|jawab)\s+(?:par|pe)\s*,?\s*"
+    r"|^on\s+(?:your|that|this)\s+point\s*,?\s*",
+    re.IGNORECASE,
+)
+
+
+def grades_the_answer(sentence: str) -> bool:
+    """A short statement that says the answer was right, wrong or good. Pure."""
+    text = sentence.strip()
+    return (
+        bool(text) and not text.endswith("?") and len(text.split()) <= _GRADING_MAX_WORDS
+        and _GRADING.search(text) is not None
+    )
+
+
+def thanks_said(text: str) -> frozenset[str]:
+    """The thanks words in `text` (the director's fixed lines before a member speaks)."""
+    low = text.lower()
+    return frozenset(w for w in THANKS_WORDS if w in low)
+
+
+def clean_lead_sentence(
+    sentence: str, *, after_handoff: bool = False, echo: frozenset[str] = frozenset()
+) -> str:
+    """One opening sentence of a member's line with the openings above removed ('' drops it)."""
+    text = sentence.strip()
+    if grades_the_answer(text):
+        return ""
+    if after_handoff:
+        if _THANKS_ONLY.match(text) and thanks_said(text) & echo:
+            return ""
+        lead = _POINT_LEAD.match(text)
+        if lead and text[lead.end():].strip():
+            rest = text[lead.end():].strip()
+            text = rest[0].upper() + rest[1:]
+    return text
+
+
+def without_lead(
+    text: str, *, greeting_allowed: bool = False, after_handoff: bool = False,
+    echo: frozenset[str] = frozenset(),
+) -> str:
+    """The whole-text form of `strip_lead`: what it yields, joined."""
+    out, used = [], 0
+    for sentence in _SENTENCE_SPLIT.split(text.strip()):
+        if used >= GREETING_WINDOW_WORDS:
+            out.append(sentence)
+            continue
+        room = GREETING_WINDOW_WORDS - used
+        used += len(sentence.split())
+        clean = sentence.strip() if greeting_allowed else _strip_window(sentence.strip(), room)
+        clean = clean_lead_sentence(clean, after_handoff=after_handoff, echo=echo)
+        if clean:
+            out.append(clean)
+    return " ".join(out)
+
+
 async def strip_greeting(chunks: AsyncIterator[str]) -> AsyncIterator[str]:
-    """`without_greeting` on a stream, one whole sentence at a time. A sentence inside the first
-    `GREETING_WINDOW_WORDS` words is held only until it is complete, which is also when the sentence
-    gate downstream could pass it, so the check adds no wait to the first audio of an ordinary line
-    (holding the whole window would have: about eight words of model text before anything is
-    said). A greeting that makes a sentence empty ("Namaste.") drops it. Past the window the stream
-    passes through untouched. The text joined is what `without_greeting` gives."""
+    """`strip_lead` for a line that may not greet, with no hand-off before it."""
+    async for piece in strip_lead(chunks):
+        yield piece
+
+
+async def strip_lead(
+    chunks: AsyncIterator[str], *, greeting_allowed: bool = False, after_handoff: bool = False,
+    echo: frozenset[str] = frozenset(),
+) -> AsyncIterator[str]:
+    """`without_greeting` on a stream, one whole sentence at a time, plus `clean_lead_sentence`. A
+    sentence inside the first `GREETING_WINDOW_WORDS` words is held only until it is complete,
+    which is also when the sentence gate downstream could pass it, so the check adds no wait to
+    the first audio of an ordinary line (holding the whole window would have: about eight words
+    of model text before anything is said). A greeting that makes a sentence empty ("Namaste.")
+    drops it. Past the window the stream passes through untouched. The text joined is what
+    `without_greeting` gives."""
     held = ""
     used = 0  # words of the window already read
     async for chunk in chunks:
@@ -153,33 +242,46 @@ async def strip_greeting(chunks: AsyncIterator[str]) -> AsyncIterator[str]:
             sentence, held = held[: m.end()], held[m.end() :]
             room = GREETING_WINDOW_WORDS - used
             used += len(sentence.split())
-            clean = _strip_window(sentence.strip(), room)
+            clean = sentence.strip() if greeting_allowed else _strip_window(sentence.strip(), room)
+            clean = clean_lead_sentence(clean, after_handoff=after_handoff, echo=echo)
             if clean:
                 yield clean + " "
         if used >= GREETING_WINDOW_WORDS and held:
             yield held
             held = ""
     if held:
-        tail = _strip_window(held.strip(), GREETING_WINDOW_WORDS - used)
+        tail = held.strip()
+        if used < GREETING_WINDOW_WORDS:
+            if not greeting_allowed:
+                tail = _strip_window(tail, GREETING_WINDOW_WORDS - used)
+            tail = clean_lead_sentence(tail, after_handoff=after_handoff, echo=echo)
         if tail:
             yield tail
 
 
 class _TitleDotLLM:
-    """The model client with `stream_text` passed through `strip_title_dots`, and through
-    `strip_greeting` unless the line may greet. Anything else is the client's own, so `offline`
-    and the fake's call log still read through."""
+    """The model client with `stream_text` passed through `strip_title_dots` and `strip_lead`
+    (a greeting is removed unless the line may greet). Anything else is the client's own, so
+    `offline` and the fake's call log still read through."""
 
-    def __init__(self, llm: LLMClient, *, greeting_allowed: bool = True) -> None:
+    def __init__(
+        self, llm: LLMClient, *, greeting_allowed: bool = True, after_handoff: bool = False,
+        echo: frozenset[str] = frozenset(),
+    ) -> None:
         self._llm = llm
         self._greeting_allowed = greeting_allowed
+        self._after_handoff = after_handoff
+        self._echo = echo
 
     def __getattr__(self, name: str) -> Any:
         return getattr(self._llm, name)
 
     def stream_text(self, **kwargs: Any) -> AsyncIterator[str]:
         stream = strip_title_dots(self._llm.stream_text(**kwargs))
-        return stream if self._greeting_allowed else strip_greeting(stream)
+        return strip_lead(
+            stream, greeting_allowed=self._greeting_allowed, after_handoff=self._after_handoff,
+            echo=self._echo,
+        )
 
 
 @dataclass
@@ -400,7 +502,12 @@ async def compose_panel_line(
 
     seeded = move.move in (Move.next_question, Move.move_on) and bool(panel.seed)
     is_fact = move.move == Move.fact_challenge
-    gate = None if is_fact else PanelGate(answer=last_answer, avoid=tuple(avoid))
+    # A sentence that copies the answer is skipped and the member's question kept (the owner's
+    # run, Nov 9: "every sentence refused" turned a real follow-up into a generic counter).
+    gate = (
+        None if is_fact
+        else PanelGate(answer=last_answer, avoid=tuple(avoid), skip_quotes=True)
+    )
     user = build_panel_user(
         persona, move, panel, memory, form=form, spoken=[p.text for p in fixed],
         after_handoff=after_handoff, last_question=last_question, last_answer=last_answer,
@@ -408,7 +515,11 @@ async def compose_panel_line(
     )
     cap = max(max_words, SEED_LINE_WORDS) if seeded else max_words
     call = await call_actor(
-        _TitleDotLLM(llm, greeting_allowed=panel.first_handoff), kit, user, max_words=cap,
+        _TitleDotLLM(
+            llm, greeting_allowed=panel.first_handoff, after_handoff=after_handoff,
+            echo=thanks_said(joined(fixed)) if after_handoff else frozenset(),
+        ),
+        kit, user, max_words=cap,
         max_tokens=max_tokens, turn_id=turn_id,
         on_first_token=on_first_token, first_token_budget_s=first_token_budget_s,
         fast_throttle_retry_window_s=fast_throttle_retry_window_s, gate=gate,
@@ -454,13 +565,15 @@ async def compose_panel_line(
     earlier = {_norm(q) for q in (last_question, *(n.question for n in memory.notes)) if q}
     if _norm(question_part(text)) in earlier or _norm(text) in earlier:  # no repeated questions
         return fallback("repeats an earlier question", "repeat_guard", call.retried)
-    if gate is not None and gate.stopped is not None and not text.rstrip().endswith("?"):
+    cut = gate is not None and (gate.stopped is not None or gate.capped)
+    if cut and not text.rstrip().endswith("?"):
         if seeded and panel.seed and find_avoided(panel.seed, avoid) is None:
             question = panel.seed
         else:
             question = filler_for(move.move, mix)
-        return say(f"{text} {question}".strip(), is_fallback=True, guard=gate.reason,
-                   fallback_kind="move_template", retried=call.retried)
+        return say(f"{text} {question}".strip(), is_fallback=True,
+                   guard=gate.reason or "word_cap", fallback_kind="move_template",
+                   retried=call.retried)
     return say(text, guard=gate.reason if gate and gate.stopped else "", retried=call.retried)
 
 

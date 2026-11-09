@@ -126,6 +126,8 @@ def to_analysis(
     honest = out.honest_unknown or honest_unknown_marker(segment.text)
     if hasattr(out, "candidate_request"):  # the panel listener's field (P5)
         debate["candidate_request"] = out.candidate_request
+    if hasattr(out, "prejudice"):  # the panel listener's field (listener.v7)
+        debate["prejudice"] = out.prejudice
     return Analysis(
         turn_id=turn_id,
         segment_id=segment.segment_id,

@@ -106,8 +106,8 @@ def test_upsc_prompt_versions_are_the_panels_and_the_old_board_files_stay_on_dis
     """P7: one version map for UPSC. The old board's v3, v3 and v1 files are never edited and never
     deleted (the prompt rule), they are simply no longer named."""
     versions = settings.prompt_versions()
-    assert versions["listener"] == 6 and versions["actor"] == 11
-    assert versions["opener"] == 3 and versions["agenda_plan"] == 3
+    assert versions["listener"] == 7 and versions["actor"] == 11
+    assert versions["opener"] == 3 and versions["agenda_plan"] == 5
     for old in ("listener.v3.md", "actor.v3.md", "actor.v5.md", "actor.v6.md", "actor.v7.md",
                 "opener.v1.md"):
         assert (PROMPT_DIR / old).exists(), old
@@ -634,3 +634,35 @@ def test_the_model_is_told_whether_this_is_the_first_handoff(form):
             spoken=[], after_handoff=True, last_question="Q?", last_answer="A.",
         )
         assert f'"first_handoff": {str(first).lower()}' in user
+
+
+# --- the owner's run of Nov 9: a cut sentence, and a quote that killed the question --------------
+
+CUT = (
+    "Aapne samajik bhedbhav ko door karne ka tareeka bataya. Lekin kya aap is baat se sahmat "
+    "hain ki kabhi-kabhi sakht faisle lena zaroori hota hai jo kuch logon ko achha nahi lagta?"
+)
+
+
+async def test_a_sentence_the_word_cap_cuts_is_not_said_and_a_question_follows(form, kit):
+    out, _ = await line_for_move(kit, form, CUT, kind=Move.counter, answer="Main sabse milunga.")
+    assert "achha" not in out.text  # the unfinished end ("...jo kuch logon ko achha") is gone
+    assert out.text.startswith("Aapne samajik bhedbhav ko door karne ka tareeka bataya.")
+    assert out.text.endswith("?") and out.is_fallback and out.guard == "word_cap"
+
+
+async def test_a_line_inside_the_cap_is_untouched(form, kit):
+    line = "Aapne do baatein kahin. Inmein se pehle kya karenge, aur kyun?"
+    out, _ = await line_for_move(kit, form, line, kind=Move.probe, answer="Main sabse milunga.")
+    assert out.text == line and not out.is_fallback
+
+
+async def test_a_quoting_sentence_is_skipped_and_the_members_question_kept(form, kit):
+    answer = "School mein science padhate hue dekha ki bachchon ke paas lab nahi hai."
+    reply = (
+        "Aapne kaha ki bachchon ke paas lab nahi hai. "
+        "Is kami ko door karne ke liye aap pehla kadam kya uthayenge?"
+    )
+    out, _ = await line_for_move(kit, form, reply, kind=Move.probe, answer=answer)
+    assert out.text == "Is kami ko door karne ke liye aap pehla kadam kya uthayenge?"
+    assert not out.is_fallback

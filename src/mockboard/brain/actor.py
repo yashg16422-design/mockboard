@@ -175,7 +175,8 @@ def _to_sink(text: str) -> None:
 
 
 async def stream_capped(
-    chunks: AsyncIterator[str], max_words: int, gate: SentenceGate | None = None
+    chunks: AsyncIterator[str], max_words: int, gate: SentenceGate | None = None,
+    on_cap: Callable[[], None] | None = None,
 ) -> AsyncIterator[str]:
     """Pass text chunks through until `max_words` words have been emitted, then stop.
     Every chunk passed on also goes to `ACTOR_TEXT_SINK` when one is set (voice mode).
@@ -184,7 +185,9 @@ async def stream_capped(
     the line stops before the first sentence the gate refuses; that sentence never reaches
     the sink, so in voice mode it is never spoken."""
     if gate is not None:
-        async for sentence in _gated(stream_capped(chunks, max_words), gate):
+        hit: list[bool] = []
+        inner = stream_capped(chunks, max_words, on_cap=lambda: hit.append(True))
+        async for sentence in _gated(inner, gate, capped=lambda: bool(hit)):
             yield sentence
         return
     emitted = 0
@@ -205,14 +208,19 @@ async def stream_capped(
             _to_sink("".join(out))
             yield "".join(out)
         if emitted >= max_words:
+            if on_cap is not None and (pending.strip() or not _ENDS_SENTENCE.search("".join(out))):
+                on_cap()
             return
     if pending.strip() and emitted < max_words:
         _to_sink(pending)
         yield pending
 
 
-async def _gated(words: AsyncIterator[str], gate: SentenceGate) -> AsyncIterator[str]:
-    """Re-chunk an (ungated, unsunk) word stream into whole sentences that pass the gate."""
+async def _gated(
+    words: AsyncIterator[str], gate: SentenceGate, capped: Callable[[], bool] = lambda: False
+) -> AsyncIterator[str]:
+    """Re-chunk an (ungated, unsunk) word stream into whole sentences that pass the gate. When the
+    word cap cut the stream inside a sentence, that unfinished sentence is dropped, not spoken."""
     token = ACTOR_TEXT_SINK.set(None)  # the inner stream must not feed the sink itself
     try:
         buf = ""
@@ -228,7 +236,9 @@ async def _gated(words: AsyncIterator[str], gate: SentenceGate) -> AsyncIterator
                 _to_sink(sentence)
                 token = ACTOR_TEXT_SINK.set(None)
                 yield sentence
-        if buf.strip() and gate.ok(buf.strip()):
+        if buf.strip() and capped():
+            gate.capped = True
+        elif buf.strip() and gate.ok(buf.strip()):
             ACTOR_TEXT_SINK.reset(token)
             _to_sink(buf)
             token = ACTOR_TEXT_SINK.set(None)
@@ -239,6 +249,7 @@ async def _gated(words: AsyncIterator[str], gate: SentenceGate) -> AsyncIterator
 
 # A sentence ends at . ? ! or । followed by whitespace ("12.5" is not a break).
 _SENTENCE_BREAK = re.compile(r"[.?!।](?=\s)\s*")
+_ENDS_SENTENCE = re.compile(r"[.?!।]\s*$")
 
 # Ruling 36: quiz-style questions that ask the candidate for a number, share, statistic or
 # year. Word lists are our own (UNVERIFIED against real Nova lines); only questions count.
@@ -317,6 +328,9 @@ class SentenceGate:
     # real partner lines were lost to the stop). A quiz question still stops the line.
     skip_quotes: bool = False
     skipped: list[str] = field(default_factory=list)
+    # The word cap cut the last sentence short and it was not spoken (the owner's live sitting,
+    # Nov 9: "...jo in logon ke liye bhi" was said aloud, unfinished).
+    capped: bool = False
 
     def ok(self, sentence: str) -> bool:
         if self.stopped is not None:

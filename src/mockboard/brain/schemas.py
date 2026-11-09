@@ -249,6 +249,7 @@ class Analysis(_Model):
     # Panel mode only (P5, CTO_NOTES_06 §3): what the panel listener heard the candidate ask of the
     # board, one of `tools.CANDIDATE_REQUESTS`. A vote, never a decision: the director weighs it.
     candidate_request: str = "none"
+    prejudice: bool = False  # panel listener v7: a community called inferior or to be driven out
     # True when any segment of the turn got no analysis (a merged turn is `is_fallback` only when
     # all did). A listener that failed on a segment has not said "none" about it, so the weak-
     # pattern veto must not count its silence (Ruling 56).

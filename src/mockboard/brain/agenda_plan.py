@@ -158,7 +158,10 @@ def names_the_place(seed: str, form: CandidateForm) -> str | None:
 
 # Word limit of a planned question by plan prompt version: v4 asks for richer questions (a role
 # or situation from the form, and a trade-off), so they may run longer. Others keep 28.
-PLAN_MAX_WORDS: dict[int, int] = {4: 36}
+PLAN_MAX_WORDS: dict[int, int] = {4: 36, 5: 36}
+# From v5 the planner reads no template question and no place (v3 and v4 copied the templates
+# word for word on Nova, Ruling 102 and the live sitting of Nov 9). Older versions are unchanged.
+BLIND_PLAN_FROM = 5
 
 
 def planned_seed_violations(
@@ -304,22 +307,36 @@ SEGMENT_FIELDS = {
 }
 
 
-def build_plan_user(form: CandidateForm, fallback: Agenda, briefing: str = "") -> str:
+def planner_form_lines(form: CandidateForm) -> str:
+    """The form as a blind planner reads it: without the district and the state, so a question
+    cannot name the place or presuppose a fact about it (Ruling 76 item 1, now by construction)."""
+    return "\n".join(
+        line for line in form.as_prompt_lines().splitlines()
+        if not line.startswith(("home_state:", "district:"))
+    )
+
+
+def build_plan_user(
+    form: CandidateForm, fallback: Agenda, briefing: str = "", version: int = 0
+) -> str:
     """The planner's user message. The form goes in through `tag()` only: it is the candidate's own
     text and the main way into this prompt (CTO_NOTES_12 §7). `briefing` is the same: recent public
-    lines, present only on a real sitting, and never an order."""
-    segments = [
-        {
-            "id": s.id,
-            "field": SEGMENT_FIELDS[s.id],
-            "questions_needed": len(replaceable_positions(s, form)),
-            "template_questions": [s.seeds[i].text for i in replaceable_positions(s, form)],
+    lines, present only on a real sitting, and never an order. From `BLIND_PLAN_FROM` the message
+    holds neither the template questions nor the place."""
+    blind = version >= BLIND_PLAN_FROM
+    segments = []
+    for s in fallback.segments:
+        if s.id not in PLANNED_SEGMENTS:
+            continue
+        positions = replaceable_positions(s, form)
+        entry: dict[str, Any] = {
+            "id": s.id, "field": SEGMENT_FIELDS[s.id], "questions_needed": len(positions),
         }
-        for s in fallback.segments
-        if s.id in PLANNED_SEGMENTS
-    ]
+        if not blind:
+            entry["template_questions"] = [s.seeds[i].text for i in positions]
+        segments.append(entry)
     parts = [
-        tag("application_form", form.as_prompt_lines()),
+        tag("application_form", planner_form_lines(form) if blind else form.as_prompt_lines()),
         tag("segments", json.dumps(segments, ensure_ascii=False)),
     ]
     if briefing.strip():
@@ -349,7 +366,10 @@ async def plan_node(state: PlanState) -> dict[str, Any]:
         out = await state["llm"].structured(
             name="plan_agenda",
             system=state["kit"].system("agenda_plan"),
-            user=build_plan_user(state["form"], state["fallback"], state.get("briefing", "")),
+            user=build_plan_user(
+                state["form"], state["fallback"], state.get("briefing", ""),
+                state["kit"].versions.get("agenda_plan", 0),
+            ),
             tool=AGENDA_TOOL,
             output_model=AgendaOutput,
             tag="plan",

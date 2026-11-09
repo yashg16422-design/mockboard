@@ -45,7 +45,9 @@ __all__ = [
     "score_turn",
 ]
 
-REQUEST_KINDS = frozenset({"change_topic", "skip", "repeat", "clarify_question", "end", "think"})
+REQUEST_KINDS = frozenset(
+    {"change_topic", "skip", "repeat", "clarify_question", "end", "think", "greeting"}
+)
 PRESSURE_MOVES = frozenset({
     Move.pressure, Move.counter, Move.steelman, Move.fact_challenge, Move.interrupt,
 })
@@ -211,6 +213,7 @@ REQUEST_WORDS: dict[str, str] = {
     "clarify_question": "have the question explained",
     "end": "end the interview",
     "think": "take a moment to think",
+    "greeting": "greet the board",
 }
 REQUEST_SOURCE_WORDS: dict[str, str] = {
     "rules": "the board's phrase rules",
@@ -252,6 +255,13 @@ def _next_step(move: BoardMove | None, this: CandidateTurn, following: Candidate
         return "asked you to confirm ending the interview"
     if move.rule_id == "D-THINK":
         return "gave you time to think; the same question stood"
+    if move.rule_id == "D-VALUES":
+        return (
+            "reminded you that every community has equal rights and dignity, and asked how you "
+            "would earn every community's trust"
+        )
+    if move.rule_id == "D-GREET":
+        return "greeted you back and asked the same question"
     if following is None and move.move == Move.move_on:
         return "closed the interview"
     if following is not None and following.topic != this.topic:

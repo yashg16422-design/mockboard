@@ -47,6 +47,7 @@ from langgraph.graph import END, START, StateGraph
 from mockboard.brain.affairs import AffairsNote, words_heard
 from mockboard.brain.agenda import twist_for
 from mockboard.brain.graphs import make_serde
+from mockboard.brain.greeting_turn import is_greeting_only
 from mockboard.brain.panel_lines import (
     CAP_CLOSE_LINES,
     CHANGE_TOPIC_ACK_LINES,
@@ -55,11 +56,14 @@ from mockboard.brain.panel_lines import (
     END_CLOSE_LINES,
     END_CONFIRM_LINES,
     END_DECLINED_LINES,
+    GREETING_BACK_LINES,
     HANDOFF_LINES,
     REGISTER_LINES,
     REPEAT_PREFIX_LINES,
     SKIP_ACK_LINES,
     THINK_LINES,
+    VALUES_LINES,
+    VALUES_QUESTION_LINES,
     WRAP_UP_CLOSE_LINES,
     LineSet,
     handoff_line,
@@ -419,9 +423,19 @@ def understand(
     )
     if think:
         hit = ResolvedRequest(source="rules", pattern="think_time")
+    # Only a greeting ("hello sir"): greet back and ask the same question (owner's sitting, Nov 9).
+    greeting = (
+        not think
+        and not memory.pending_end
+        and hit.source in ("none", "llm", "llm_ignored")
+        and is_greeting_only(turn.raw_text)
+    )
+    if greeting:
+        hit = ResolvedRequest(source="rules", pattern="greeting")
     kind = hit.kind
+    own_kind = "think" if think else "greeting" if greeting else None
     known: dict[str, Any] = {
-        "request_kind": "think" if think else (kind.value if kind else None),
+        "request_kind": own_kind or (kind.value if kind else None),
         "request_source": hit.source,
         "request_pattern": hit.pattern,
         "avoid_terms": hit.avoid_terms,
@@ -439,8 +453,8 @@ def understand(
         known = {}
     elif kind in (RequestKind.END, RequestKind.REPEAT, RequestKind.CLARIFY_QUESTION):
         free_kind = kind.value
-    elif think:
-        free_kind = "think"
+    elif own_kind:
+        free_kind = own_kind
     elif kind is None and (turn.base_move.rule_id == "R1" or turn.analysis.garbled):
         # `analysis` too: on the last allowed turn the session's cap has replaced R1's move.
         # A second unclear hearing is not another free "please repeat": it counts, and the
@@ -696,6 +710,8 @@ def plan_handle_request(p: _Plan) -> PanelDecision:
         if seed is None:  # budget spent or no seed left; what is left is forfeited
             return p.advance(ack, "agenda")
         return p.ask_seed(seed, "candidate skipped the question", ack)
+    if kind == "greeting":  # the same question stands, after a greeting back
+        return p.repeat((p.own(GREETING_BACK_LINES),), "D-GREET", "the candidate only greeted")
     if kind == "think":  # before any forced question: the same question stands
         move = p.board_move(Move.reassure, p.segment.member, "D-THINK", "asked for time to think")
         return p.decision(
@@ -713,12 +729,35 @@ def plan_handle_request(p: _Plan) -> PanelDecision:
     return p.keep_base("handle_request")  # garbled or silence: R1's clarify, R3's reassure
 
 
+def _values_due(p: _Plan) -> bool:
+    """The answer called a community inferior or wanted it driven out (listener.v7), and the turn
+    was an answer, not a request."""
+    return p.turn.analysis.prejudice and not p.u.free_kind and not p.u.request_kind
+
+
 def plan_handoff(p: _Plan) -> PanelDecision:
     before = (p.chair(END_DECLINED_LINES),) if p.u.free_kind == "end_declined" else ()
+    if _values_due(p):  # the member who heard it answers it before the hand-off
+        before = (*before, p.own(VALUES_LINES))
     return p.handoff(before)
 
 
+def plan_values(p: _Plan) -> PanelDecision:
+    """`D-VALUES`: the equal-dignity line, then one fixed question on the candidate's own duty."""
+    uses = p.memory.line_uses.get(VALUES_LINES.id, 0)
+    move = p.board_move(
+        Move.probe, p.segment.member, "D-VALUES",
+        "the answer called a community inferior or wanted it driven out",
+    )
+    return p.decision(
+        move, "next_question", preface=(p.own(VALUES_LINES),),
+        repeat_text=line_for(VALUES_QUESTION_LINES, p.cfg.mix, uses), line_complete=True,
+    )
+
+
 def plan_next_question(p: _Plan) -> PanelDecision:
+    if _values_due(p):
+        return plan_values(p)
     twist = None if p.u.free_kind or p.u.request_kind else _twist_due(p.turn, p.memory, p.cfg)
     if twist is not None:
         move = p.board_move(Move.probe, p.segment.member, "D-TWIST", "the situation's twist")
@@ -887,7 +926,7 @@ def _fold_one(memory: PanelMemory, done: CompletedTurn) -> PanelMemory:
         update["last_question"] = done.asked or d.seed
     elif done.asked and not _keeps_last_question(done):
         update["last_question"] = done.asked
-    if d.move.rule_id == "D-TWIST" and d.repeat_text:  # spoken whole, so `asked` is None
+    if d.move.rule_id in {"D-TWIST", "D-VALUES"} and d.repeat_text:  # spoken whole: no `asked`
         update["last_question"] = d.repeat_text
         update["probes_on_seed"] = memory.probes_on_seed + 1
     if d.move.move == Move.probe and d.move.rule_id in {"R8", "D-BRIEF", "D-ANSWER"}:

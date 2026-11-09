@@ -162,6 +162,7 @@ def merge_analyses(analyses: Sequence[Analysis]) -> Analysis:
         any_fallback=any(a.is_fallback for a in analyses),
         point_strength=max(strengths, key=_STRENGTH_ORDER.index) if strengths else None,
         off_limits=any(a.off_limits for a in analyses),
+        prejudice=any(a.prejudice for a in analyses if not a.is_fallback),
     )
 
 

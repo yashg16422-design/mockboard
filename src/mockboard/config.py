@@ -284,14 +284,14 @@ class Settings(BaseSettings):
     # --- Prompt versions (prompts/<id>.v<N>.md) ---
     # UPSC is the panel (P7). The old board's listener.v3, actor.v3 and opener.v1 stay on disk,
     # never edited, and are no longer used.
-    prompt_listener_version: int = 6  # v5 + Tamil-English Tanglish input
+    prompt_listener_version: int = 7  # v6 + `prejudice` (owner's live sitting, Nov 9)
     prompt_librarian_version: int = 1
     prompt_actor_version: int = 11  # v10 + Tamil-English Tanglish speech
     prompt_judge_version: int = 1
     prompt_opener_version: int = 3  # v2 + Tamil-English Tanglish speech
     prompt_repair_version: int = 1  # v2 did worse on Nova (CHANGELOG); v1 + is_script_change
     prompt_summary_version: int = 1  # likely-question hints (P9); not in a session's trace map
-    prompt_agenda_plan_version: int = 3  # v2, plus a briefing the planner must not copy into a seed
+    prompt_agenda_plan_version: int = 5  # v4 written blind: no template questions, no place (Nov 9)
     # Debate mode (ADR-009, CTO_NOTES_04).
     prompt_shared_debate_version: int = 1
     prompt_listener_debate_version: int = 2  # Round 20: Devanagari

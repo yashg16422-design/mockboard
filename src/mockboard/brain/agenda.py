@@ -77,7 +77,30 @@ _OPEN_ENDED_DEVANAGARI = (
     "क्यों", "कैसे", "कैसा", "कैसी", "किस तरह", "कौन", "क्या लगता", "क्या सोचते", "बताइए", "समझाइए",
 )  # fmt: skip
 _OPEN_ENDED_TAMIL = ("ஏன்", "எப்படி", "என்ன", "எந்த", "யார்", "எதை", "எவ்வாறு")
-_OPEN_ENDED = (*OPEN_ENDED_MARKERS, *_OPEN_ENDED_DEVANAGARI, *_OPEN_ENDED_TAMIL)
+# Hinglish question words Nova uses that the opener's list lacks (agenda_plan v5 on Nova, Nov 9:
+# "Chess khelne se aapko kya seekhne ko mila?" was refused as closed). Seeds only.
+_OPEN_ENDED_HINGLISH = (
+    "kya seekh", "kya sikh", "kya sudhar", "kya karenge", "kya connection", "kya fark",
+    "kaunse", "konse", "konsa", "konsi", "kis ",
+)  # fmt: skip
+_OPEN_ENDED = (
+    *OPEN_ENDED_MARKERS, *_OPEN_ENDED_HINGLISH, *_OPEN_ENDED_DEVANAGARI, *_OPEN_ENDED_TAMIL
+)
+# Superlatives ("sabse zyada") are a place fact in a statement and ordinary words in a question,
+# the exemption the live line gate makes (`PanelGate`), but stricter: the superlative's own clause
+# must not state something ("Kanpur sabse bada shehar hai, kyun?" still fails).
+_SUPERLATIVE_PATTERNS = frozenset(PLACE_FACT_PATTERNS[2:5])
+_COPULA_AFTER = re.compile(r"^[^,?]*\b(?:hai|hain|tha|thi|the|is|are|was|were)\b")
+
+
+def _states_a_place_fact(low: str, question: bool) -> bool:
+    for pattern in PLACE_FACT_PATTERNS:
+        for m in re.finditer(pattern, low):
+            if not (question and pattern in _SUPERLATIVE_PATTERNS):
+                return True
+            if _COPULA_AFTER.search(low[m.end():]):
+                return True
+    return False
 
 # Capitals a current-affairs seed may use without the form backing them.
 _CAPITALS_ALLOWED = frozenset({"dm", "sp", "ias", "ips"})
@@ -131,7 +154,8 @@ def seed_violations(
         problems.append(f"over {max_words} words")
     if _DIGIT.search(stripped):
         problems.append("contains a digit")
-    if any(re.search(p, low) for p in PLACE_FACT_PATTERNS):
+    question = stripped.endswith("?") and "." not in stripped and "।" not in stripped
+    if _states_a_place_fact(low, question):
         problems.append("states a fact about a place")
     if quiz_question(stripped):
         problems.append("quizzes a number")

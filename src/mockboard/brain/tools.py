@@ -108,6 +108,7 @@ CANDIDATE_REQUESTS = ("none", "change_topic", "repeat", "clarify_question", "ski
 
 class PanelListenerOutput(ListenerOutput):
     candidate_request: str = "none"
+    prejudice: bool = False  # listener.v7: a community called inferior or to be driven out
 
     @field_validator("candidate_request", mode="before")
     @classmethod
@@ -133,8 +134,13 @@ PANEL_LISTENER_TOOL = ToolSpec(
                 "enum": list(CANDIDATE_REQUESTS),
                 "description": "What the candidate asks the board to do, or 'none'.",
             },
+            "prejudice": {
+                "type": "boolean",
+                "description": "True only if the answer calls a community inferior or wants it "
+                "driven out or denied equal rights.",
+            },
         },
-        "required": [*LISTENER_TOOL.input_schema["required"], "candidate_request"],
+        "required": [*LISTENER_TOOL.input_schema["required"], "candidate_request", "prejudice"],
     },
 )
 
