@@ -24,6 +24,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# The local Claude room (`make claude-room`): Claude runs through the person's own Claude Code
+# login. Verified with 0.2.179 on Nov 9-10, 2026.
+claude = ["claude-agent-sdk==0.2.179"]
 dev = ["pytest>=9,<10", "pytest-asyncio>=1.4,<2", "ruff>=0.17,<0.18"]
 # Day-1 probes only (resampling and speech-length checks); exact pins in requirements-probes.txt.
 probes = ["numpy>=2.5,<3", "scipy>=1.18,<2"]
@@ -60,7 +63,8 @@ where = ["src"]
 [tool.setuptools.package-data]
 mockboard = ["prompts/*.md", "brain/*.yaml", "brain/personas/*.yaml", "brain/personas/debate/*.yaml",
              "voice/static/*.html", "voice/static/*.css",
-             "voice/static/*.js"]
+             "voice/static/*.js", "voice/static/fonts/*.woff2",
+             "mcp/static/*.html", "claude_room/static/*.html"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

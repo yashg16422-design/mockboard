@@ -46,6 +46,7 @@ from langgraph.graph import END, START, StateGraph
 
 from mockboard.brain.affairs import AffairsNote, words_heard
 from mockboard.brain.agenda import CASE_STUDY_SEGMENT, twist_for
+from mockboard.brain.answer_signals import answer_signals
 from mockboard.brain.graphs import make_serde
 from mockboard.brain.greeting_turn import is_greeting_only
 from mockboard.brain.panel_lines import (
@@ -58,6 +59,7 @@ from mockboard.brain.panel_lines import (
     END_DECLINED_LINES,
     GREETING_BACK_LINES,
     HANDOFF_LINES,
+    HEDGE_PRESS_LINES,
     REGISTER_LINES,
     REPEAT_PREFIX_LINES,
     SKIP_ACK_LINES,
@@ -526,6 +528,13 @@ def understand(
         return _handle(priced)
     if kind in (RequestKind.SKIP, RequestKind.CHANGE_TOPIC):  # step 4
         return _handle(priced)
+    prop = turn.proposal
+    if prop is not None and prop.action != "plan" and not free_kind and kind is None:
+        veto = _proposal_veto(prop, turn, segment, memory, spent, last_segment)
+        if not veto:
+            node: DirectorNode = "handoff" if prop.action == "pivot" else "next_question"
+            return TurnUnderstanding(node=node, proposal_action=prop.action, **priced)
+        priced = {**priced, "proposal_veto": veto}
     if spent:  # step 5: overrides R2, R3 latency and R4, which sit before R5 in the rule table
         return spend_out(spent_reason)
     if not free_kind and kind is None and _twist_due(turn, memory, cfg):
@@ -553,6 +562,39 @@ def understand(
     if leaving and not briefing and not answer_probe:
         return spend_out()
     return TurnUnderstanding(node="next_question", **priced)
+
+
+# The moves a client model may propose (MCP), the rule each becomes, and how deep a seed may go.
+PROPOSAL_MOVES: dict[str, tuple[Move, str]] = {
+    "dig": (Move.probe, "M-DIG"),
+    "elaborate": (Move.pressure, "M-ELABORATE"),
+    "confront": (Move.counter, "M-CONFRONT"),
+}
+PROPOSAL_RULES = frozenset({"M-DIG", "M-ELABORATE", "M-CONFRONT"})
+PROPOSAL_DEPTH = 2  # follow-ups on one ordinary seed; the case study keeps `CASE_PROBES`
+
+
+def _proposal_veto(prop: Any, turn: DirectorTurn, segment: AgendaSegment, memory: PanelMemory,
+                   spent: bool, last_segment: bool) -> str:
+    """Why Mock Board refuses a model's proposal, or "" when it allows it."""
+    pressing = prop.action in PROPOSAL_MOVES
+    if pressing and turn.analysis.honest_unknown:
+        return "an honest 'I don't know' is never pressed"
+    if pressing and turn.analysis.garbled:
+        return "the answer was not heard clearly"
+    if pressing and spent:
+        return "this member's questions are used up"
+    depth = CASE_PROBES if on_case(segment, memory) else PROPOSAL_DEPTH
+    if pressing and memory.probes_on_seed >= depth:
+        return "this point has been followed up enough; back to the plan"
+    if prop.action == "confront" and not prop.quote.strip():
+        return "a confrontation needs the candidate's exact words"
+    if prop.action == "pivot":
+        if last_segment:
+            return "the last member: there is no one to hand over to"
+        if _must_ask_unasked(segment, memory):
+            return "the case study comes first"
+    return ""
 
 
 def _handle(priced: dict[str, Any]) -> TurnUnderstanding:
@@ -643,8 +685,27 @@ class _Plan:
             request_pattern=self.u.request_pattern,
             request_disagree=self.u.request_disagree,
             avoid_terms=self.u.avoid_terms,
+            proposal=self._proposal_outcome(move),
             **fields,
         )
+
+    def _proposal_outcome(self, move: BoardMove) -> dict[str, Any] | None:
+        prop = self.turn.proposal
+        if prop is None or prop.action == "plan":
+            return None
+        done = move.rule_id in PROPOSAL_RULES or (
+            prop.action == "pivot" and move.rule_id == "D-HANDOFF")
+        accepted = self.u.proposal_action == prop.action and done
+        if accepted:
+            why = "allowed by Mock Board"
+        elif self.u.proposal_veto:
+            why = self.u.proposal_veto
+        elif move.rule_id == "D-VALUES":
+            why = "equal dignity came first"
+        else:
+            why = "a request or a rule came first"
+        return {"action": prop.action, "accepted": accepted, "why": why,
+                "reason": prop.reason[:160], "quote": prop.quote[:200]}
 
     def close(self, reason: CloseReason, before: Sequence[PrefacePart] = ()) -> PanelDecision:
         return self.decision(
@@ -777,7 +838,18 @@ def plan_handoff(p: _Plan) -> PanelDecision:
     before = (p.chair(END_DECLINED_LINES),) if p.u.free_kind == "end_declined" else ()
     if _values_due(p):  # the member who heard it answers it before the hand-off
         before = (*before, p.own(VALUES_LINES))
+    elif _hedge_press_due(p):  # a hedged last answer is named before the hand-off
+        before = (*before, p.own(HEDGE_PRESS_LINES))
     return p.handoff(before)
+
+
+def _hedge_press_due(p: _Plan) -> bool:
+    """The segment's last answer hedged and nothing else answers it: an answer, not a request,
+    and not an honest "I don't know", which the board never presses."""
+    return (
+        not p.u.free_kind and not p.u.request_kind and not p.turn.analysis.honest_unknown
+        and "unsure" in answer_signals(p.turn.raw_text)
+    )
 
 
 def plan_values(p: _Plan) -> PanelDecision:
@@ -796,6 +868,12 @@ def plan_values(p: _Plan) -> PanelDecision:
 def plan_next_question(p: _Plan) -> PanelDecision:
     if _values_due(p):
         return plan_values(p)
+    if p.u.proposal_action in PROPOSAL_MOVES:
+        kind, rule = PROPOSAL_MOVES[p.u.proposal_action]
+        prop = p.turn.proposal
+        why = (prop.reason if prop else "")[:160] or p.u.proposal_action
+        move = p.board_move(kind, p.segment.member, rule, f"{rule}: the model's proposal: {why}")
+        return p.decision(move, "next_question")
     twist = None if p.u.free_kind or p.u.request_kind else _twist_due(p.turn, p.memory, p.cfg)
     if twist is not None:
         move = p.board_move(Move.probe, p.segment.member, "D-TWIST", "the situation's twist")
@@ -973,7 +1051,9 @@ def _fold_one(memory: PanelMemory, done: CompletedTurn) -> PanelMemory:
     if d.move.rule_id in {"D-TWIST", "D-VALUES"} and d.repeat_text:  # spoken whole: no `asked`
         update["last_question"] = d.repeat_text
         update["probes_on_seed"] = memory.probes_on_seed + 1
-    if d.move.move == Move.probe and d.move.rule_id in {"R8", "D-BRIEF", "D-ANSWER", "D-DEEP"}:
+    if d.move.rule_id in PROPOSAL_RULES or (
+        d.move.move == Move.probe and d.move.rule_id in {"R8", "D-BRIEF", "D-ANSWER", "D-DEEP"}
+    ):
         update["probes_on_seed"] = memory.probes_on_seed + 1
     if d.move.rule_id == "R1" and d.move.move == Move.clarify:
         update["unclear_hearings"] = memory.unclear_hearings + 1

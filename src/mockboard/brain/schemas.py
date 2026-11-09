@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from enum import StrEnum
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -620,6 +620,15 @@ class PanelSettings(_Model):
     free_turns: int = Field(default=PANEL_FREE_TURNS, ge=0)
 
 
+class MoveProposal(_Model):
+    """A move the client model proposes (MCP, owner Nov 9): Mock Board's director allows it or
+    refuses it with a reason, and the rules decide whenever it is refused or absent."""
+
+    action: Literal["dig", "elaborate", "confront", "pivot", "plan"] = "plan"
+    quote: str = ""  # confront: the candidate's own words, already checked against the transcript
+    reason: str = ""
+
+
 class DirectorTurn(_Model):
     """The per-invoke input. Counters come from the session side; only `hooks.apply` moves them."""
 
@@ -630,6 +639,7 @@ class DirectorTurn(_Model):
     answers_used: int = 0
     free_used: int = 0
     wrap_up_due: bool = False
+    proposal: MoveProposal | None = None
 
 
 class TurnUnderstanding(_Model):
@@ -646,6 +656,8 @@ class TurnUnderstanding(_Model):
     close_reason: CloseReason | None = None
     change_is_weak: bool = False  # a rule hit was one of the seven weak patterns (Ruling 56)
     request_disagree: bool = False  # a healthy listener said something else than the rules
+    proposal_action: str | None = None  # a model's proposal the director allowed
+    proposal_veto: str = ""  # why a model's proposal was refused ("" when none was refused)
 
 
 class PanelDecision(_Model):
@@ -678,6 +690,8 @@ class PanelDecision(_Model):
     request_disagree: bool = False  # trace only (CTO_NOTES_06 §3, Ruling 53)
     avoid_terms: tuple[str, ...] = ()
     director_error: str | None = None
+    # The client model's proposal and what became of it: {action, accepted, why} (MCP, Nov 9).
+    proposal: dict[str, Any] | None = None
 
 
 class CompletedTurn(_Model):

@@ -18,8 +18,8 @@ MOVE_GUIDE: dict[str, str] = {
     "move_on": "Ask the agenda question in `question`, in your own words, as one question.",
     "probe": "Ask one follow-up that makes the candidate go one step deeper on what they just "
     "said (a reason, who is affected, a first step). One question.",
-    "pressure": "The answer was thin. Politely ask for one concrete reason or step. Firm, never "
-    "rude. One question.",
+    "pressure": "The answer was thin. Say plainly what is missing, then ask for one concrete "
+    "reason or step. Direct, never rude. One question.",
     "counter": "Name, without asserting it as fact, another side some would raise ('some would "
     "say...'), and ask how the candidate answers it. One question.",
     "steelman": "Ask the candidate to state the strongest form of the view they disagree with. "
@@ -32,6 +32,54 @@ MOVE_GUIDE: dict[str, str] = {
     "fact_challenge": "Do not challenge any figure: there are no fact cards in this channel. Ask "
     "where the candidate read it, as a question.",
 }
+
+# A follow-up on the case study (`D-DEEP`), as actor.v12 asks of Mock Board's own model (Nov 9:
+# the MCP run's own draft was "how would you explain this to an ordinary citizen?").
+CASE_DEEP_GUIDE = (
+    "The case study: go one level deeper into the candidate's own plan, on execution: the first "
+    "hours, whom they call, what the law and their office allow, who resists and why, or what they "
+    "do if the first step fails. Stay inside the situation already given; add no fact, figure or "
+    "name. One question."
+)
+# The line after the candidate's introduction (the sitting's first answer, Nov 9).
+INTRO_GAP_GUIDE = (
+    "This follows the candidate's introduction. Their form says: {facts}. If the introduction "
+    "left one of these out or passed over it, ask about that one, in the spirit of the move "
+    "above; otherwise ask the move's question about the introduction itself."
+)
+
+# A move the client proposed and Mock Board allowed (next_turn's `proposal`, Nov 9).
+PROPOSAL_GUIDE: dict[str, str] = {
+    "M-DIG": "Your proposal to dig deeper was allowed: one sharper follow-up on the exact point "
+    "the candidate just made (the mechanism, the first step, who pays). One question.",
+    "M-ELABORATE": "Your proposal was allowed: say plainly that the answer was too thin, then ask "
+    "them to expand it with one concrete example or reason. One question.",
+    "M-CONFRONT": "Your confrontation was allowed: quote the candidate's own words exactly, "
+    "'{quote}', set them against what they have just said or against the obvious objection, and "
+    "ask them to reconcile it. Firm, never rude. One question.",
+}
+MOOD_GUIDE: dict[str, str] = {
+    "neutral": "",
+    "patient": "Your mood: patient (they admitted not knowing; be calm and give them a way in).",
+    "sceptical": "Your mood: sceptical (the last answer was unsure or thin; let it show in a "
+    "cooler, more exacting tone).",
+    "pressing": "Your mood: pressing (you are testing them; keep the pressure, stay courteous).",
+    "satisfied": "Your mood: satisfied (a reasoned answer; acknowledge nothing aloud, but raise "
+    "the level of the next question).",
+}
+
+# Added to a follow-up's guidance when Mock Board's code found a gap in the answer (actor.v12).
+CANDOUR_NOTES: dict[str, str] = {
+    "unsure": "the candidate hedged and did not sound sure",
+    "thin": "the answer was very short",
+    "no_reason": "the answer gave a conclusion without a reason",
+}
+CANDOUR_GUIDE = (
+    "Mock Board found: {found}. Open with ONE short, direct sentence that names this gap, in the "
+    "sitting's language, without softening it and without insult; then ask the sharper question. "
+    "Never praise a weak answer."
+)
+CANDOUR_MOVES = frozenset({"probe", "counter", "pressure", "steelman", "interrupt"})
 
 # The study partner's moves (its own rule table, `modes/partner/strategist.py`). Keys are the move,
 # or `move_on:<target>` for the recap and the close.
@@ -150,6 +198,8 @@ your `analysis` of the answer, and `you_said` (what you actually said last). Rep
 it returns, quote the candidate word for word with the turn id, call check_scores, and show only \
 the scores it keeps.
 
+{proposals}
+
 {honesty}
 
 {phrases}
@@ -173,9 +223,72 @@ only what it keeps.
 """
 
 
+PROPOSALS_TEXT = """Lead like a real board (optional, with each next_turn): send `proposal` \
+with the move you judge best after reading the answer, and a short `reason`:
+- `dig`: one level deeper on the point they just made;
+- `elaborate`: the answer was too thin, ask them to expand;
+- `confront`: set their own words against what they said now or against the obvious objection; \
+`quote` must be their exact words from this answer or an earlier one;
+- `pivot`: this member has heard enough, hand over to the next one;
+- `plan`: leave it to Mock Board's rules.
+Mock Board allows or refuses each proposal (an honest "I don't know" is never pressed, a member's \
+budget is never exceeded, the case study comes first, requests always win) and tells you why in \
+`board.your_proposal`. Speak the move Mock Board returns, not the one you proposed. The sitting \
+opens with the candidate's introduction: afterwards, ask about something on the form their \
+introduction left out."""
+
+
 def upsc_prompt() -> str:
-    return UPSC_PROMPT.format(honesty=honesty_text(), phrases=phrases_text())
+    return UPSC_PROMPT.format(honesty=honesty_text(), phrases=phrases_text(),
+                              proposals=PROPOSALS_TEXT)
 
 
 def partner_prompt() -> str:
     return PARTNER_PROMPT.format(honesty=honesty_text(), phrases=phrases_text())
+
+
+# --- the Gnani voice room (Option 2) ------------------------------------------------------------
+
+VOICE_HOW = (
+    "Gnani Prisma hears the person and Gnani Timbre speaks each member's line in that member's "
+    "voice. The voice room shows here as a panel where the app supports it; otherwise give the "
+    "person `voice_url` to open in a browser on this computer."
+)
+VOICE_NEXT_STEP = (
+    "First call prepare_board with your preparation (each member's lines of questioning, with "
+    "why and the weak spot to probe): the room animates it. Then call say with the opening "
+    "lines (verbatim lines word for word; own_words lines in your words), then wait_for_answer, "
+    "then next_turn with the exact words it returns. Repeat say, wait_for_answer, next_turn."
+)
+
+
+def voice_prompt() -> str:
+    """The `voice_room` prompt: the same board, spoken."""
+    return "\n".join([
+        "You are running Mock Board's Gnani voice room for the person in this chat. Mock Board's "
+        "server decides every move; you are the board's voice and its listener, and Gnani's "
+        "speech models do the speaking and hearing.",
+        "",
+        "1. Ask for the short form (as for the text board), or for a study topic. Then call "
+        "start_voice_interview (or start_voice_partner).",
+        "2. Call prepare_board: for each member, up to three lines of questioning drawn from the "
+        "form, each with `why` and the `weak_spot` you expect to probe. No figures, names you "
+        "were not given, links or markup. The room draws it as an animated graph.",
+        "3. Call say with the returned lines in order: `verbatim` lines word for word, `own_words` "
+        "lines in your words within `max_words`, one question, in the sitting's language.",
+        "4. Call wait_for_answer. When it returns `answered` or `silence`, call next_turn with "
+        "`candidate_said` exactly as returned, your analysis, and what you said. If it returns "
+        "`waiting`, call wait_for_answer again.",
+        "5. Say the next lines with say. Repeat until `finished`, then call end_session and show "
+        "the report; to score, use check_scores.",
+        "",
+        PROPOSALS_TEXT,
+        "",
+        "Honesty rules:",
+        *(f"- {rule}" for rule in HONESTY_RULES),
+        "- The voices are generated by Gnani Timbre; never present them as a human recording.",
+        "",
+        "Things the person can say (fixed rules, four languages):",
+        "",
+        phrases_text(),
+    ])

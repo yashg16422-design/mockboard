@@ -246,11 +246,13 @@ _TITLES: dict[str, str] = {
 _SEEDS: dict[str, dict[str, tuple[_Seed, ...]]] = {
     FORM_HR: {
         "hi-en": (
+            # Owner, Nov 9: the sitting opens with "introduce yourself"; what the introduction
+            # leaves out is what the board asks next.
             _Seed(
-                "Aap {place} se hain aur aapne {degree} ki padhai ki hai. "
-                "Is safar ne aapko civil services ki taraf kaise modha?",
-                "Aapke form ko dekhte hue, aapko civil services ki taraf kis baat ne modha, "
-                "aur kaise?",
+                "Pehle apna parichay dijiye: aap kahan se hain, kya padha, aur aapka safar "
+                "civil services tak kaise pahuncha?",
+                "Pehle apna parichay dijiye: aap kahan se hain, kya padha, aur aapka safar "
+                "civil services tak kaise pahuncha?",
             ),
             _Seed(
                 "Agar civil services ka rasta na bane, to aap samaj ke liye kya karna chahenge, "
@@ -261,9 +263,10 @@ _SEEDS: dict[str, dict[str, tuple[_Seed, ...]]] = {
         ),
         "en": (
             _Seed(
-                "You are from {place} and you studied {degree}. "
-                "How did that journey bring you to the civil services?",
-                "Looking at your form, what drew you to the civil services, and how?",
+                "Please introduce yourself: where you come from, what you studied, and how "
+                "your journey brought you to the civil services?",
+                "Please introduce yourself: where you come from, what you studied, and how "
+                "your journey brought you to the civil services?",
             ),
             _Seed(
                 "If the civil services do not work out, what would you want to do for society, "
@@ -274,9 +277,10 @@ _SEEDS: dict[str, dict[str, tuple[_Seed, ...]]] = {
         ),
         "hi": (
             _Seed(
-                "आप {place} से हैं और आपने {degree} की पढ़ाई की है। "
-                "इस सफ़र ने आपको सिविल सेवा की ओर कैसे मोड़ा?",
-                "आपके आवेदन को देखते हुए, आपको सिविल सेवा की ओर किस बात ने मोड़ा, और कैसे?",
+                "पहले अपना परिचय दीजिए: आप कहाँ से हैं, क्या पढ़ा, और आपका सफ़र सिविल सेवा तक "
+                "कैसे पहुँचा?",
+                "पहले अपना परिचय दीजिए: आप कहाँ से हैं, क्या पढ़ा, और आपका सफ़र सिविल सेवा तक "
+                "कैसे पहुँचा?",
             ),
             _Seed(
                 "अगर सिविल सेवा का रास्ता न बने, तो आप समाज के लिए क्या करना चाहेंगे, और क्यों?",
@@ -488,11 +492,11 @@ _SEEDS: dict[str, dict[str, tuple[_Seed, ...]]] = {
 # Tamil + English (Tanglish), kept separate from Hindi/Hinglish so speech and board lines use
 # the Tamil locale and script. These templates are deliberately short and open-ended.
 _SEEDS[FORM_HR]["ta-en"] = (
-    _Seed(
-        "நீங்கள் {place} பகுதியைச் சேர்ந்தவர்; {degree} படித்திருக்கிறீர்கள். இந்தப் பயணம் உங்களை "
-        "civil services நோக்கி எப்படி அழைத்துச் சென்றது?",
-        "உங்கள் application-ஐப் பார்த்தால், civil services-ஐத் தேர்ந்தெடுக்க உங்களைத் "
-        "தூண்டியது என்ன, எப்படி?",
+    _Seed(  # UNVERIFIED: Tamil wording, pending a fluent review
+        "முதலில் உங்களை அறிமுகப்படுத்துங்கள்: நீங்கள் எங்கிருந்து வருகிறீர்கள், என்ன படித்தீர்கள், "
+        "civil services நோக்கி உங்கள் பயணம் எப்படி வந்தது?",
+        "முதலில் உங்களை அறிமுகப்படுத்துங்கள்: நீங்கள் எங்கிருந்து வருகிறீர்கள், என்ன படித்தீர்கள், "
+        "civil services நோக்கி உங்கள் பயணம் எப்படி வந்தது?",
     ),
     _Seed(
         "civil services வாய்ப்பு அமையாவிட்டால், சமூகத்திற்காக என்ன செய்ய விரும்புவீர்கள், ஏன்?",

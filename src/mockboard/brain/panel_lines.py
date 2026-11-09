@@ -224,6 +224,31 @@ VALUES_QUESTION_LINES = LineSet(
         ),
     },
 )
+# The last answer of a segment hedged ("shayad... pakka nahi pata"), and the segment's budget is
+# spent, so no follow-up can call it out. The member who heard it says this before the hand-off
+# (owner, Nov 9: "the board should be blunt"; the MCP run that day went from "I would accept a
+# transfer" to "shayad police bula lunga" and the board said nothing). UNVERIFIED: Tamil wording.
+HEDGE_PRESS_LINES = LineSet(
+    "hedge_press",
+    {
+        "hi-en": (
+            "Aap is par khud aashwast nahi lage. Ise aur taiyaar karke aaiyega.",
+            "Is jawab mein yakeen ki kami thi. Is par aur sochiyega.",
+        ),
+        "en": (
+            "You did not sound sure of that yourself. Prepare it further.",
+            "That answer lacked conviction. Think it through again.",
+        ),
+        "hi": (
+            "आप इस पर ख़ुद आश्वस्त नहीं लगे। इसे और तैयार करके आइएगा।",
+            "इस जवाब में यक़ीन की कमी थी। इस पर और सोचिएगा।",
+        ),
+        "ta-en": (
+            "இதில் நீங்களே உறுதியாக இல்லை போல் தெரிகிறது. இதை இன்னும் தயார் செய்யுங்கள்.",
+            "இந்தப் பதிலில் நம்பிக்கை குறைவாக இருந்தது. இதைப் பற்றி மீண்டும் யோசியுங்கள்.",
+        ),
+    },
+)
 # A turn that was only a greeting ("hello sir"): the member greets back, then the same question
 # follows verbatim (`D-GREET`, owner's live sitting, Nov 9). UNVERIFIED: Tamil wording.
 GREETING_BACK_LINES = LineSet(
@@ -419,6 +444,12 @@ ALL_LINE_TABLES: tuple[LineSet, ...] = (
     END_CLOSE_LINES,
     WRAP_UP_CLOSE_LINES,
     CAP_CLOSE_LINES,
+    # Nov 9: the lines added after the owner's live sittings (Rounds 55-57).
+    THINK_LINES,
+    GREETING_BACK_LINES,
+    VALUES_LINES,
+    VALUES_QUESTION_LINES,
+    HEDGE_PRESS_LINES,
 )
 
 

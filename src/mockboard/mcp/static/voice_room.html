@@ -1,0 +1,589 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mock Board voice room</title>
+<style>
+/*__TOKENS__*/
+:root { color-scheme: dark; --amber: #e4c48a; --coral: #f08f7f; --red: #ff6b6b;
+        --green: #9be7a8; --grey: #6e7480; }
+* { box-sizing: border-box; }
+html, body { margin: 0; min-height: 100%; }
+body { background: var(--bg); color: var(--fg); font: var(--text-md)/var(--line-height) var(--sans); }
+#field { position: fixed; inset: 0; width: 100vw; height: 100vh; z-index: 0; pointer-events: none;
+         transition: opacity 1.2s var(--ease); }
+body[data-phase="room"] #field, body[data-phase="done"] #field { opacity: .38; }
+.shell { position: relative; z-index: 1; min-height: 100vh; display: flex; flex-direction: column; }
+header { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px; padding: 16px 24px;
+         border-bottom: 1px solid var(--line); background: linear-gradient(var(--bg), rgba(3,4,5,.6)); }
+.brand { font: 500 var(--text-lg)/1 var(--display-font); letter-spacing: -.01em; }
+.brand span { color: var(--faint); font-weight: 300; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { font: var(--text-xs)/1 var(--mono); color: var(--muted); border: 1px solid var(--line-strong);
+        padding: 6px 9px; border-radius: 999px; white-space: nowrap; background: rgba(3,4,5,.5); }
+.chip b { color: var(--mint); font-weight: 500; }
+.pill { margin-left: auto; font: var(--text-xs)/1 var(--mono); padding: 7px 11px; border-radius: 999px;
+        border: 1px solid var(--line-strong); color: var(--muted); text-transform: uppercase; letter-spacing: .1em; }
+.pill[data-s="speaking"] { color: var(--violet); border-color: var(--violet); }
+.pill[data-s="listening"] { color: var(--mint); border-color: var(--mint); }
+.pill[data-s="thinking"] { color: var(--amber); border-color: var(--amber); }
+.eyebrow { font: var(--text-xs)/1 var(--mono); text-transform: uppercase; letter-spacing: .14em; color: var(--faint); margin: 0 0 12px; }
+.panel { background: rgba(6, 8, 10, .9); border: 1px solid var(--line); border-radius: 10px; backdrop-filter: blur(8px); }
+
+/* ---------- phase 1: the board prepares ---------- */
+#prep { flex: 1; display: none; padding: 28px 24px 24px; }
+body[data-phase="prep"] #prep { display: block; }
+#prep h1 { font: 300 clamp(1.8rem, 4vw, 3rem)/1.05 var(--display-font); letter-spacing: -.02em; margin: 0 0 8px; }
+#prep h1 em { font-style: normal; color: var(--mint); }
+#prep .lede { color: var(--muted); max-width: 70ch; margin: 0 0 18px; }
+.prepgraph { padding: 18px; overflow-x: auto; }
+#pg { display: block; }
+#pg .fact rect { fill: rgba(94,242,194,.06); stroke: rgba(94,242,194,.45); }
+#pg .fact text, #pg .member text, #pg .line text { fill: var(--fg); font: 12px var(--sans); }
+#pg .fact .k, #pg .line .why { fill: var(--faint); font: 10px var(--mono); }
+#pg .member circle { fill: rgba(125,92,255,.18); stroke: var(--violet); stroke-width: 1.5; }
+#pg .member .name { font: 600 13px var(--sans); }
+#pg .line rect { fill: rgba(255,255,255,.03); stroke: var(--line-strong); }
+#pg .line .weak { fill: var(--coral); font: 10px var(--mono); }
+#pg .edge { fill: none; stroke: rgba(94,242,194,.35); stroke-width: 1.2; }
+#pg .edge.to-line { stroke: rgba(125,92,255,.45); }
+#pg .anim { opacity: 0; animation: appear .55s var(--ease) forwards; }
+#pg .draw { stroke-dasharray: 900; stroke-dashoffset: 900; animation: draw 1.1s var(--ease) forwards; }
+#pg .glow { animation: glow 1.6s ease-in-out infinite; }
+@keyframes appear { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@keyframes draw { to { stroke-dashoffset: 0; } }
+@keyframes glow { 50% { opacity: .45; } }
+.prepfoot { display: flex; align-items: center; gap: 14px; margin-top: 14px; color: var(--muted); font-size: var(--text-sm); }
+
+/* ---------- phase 2: the sitting ---------- */
+#room { flex: 1; display: none; grid-template-columns: minmax(300px, 5fr) minmax(340px, 7fr); }
+body[data-phase="room"] #room, body[data-phase="done"] #room { display: grid; }
+@media (max-width: 900px) { #room { grid-template-columns: 1fr; } }
+#room > section { padding: 20px 24px; }
+#room > section + section { border-left: 1px solid var(--line); }
+@media (max-width: 900px) { #room > section + section { border-left: 0; border-top: 1px solid var(--line); } }
+.seats { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; margin-bottom: 16px; }
+.seat { border: 1px solid var(--line); border-radius: 8px; padding: 9px 6px; text-align: center;
+        background: rgba(3,4,5,.55); transition: border-color .25s, box-shadow .25s; min-width: 0; }
+.seat .n { font-size: var(--text-sm); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.seat .t { font: 10px/1.3 var(--mono); color: var(--faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.seat.on { border-color: var(--violet); box-shadow: 0 0 0 1px var(--violet), 0 0 22px rgba(125,92,255,.4); }
+.status { margin: 4px 0 14px; color: var(--muted); }
+.status b { color: var(--fg); font: 400 var(--text-xl)/1.15 var(--display-font); letter-spacing: -.01em; display: block; margin-bottom: 4px; }
+.controls { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 12px; }
+button { font: var(--text-sm)/1 var(--sans); padding: 10px 14px; border-radius: 6px; cursor: pointer;
+         border: 1px solid var(--line-strong); background: rgba(3,4,5,.6); color: var(--fg); }
+button.primary { background: var(--mint); color: var(--accent-ink); border-color: var(--mint); font-weight: 600; }
+button:disabled { opacity: .45; cursor: default; }
+form.type { display: flex; gap: 8px; margin-bottom: 16px; }
+form.type input { flex: 1; min-width: 0; font: var(--text-sm) var(--sans); padding: 10px 11px; border-radius: 6px;
+                  border: 1px solid var(--line-input); background: rgba(0,0,0,.6); color: var(--fg); }
+.captions { display: flex; flex-direction: column; gap: 10px; max-height: 44vh; overflow-y: auto; padding-right: 4px; }
+.cap { border-left: 2px solid var(--violet); padding: 2px 0 2px 12px; }
+.cap.you { border-left-color: var(--mint); }
+.cap .who { font: var(--text-xs)/1.4 var(--mono); color: var(--faint); }
+.banner { margin: 0 0 12px; padding: 9px 11px; border-radius: 6px; font-size: var(--text-sm);
+          border: 1px solid var(--amber); color: var(--amber); display: none; background: rgba(3,4,5,.7); }
+.meter { height: 3px; background: var(--line); border-radius: 2px; margin: 0 0 12px; overflow: hidden; }
+.meter > div { height: 100%; width: 0; background: var(--mint); transition: width .5s var(--ease); }
+.graphwrap { overflow-x: auto; padding: 4px 0; }
+#graph text { fill: var(--muted); font: 11px var(--sans); }
+#graph .lane-label { fill: var(--fg); font-weight: 500; }
+#graph .lane-sub { fill: var(--faint); font: 10px var(--mono); }
+#graph .rule { fill: var(--faint); font: 9px var(--mono); }
+#graph .node { animation: pop .45s var(--ease); transform-box: fill-box; transform-origin: center; }
+#graph .node.now { animation: pop .45s var(--ease), glow 1.4s ease-in-out .45s infinite; }
+@keyframes pop { from { transform: scale(0); } to { transform: scale(1); } }
+.card { margin-top: 14px; padding: 14px 16px; }
+.card .k { font: var(--text-xs)/1.4 var(--mono); color: var(--faint); }
+.card .move { font: 400 var(--text-lg)/1.25 var(--display-font); margin: 4px 0 6px; }
+.card .why { color: var(--muted); font-size: var(--text-sm); }
+.card .said { margin-top: 8px; font-size: var(--text-sm); color: var(--fg); border-left: 2px solid var(--mint); padding-left: 10px; }
+.prop { margin-top: 10px; padding: 9px 11px; border-radius: 8px; border: 1px solid var(--line-strong);
+        font-size: var(--text-sm); color: var(--muted); }
+.prop b { color: var(--fg); font-weight: 500; }
+.prop .ok { color: var(--mint); } .prop .no { color: var(--coral); }
+.seat .m { font: 10px/1.3 var(--mono); color: var(--amber); min-height: 13px; }
+.sig { display: inline-block; font: var(--text-xs)/1 var(--mono); padding: 5px 8px; margin: 8px 6px 0 0;
+       border-radius: 999px; border: 1px solid var(--coral); color: var(--coral); }
+.legend { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 12px; font-size: var(--text-xs); color: var(--faint); }
+.legend i { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 5px; vertical-align: -1px; }
+.notes { margin-top: 14px; padding: 12px 16px; }
+.notes .n { font-size: var(--text-sm); color: var(--muted); border-left: 2px solid var(--violet); padding-left: 10px; margin-top: 8px; }
+#reportBox { margin: 0 0 16px; padding: 16px; display: none; }
+body[data-phase="done"] #reportBox.has { display: block; }
+.score { display: grid; grid-template-columns: 1fr auto; gap: 2px 12px; padding: 10px 0; border-top: 1px solid var(--line); }
+.score:first-of-type { border-top: 0; }
+.score .d { font-weight: 500; } .score .v { font: 500 var(--text-lg)/1 var(--display-font); color: var(--mint); }
+.score .r { grid-column: 1 / -1; color: var(--muted); font-size: var(--text-sm); }
+.score .q { grid-column: 1 / -1; font-size: var(--text-xs); color: var(--faint); border-left: 2px solid var(--mint); padding-left: 8px; }
+footer { position: relative; z-index: 1; padding: 12px 24px 18px; color: var(--faint); font-size: var(--text-xs); border-top: 1px solid var(--line); }
+</style>
+</head>
+<body data-phase="prep" data-view="form">
+<canvas id="field" aria-hidden="true"></canvas>
+<div class="shell">
+<header>
+  <div class="brand">Mock Board <span>· voice room</span></div>
+  <div class="chips">
+    <span class="chip"><b>Gnani Prisma</b> hears</span>
+    <span class="chip"><b>Gnani Timbre</b> speaks</span>
+    <span class="chip"><b>Your AI</b> words the board</span>
+    <span class="chip"><b>Mock Board</b> decides every move</span>
+  </div>
+  <span class="pill" id="pill" data-s="waiting">connecting</span>
+</header>
+
+<div id="prep">
+  <p class="eyebrow" id="prepEyebrow">Before the first question</p>
+  <h1 id="prepTitle">The board is <em>preparing</em>.</h1>
+  <p class="lede" id="prepLede">Waiting for the sitting to start…</p>
+  <div class="panel prepgraph"><svg id="pg" width="900" height="300" role="img"
+    aria-label="The board's preparation: the form's facts, the members, and their lines of questioning"></svg></div>
+  <div class="prepfoot">
+    <button class="primary" id="startPrep" type="button">Start microphone</button>
+    <button id="backRoom" type="button" hidden>Back to the sitting</button>
+    <span id="prepNote">Starting the microphone also lets the board's voices play.</span>
+  </div>
+</div>
+
+<div id="room">
+  <section>
+    <p class="eyebrow">The board</p>
+    <div class="seats" id="seats"></div>
+    <div class="status" id="status"><b>Connecting…</b>Keep this open during the sitting.</div>
+    <div class="banner" id="banner"></div>
+    <div class="controls">
+      <button class="primary" id="start" type="button">Start microphone</button>
+      <button id="done" type="button" disabled>I have finished</button>
+      <button id="showPrep" type="button">The board's preparation</button>
+    </div>
+    <form class="type" id="typeform"><input id="typed" placeholder="Or type your answer and press Enter" autocomplete="off"></form>
+    <p class="eyebrow">What was said</p>
+    <div class="captions" id="captions"></div>
+  </section>
+  <section>
+    <div class="panel" id="reportBox"><p class="eyebrow">Your report</p><div id="report"></div></div>
+    <p class="eyebrow">How the board is deciding</p>
+    <div class="meter"><div id="meter"></div></div>
+    <div class="panel graphwrap"><svg id="graph" width="600" height="120" role="img"
+      aria-label="Each node is one decision of the board, in its member's lane"></svg></div>
+    <div class="panel card" id="card"><div class="k">Waiting for the first answer</div>
+      <div class="why">Each decision appears here: who asked, what kind of move, why Mock Board's rules chose it, and what was found in your answer.</div></div>
+    <div class="legend">
+      <span><i style="background:var(--mint)"></i>prepared question</span>
+      <span><i style="background:var(--violet)"></i>dig deeper</span>
+      <span><i style="background:var(--amber)"></i>challenge</span>
+      <span><i style="background:var(--coral)"></i>press</span>
+      <span><i style="background:var(--teal)"></i>hand-off</span>
+      <span><i style="background:var(--green)"></i>reassure</span>
+      <span><i style="background:var(--red)"></i>equal dignity</span>
+      <span><i style="border:1.5px solid var(--grey)"></i>your request</span>
+      <span><i style="border:1.5px solid var(--mint)"></i>your AI's proposal, allowed</span>
+      <span><i style="border:1.5px dashed var(--coral)"></i>refused</span>
+    </div>
+    <div class="panel notes" id="notesPanel" hidden><p class="eyebrow">Claude's notes</p><div id="notes"></div></div>
+  </section>
+</div>
+
+<footer>Every board member is fictional. Their voices are generated by Gnani Timbre. Nothing is recorded:
+your audio goes to Gnani Prisma only while you speak, and to no file. Ask the board to repeat, to give
+you a moment, to change topic or to end, in your own words.</footer>
+</div>
+<script>
+//__PRESENCE__
+</script>
+<script>
+(() => {
+  "use strict";
+  const PORT = "__PORT__";
+  const $ = (id) => document.getElementById(id);
+  const P = () => window.Presence || { show() {}, who() {}, level() {}, pulse() {}, state() {} };
+  const TARGET_RATE = 16000;
+  const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+  const KIND = {
+    "D-HANDOFF": ["--teal", "Hand-off to the next member"], "D-SEED": ["--mint", "Next prepared question"],
+    "D-TWIST": ["--violet", "The case study's twist"], "D-DEEP": ["--violet", "Deeper into the case study"],
+    "D-ANSWER": ["--violet", "Follow-up on the answer"], "D-BRIEF": ["--violet", "Follow-up on the briefing"],
+    "D-VALUES": ["--red", "Equal dignity for every community"], "D-CLOSE": ["--fg", "The close"],
+    "M-DIG": ["--violet", "Dig deeper (your AI's call)"], "M-ELABORATE": ["--coral", "Expand that (your AI's call)"],
+    "M-CONFRONT": ["--amber", "Confronted with your own words"],
+    "D-GREET": [null, "You greeted the board"], "D-REPEAT": [null, "You asked to hear it again"],
+    "D-THINK": [null, "You asked for a moment"], "D-END-CONFIRM": [null, "You asked to end"],
+    "D-REPHRASE": [null, "You asked what it means"], "D-RESUME": [null, "You chose to go on"],
+    probe: ["--violet", "Dig deeper"], counter: ["--amber", "Challenge: the other side"],
+    steelman: ["--amber", "Argue the other side"], pressure: ["--coral", "Press for a reason"],
+    interrupt: ["--coral", "Come to the point"], reassure: ["--green", "Reassure, then simpler"],
+    next_question: ["--mint", "Next prepared question"], move_on: ["--teal", "Move on"],
+    clarify: [null, "Say that again"], repeat_question: [null, "The question again"],
+    recap: ["--mint", "Recap"], close: ["--fg", "The close"],
+  };
+  const SIGNAL_TEXT = { unsure: "sounded unsure", thin: "very short", no_reason: "no reason given" };
+  const PREP_HOLD_MS = 4000;
+  const SHORT = { form_hr: "Introduction", degree: "Subject", current_affairs: "Case study",
+    home_district: "Home district", interests: "Hobbies", partner: "Topic" };
+  const short = (s) => SHORT[s.id] || (s.title || "").slice(0, 18);
+  const FACTS_FOR = { form_hr: ["work", "degree"], degree: ["degree"], current_affairs: ["district", "home state"],
+    home_district: ["district", "home state"], interests: ["hobbies", "optional"], partner: ["topic"] };
+
+  let ws = null, serverState = "waiting", segments = [], decisions = [], budget = 0;
+  let audioCtx = null, playHead = 0, pendingAudio = null, micOn = false, prepDone = false, prepTimer = null;
+
+  // ---------- connection: a browser tab (s, k in the URL) or an MCP App panel ----------
+  const params = new URLSearchParams(location.search);
+  function connect(url) {
+    if (ws) return;
+    ws = new WebSocket(url);
+    ws.binaryType = "arraybuffer";
+    ws.onopen = () => { setStatus("Connected", "The board is preparing."); if (prepDone) sendReady(); };
+    ws.onclose = (e) => { ws = null; setPill("closed");
+      setStatus("Disconnected", e.code === 4403 ? "This room has ended or the link is wrong." : "The voice room closed. Ask your AI to start again."); };
+    ws.onmessage = (e) => {
+      if (e.data instanceof ArrayBuffer) { playPcm(e.data); return; }
+      let m; try { m = JSON.parse(e.data); } catch { return; }
+      onEvent(m);
+    };
+  }
+  if (params.get("s") && params.get("k")) {
+    connect(`ws://127.0.0.1:${PORT}/ws?s=${encodeURIComponent(params.get("s"))}&k=${encodeURIComponent(params.get("k"))}`);
+  } else { appHandshake(); }
+
+  let rpcId = 1; const pending = new Map();
+  function post(msg) { window.parent.postMessage(msg, "*"); }
+  function request(method, p, ms) {
+    const id = "mb-" + (rpcId++);
+    return new Promise((resolve, reject) => {
+      const t = setTimeout(() => { pending.delete(id); reject(new Error("timeout")); }, ms || 8000);
+      pending.set(id, { resolve, reject, t }); post({ jsonrpc: "2.0", id, method, params: p });
+    });
+  }
+  function ticketFrom(result) {
+    const sc = result && (result.structuredContent || result);
+    const v = sc && (sc.voice || sc);
+    return v && v.ws_url ? v.ws_url : null;
+  }
+  window.addEventListener("message", (event) => {
+    const msg = event.data;
+    if (!msg || typeof msg !== "object" || msg.jsonrpc !== "2.0") return;
+    if (msg.id !== undefined && pending.has(msg.id) && !msg.method) {
+      const p = pending.get(msg.id); pending.delete(msg.id); clearTimeout(p.t);
+      msg.error ? p.reject(new Error(msg.error.message)) : p.resolve(msg.result || {}); return;
+    }
+    if (msg.method === "ui/notifications/tool-result") { const url = ticketFrom(msg.params); if (url) connect(url); }
+    if (msg.method && msg.id !== undefined) post({ jsonrpc: "2.0", id: msg.id, result: {} });
+  });
+  async function appHandshake() {
+    try {
+      await request("ui/initialize", { protocolVersion: "2026-01-26",
+        appInfo: { name: "mockboard-voice-room", version: "1" }, appCapabilities: {} }, 6000);
+      post({ jsonrpc: "2.0", method: "ui/notifications/initialized", params: {} });
+      for (let i = 0; i < 10 && !ws; i++) {
+        const url = ticketFrom(await request("tools/call", { name: "voice_room_ticket", arguments: {} }, 8000));
+        if (url) { connect(url); break; }
+        await new Promise((r) => setTimeout(r, 1500));
+      }
+    } catch (e) {
+      $("prepLede").textContent = "This view could not reach Mock Board here. Ask your AI for the voice_url and open it in a browser on this computer.";
+    }
+  }
+
+  // ---------- events ----------
+  function onEvent(m) {
+    if (m.type === "state") { serverState = m.state; setPill(m.state); stateText(m.state);
+      P().state(m.state); P().who(m.state === "speaking" ? "board" : m.state === "listening" ? "you" : "");
+      if (m.state === "speaking" && prepDone) enterRoom(); }
+    else if (m.type === "prep") { drawPrep(m); }
+    else if (m.type === "caption") { enterRoom(); addCaption(m.speaker || m.member, m.text, false); lightSeat(m.member); }
+    else if (m.type === "heard") { addCaption("You · " + (m.source === "typed" ? "typed" : "heard by Gnani Prisma"), m.text || "(nothing heard)", true); }
+    else if (m.type === "decision") { decisions.push(m); drawGraph(); showCard(m); P().pulse();
+      const md = $("mood-" + m.member); if (md) md.textContent = m.mood && m.mood !== "neutral" ? m.mood : ""; }
+    else if (m.type === "audio") { pendingAudio = m; }
+    else if (m.type === "problem") { banner(m.text); }
+    else if (m.type === "agent") { addNote(m.text); }
+    else if (m.type === "report") { showReport(m); }
+    else if (m.type === "finished") { document.body.dataset.phase = "done"; P().show("report");
+      banner("The sitting has ended. Your AI will show the report."); setPill("finished"); }
+  }
+  let roomStarted = false, viewingPrep = false;
+  function enterRoom() {
+    roomStarted = true; $("backRoom").hidden = false;
+    if (document.body.dataset.phase === "prep" && !viewingPrep) { document.body.dataset.phase = "room"; P().show("room"); drawGraph(); }
+  }
+  function showPrep(on) {
+    viewingPrep = on;
+    document.body.dataset.phase = on ? "prep" : "room"; P().show(on ? "form" : "room");
+    if (!on) drawGraph();
+  }
+  function setPill(s) { $("pill").dataset.s = s; $("pill").textContent = s; $("done").disabled = !(s === "listening" && micOn); }
+  function setStatus(head, sub) { const st = $("status"); st.textContent = ""; const b = document.createElement("b");
+    b.textContent = head; st.append(b, document.createTextNode(sub)); }
+  function stateText(s) {
+    if (s === "speaking") setStatus("The board is speaking", "Listen. Your microphone waits until the board has finished.");
+    else if (s === "listening") setStatus("Your turn", micOn ? "Speak when ready. A pause of about a second and a half ends your answer." : "Start the microphone, or type your answer.");
+    else if (s === "thinking") setStatus("The board is deciding", "Your AI reads your answer; Mock Board's rules choose the move.");
+  }
+  const DIM = { mental_alertness: "Mental alertness", critical_assimilation: "Critical assimilation",
+    clear_logical_exposition: "Clear, logical exposition", balance_of_judgement: "Balance of judgement",
+    variety_depth_of_interest: "Variety and depth of interest", social_cohesion_leadership: "Social cohesion and leadership",
+    intellectual_moral_integrity: "Intellectual and moral integrity", factual_accuracy: "Factual accuracy (practice)",
+    composure: "Composure (practice)" };
+  function addNote(text) {
+    $("notesPanel").hidden = false;
+    const n = document.createElement("div"); n.className = "n"; n.textContent = text;
+    $("notes").prepend(n); while ($("notes").children.length > 3) $("notes").lastChild.remove();
+  }
+  function showReport(m) {
+    const box = $("report"); box.textContent = "";
+    (m.scores || []).forEach((sc) => {
+      const row = document.createElement("div"); row.className = "score";
+      const d = document.createElement("div"); d.className = "d"; d.textContent = DIM[sc.dimension] || sc.dimension;
+      const v = document.createElement("div"); v.className = "v"; v.textContent = sc.score === "insufficient_evidence" ? "–" : String(sc.score) + "/5";
+      const r = document.createElement("div"); r.className = "r"; r.textContent = sc.rationale || "";
+      row.append(d, v, r);
+      (sc.evidence || []).slice(0, 1).forEach((e) => { const q = document.createElement("div"); q.className = "q";
+        q.textContent = "“" + (e.quote || "") + "” · " + (e.turn_id || ""); row.append(q); });
+      box.append(row);
+    });
+    if (!(m.scores || []).length && m.notes) { const p = document.createElement("div"); p.className = "r";
+      p.textContent = typeof m.notes === "string" ? m.notes : JSON.stringify(m.notes).slice(0, 600); box.append(p); }
+    $("reportBox").classList.add("has"); document.body.dataset.phase = "done";
+  }
+  function banner(text) { $("banner").textContent = text; $("banner").style.display = "block"; }
+  function lightSeat(id) { document.querySelectorAll(".seat").forEach((s) => s.classList.remove("on"));
+    const s = $("seat-" + id); if (s) s.classList.add("on"); }
+  function addCaption(who, text, you) {
+    const c = document.createElement("div"); c.className = "cap" + (you ? " you" : "");
+    const w = document.createElement("div"); w.className = "who"; w.textContent = who;
+    const t = document.createElement("div"); t.textContent = text;
+    c.append(w, t); $("captions").append(c); $("captions").scrollTop = 1e9;
+  }
+
+  // ---------- phase 1: the animated preparation graph ----------
+  const NS = "http://www.w3.org/2000/svg";
+  function el(name, attrs, text) { const e = document.createElementNS(NS, name);
+    for (const k in attrs) e.setAttribute(k, attrs[k]); if (text != null) e.textContent = text; return e; }
+  function wrap(text, max) { const words = String(text || "").split(/\s+/); const out = []; let cur = "";
+    for (const w of words) { if ((cur + " " + w).trim().length > max) { if (cur) out.push(cur); cur = w; } else cur = (cur + " " + w).trim(); }
+    if (cur) out.push(cur); return out.slice(0, 3); }
+  function drawPrep(m) {
+    segments = m.segments || []; budget = m.budget || 0;
+    const seats = $("seats"); seats.textContent = "";
+    (m.members || []).forEach((x) => {
+      const d = document.createElement("div"); d.className = "seat"; d.id = "seat-" + x.id; d.title = x.title || "";
+      const n = document.createElement("div"); n.className = "n"; n.textContent = x.name;
+      const t = document.createElement("div"); t.className = "t"; t.textContent = x.voice ? "voice " + x.voice : "";
+      const md = document.createElement("div"); md.className = "m"; md.id = "mood-" + x.id;
+      d.append(n, t, md); seats.append(d);
+    });
+    const partner = m.mode === "study_partner";
+    $("prepTitle").innerHTML = partner ? "Mitra is <em>preparing</em>." : "The board is <em>preparing</em>.";
+    $("prepLede").textContent = partner
+      ? "Your topic, the points worth testing, and where a speaker usually slips."
+      : `Your form, the five members, and the lines each will pursue. Plan from ${m.plan_from || "the agenda"}.`;
+    const svg = $("pg"); svg.textContent = "";
+    const facts = m.facts || [], segs = segments.filter((s) => s.member);
+    const lineRows = segs.reduce((n, s) => n + Math.max(1, (s.lines || []).length), 0);
+    const rowH = 64, height = Math.max(facts.length * 46, segs.length * 74, lineRows * rowH) + 30;
+    const width = Math.max(svg.parentElement.clientWidth - 36, 900);
+    svg.setAttribute("width", width); svg.setAttribute("height", height);
+    const xFact = 10, wFact = 190, xMem = 300, xLine = 470, wLine = width - xLine - 10;
+    let t = 0; const step = 0.34;  // slow enough to watch the board think (owner: for the demo)
+    const factY = {};
+    facts.forEach((f, i) => {
+      const y = 18 + i * 46; factY[f.key] = y + 16;
+      const g = el("g", { class: "fact anim", style: `animation-delay:${t}s` }); t += step;
+      g.append(el("rect", { x: xFact, y, width: wFact, height: 34, rx: 6 }));
+      g.append(el("text", { x: xFact + 10, y: y + 13, class: "k" }, f.key));
+      g.append(el("text", { x: xFact + 10, y: y + 27 }, String(f.value).slice(0, 26)));
+      svg.append(g);
+    });
+    let lineIndex = 0;
+    const memY = {};
+    segs.forEach((s, i) => {
+      const lines = (s.lines && s.lines.length) ? s.lines : [{ angle: s.title, why: "" }];
+      const top = 14 + lineIndex * rowH, my = top + (lines.length * rowH) / 2 - 8;
+      memY[s.id] = my;
+      (FACTS_FOR[s.id] || []).forEach((key) => {
+        if (factY[key] == null) return;
+        svg.append(el("path", { class: "edge draw", style: `animation-delay:${t}s`,
+          d: `M${xFact + wFact},${factY[key]} C${xFact + wFact + 60},${factY[key]} ${xMem - 70},${my} ${xMem - 24},${my}` }));
+      });
+      const g = el("g", { class: "member anim", style: `animation-delay:${t}s` }); t += step;
+      g.append(el("circle", { cx: xMem, cy: my, r: 20 }));
+      g.append(el("text", { x: xMem + 28, y: my - 2, class: "name" }, s.member_name || s.member));
+      g.append(el("text", { x: xMem + 28, y: my + 13, class: "k" }, short(s)));
+      svg.append(g);
+      lines.forEach((ln, j) => {
+        const y = top + j * rowH;
+        svg.append(el("path", { class: "edge to-line draw", style: `animation-delay:${t}s`,
+          d: `M${xMem + 20},${my} C${xMem + 80},${my} ${xLine - 50},${y + 26} ${xLine},${y + 26}` }));
+        const lg = el("g", { class: "line anim", style: `animation-delay:${t + 0.15}s` }); t += step;
+        lg.append(el("rect", { x: xLine, y: y + 2, width: wLine, height: rowH - 10, rx: 6 }));
+        wrap(ln.angle, Math.floor(wLine / 7.2)).slice(0, 2).forEach((part, k) =>
+          lg.append(el("text", { x: xLine + 10, y: y + 18 + k * 14 }, part)));
+        const why = [ln.why ? "why: " + ln.why : "", ""].join("");
+        if (why) lg.append(el("text", { x: xLine + 10, y: y + 46, class: "why" }, why.slice(0, Math.floor(wLine / 6.3))));
+        if (ln.weak_spot) {
+          const w = el("text", { x: xLine + wLine - 8, y: y + 46, class: "weak glow", "text-anchor": "end" },
+            "weak spot: " + String(ln.weak_spot).slice(0, 40));
+          lg.append(w);
+        }
+        svg.append(lg);
+      });
+      lineIndex += lines.length;
+    });
+    clearTimeout(prepTimer);
+    prepDone = false;
+    prepTimer = setTimeout(() => {  // the drawn plan stays on screen a moment before the first word
+      $("prepNote").textContent = "The board is ready. It begins in a moment.";
+      setTimeout(() => { prepDone = true; sendReady(); }, PREP_HOLD_MS);
+    }, (t + 1.2) * 1000);
+    P().show("form");
+  }
+  function sendReady() { if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: "ready" })); }
+
+  // ---------- phase 2: the decision graph ----------
+  function colour(d) { const k = KIND[d.rule] || KIND[d.move] || [null]; return k[0] ? css(k[0]) : null; }
+  function label(d) { return (KIND[d.rule] || KIND[d.move] || [null, d.move])[1]; }
+  function drawGraph() {
+    const svg = $("graph"); svg.textContent = "";
+    const lanes = segments.length ? segments : [{ id: "?", title: "", member_name: "" }];
+    const laneH = 54, left = 160, step = 46, top = 10;
+    const width = Math.max(svg.parentElement.clientWidth - 4, left + step * (decisions.length + 1) + 30);
+    const height = top + lanes.length * laneH + 8;
+    svg.setAttribute("width", width); svg.setAttribute("height", height);
+    const laneOf = {}; lanes.forEach((s, i) => { laneOf[s.id] = i; });
+    lanes.forEach((s, i) => {
+      const y = top + i * laneH;
+      svg.append(el("rect", { x: 0, y, width, height: laneH - 4, fill: i % 2 ? "rgba(255,255,255,0.012)" : "rgba(255,255,255,0.03)" }));
+      svg.append(el("text", { x: 12, y: y + 21, class: "lane-label" }, s.member_name || ""));
+      svg.append(el("text", { x: 12, y: y + 36, class: "lane-sub" }, short(s)));
+    });
+    let prev = null;
+    decisions.forEach((d, i) => {
+      const lane = laneOf[d.segment_id] != null ? laneOf[d.segment_id] : 0;
+      const x = left + i * step, y = top + lane * laneH + 23;
+      if (prev) { const mid = (prev.x + x) / 2;
+        svg.append(el("path", { d: `M${prev.x},${prev.y} C${mid},${prev.y} ${mid},${y} ${x},${y}`,
+          fill: "none", stroke: "rgba(255,255,255,0.2)", "stroke-width": 1.4 })); }
+      const c = colour(d);
+      const node = el("circle", { cx: x, cy: y, r: c ? 8 : 6, class: "node" + (i === decisions.length - 1 ? " now" : ""),
+        fill: c || "transparent", stroke: c ? "none" : css("--grey"), "stroke-width": 1.6 });
+      node.append(el("title", {}, `${d.turn_id} · ${d.member_name || ""} · ${label(d)}\n${d.why || ""}`));
+      svg.append(node);
+      if ((d.signals || []).length) svg.append(el("circle", { cx: x + 8, cy: y - 8, r: 3, fill: css("--coral") }));
+      if (d.proposal) svg.append(el("circle", { cx: x, cy: y, r: 12, fill: "none",
+        stroke: d.proposal.accepted ? css("--mint") : css("--coral"), "stroke-width": 1.4,
+        "stroke-dasharray": d.proposal.accepted ? "" : "3 3" }));
+      svg.append(el("text", { x: x - 12, y: y + 22, class: "rule" }, (d.rule || "").replace("D-", "")));
+      prev = { x, y };
+    });
+    const last = decisions[decisions.length - 1];
+    if (budget && last) $("meter").style.width = Math.min(100, 100 * (last.answers_used || 0) / budget) + "%";
+  }
+  function showCard(d) {
+    const card = $("card"); card.textContent = "";
+    const k = document.createElement("div"); k.className = "k";
+    k.textContent = `${d.turn_id} · ${d.member_name || ""} · rule ${d.rule || d.move}` + (d.counted ? " · counted as an answer" : " · free");
+    const mv = document.createElement("div"); mv.className = "move"; mv.textContent = label(d); mv.style.color = colour(d) || css("--fg");
+    const why = document.createElement("div"); why.className = "why"; why.textContent = (d.why || "").replace(/^[A-Z0-9-]+:\s*/, "");
+    card.append(k, mv, why);
+    if (d.candidate_said) { const s = document.createElement("div"); s.className = "said"; s.textContent = "“" + d.candidate_said + "”"; card.append(s); }
+    if (d.proposal) {
+      const pr = document.createElement("div"); pr.className = "prop";
+      const b = document.createElement("b"); b.textContent = "Your AI proposed: " + d.proposal.action;
+      pr.append(b);
+      if (d.proposal.reason) pr.append(document.createTextNode(" · " + d.proposal.reason));
+      if (d.proposal.quote) pr.append(document.createTextNode(" · on “" + d.proposal.quote + "”"));
+      const v = document.createElement("div"); v.className = d.proposal.accepted ? "ok" : "no";
+      v.textContent = (d.proposal.accepted ? "→ " : "→ refused: ") + d.proposal.why;
+      pr.append(v); card.append(pr);
+    }
+    (d.signals || []).forEach((s) => { const sp = document.createElement("span"); sp.className = "sig";
+      sp.textContent = "your answer: " + (SIGNAL_TEXT[s] || s); card.append(sp); });
+  }
+  window.addEventListener("resize", () => { if (document.body.dataset.phase !== "prep") drawGraph(); });
+
+  // ---------- playback: Gnani Timbre ----------
+  function ensureAudio() { if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === "suspended") audioCtx.resume(); return audioCtx; }
+  function playPcm(buf) {
+    const head = pendingAudio; pendingAudio = null; if (!head) return;
+    enterRoom();
+    const ctx = ensureAudio();
+    const pcm = new Int16Array(buf); const f = new Float32Array(pcm.length);
+    for (let i = 0; i < pcm.length; i++) f[i] = pcm[i] / 32768;
+    const ab = ctx.createBuffer(1, Math.max(1, f.length), head.rate || TARGET_RATE); ab.copyToChannel(f, 0);
+    const src = ctx.createBufferSource(); src.buffer = ab; src.connect(ctx.destination);
+    const at = Math.max(ctx.currentTime + 0.03, playHead); src.start(at); playHead = at + ab.duration;
+    lightSeat(head.member);
+    src.onended = () => { if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: "played", seq: head.seq })); };
+    if (ctx.state !== "running") banner("Press “Start microphone” so the board's voices can play.");
+  }
+
+  // ---------- microphone: Gnani Prisma, with a simple voice-activity detector ----------
+  let floor = 0.006, speaking = false, voicedMs = 0, silentMs = 0, preroll = [];
+  async function startMic() {
+    const ctx = ensureAudio();
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true,
+        noiseSuppression: true, autoGainControl: true, channelCount: 1 } });
+      const src = ctx.createMediaStreamSource(stream);
+      const proc = ctx.createScriptProcessor(4096, 1, 1);
+      const mute = ctx.createGain(); mute.gain.value = 0;
+      src.connect(proc); proc.connect(mute); mute.connect(ctx.destination);
+      proc.onaudioprocess = (e) => onFrame(e.inputBuffer.getChannelData(0), ctx.sampleRate);
+      micOn = true;
+      for (const id of ["start", "startPrep"]) { $(id).textContent = "Microphone on"; $(id).disabled = true; }
+      setPill(serverState); stateText(serverState);
+    } catch (err) {
+      banner("The microphone is not available here (" + ((err && err.name) || "blocked") + "). You can type your answers, or open the voice room in a browser tab.");
+    }
+  }
+  function downsample(input, rate) {
+    const ratio = rate / TARGET_RATE, n = Math.floor(input.length / ratio), out = new Int16Array(n);
+    for (let i = 0; i < n; i++) {
+      let sum = 0; const a = Math.floor(i * ratio), b = Math.min(input.length, Math.floor((i + 1) * ratio));
+      for (let j = a; j < b; j++) sum += input[j];
+      const v = Math.max(-1, Math.min(1, sum / Math.max(1, b - a))); out[i] = v < 0 ? v * 32768 : v * 32767;
+    }
+    return out.buffer;
+  }
+  function onFrame(data, rate) {
+    let sum = 0; for (let i = 0; i < data.length; i++) sum += data[i] * data[i];
+    const rms = Math.sqrt(sum / data.length), ms = 1000 * data.length / rate;
+    if (serverState === "listening") P().level(Math.min(100, rms * 900));
+    if (serverState !== "listening" || !ws || ws.readyState !== 1) { speaking = false; preroll = []; return; }
+    const loud = rms > Math.max(0.012, floor * 2.6);
+    if (!speaking) floor = 0.95 * floor + 0.05 * Math.min(rms, 0.05);
+    const pcm = downsample(data, rate);
+    if (!speaking) {
+      preroll.push(pcm); if (preroll.length > 4) preroll.shift();
+      voicedMs = loud ? voicedMs + ms : 0;
+      if (voicedMs >= 120) { speaking = true; silentMs = 0; preroll.forEach((p) => ws.send(p)); preroll = []; }
+      return;
+    }
+    ws.send(pcm);
+    silentMs = loud ? 0 : silentMs + ms; voicedMs += ms;
+    if (silentMs >= 1500 && voicedMs >= 600) endTurn();
+  }
+  function endTurn() {
+    if (!ws || ws.readyState !== 1 || serverState !== "listening") return;
+    speaking = false; voicedMs = 0; silentMs = 0; preroll = [];
+    ws.send(JSON.stringify({ type: "turn_end" }));
+  }
+  $("start").addEventListener("click", startMic);
+  $("startPrep").addEventListener("click", startMic);
+  $("done").addEventListener("click", endTurn);
+  $("showPrep").addEventListener("click", () => showPrep(true));
+  $("backRoom").addEventListener("click", () => showPrep(false));
+  $("typeform").addEventListener("submit", (e) => {
+    e.preventDefault(); const v = $("typed").value.trim();
+    if (!v || !ws || ws.readyState !== 1) return;
+    ws.send(JSON.stringify({ type: "typed_answer", text: v })); $("typed").value = "";
+  });
+})();
+</script>
+</body>
+</html>
