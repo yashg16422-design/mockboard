@@ -113,6 +113,20 @@ TOOLS: list[dict[str, Any]] = [
                 "analysis": ANALYSIS_SCHEMA,
                 "you_said": {"type": "string", "maxLength": 4000,
                              "description": "What you actually said for the last board line."},
+                "proposal": {
+                    "type": "object",
+                    "description": "Optional: the move you propose (Mock Board allows or refuses "
+                    "it, with a reason, in board.your_proposal).",
+                    "properties": {
+                        "action": {"type": "string",
+                                   "enum": ["dig", "elaborate", "confront", "pivot", "plan"]},
+                        "quote": {"type": "string", "maxLength": 300,
+                                  "description": "confront: the candidate's exact words."},
+                        "reason": {"type": "string", "maxLength": 200},
+                    },
+                    "required": ["action"],
+                    "additionalProperties": False,
+                },
             },
             "required": ["session_id", "candidate_said"],
             "additionalProperties": False,
@@ -418,7 +432,8 @@ async def call_tool(service: BoardService, name: str, args: Mapping[str, Any] | 
             result = await service.start_partner(a.get("topic"), a.get("language", "hinglish"))
         elif name == "next_turn":
             result = await service.next_turn(a.get("session_id"), a.get("candidate_said"),
-                                             a.get("analysis"), a.get("you_said"))
+                                             a.get("analysis"), a.get("you_said"),
+                                             a.get("proposal"))
         elif name == "end_session":
             result = await service.end_session(a.get("session_id"))
         elif name == "check_scores":

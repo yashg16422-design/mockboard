@@ -99,6 +99,7 @@ class PanelHooks:
     setup: PanelSetup
     # Set by `session.request_wrap_up()`: the next finished turn closes with the time line.
     wrap_up_due: bool = False
+    proposal: Any = field(init=False, default=None)  # the client model's MoveProposal, one turn
     decision: PanelDecision | None = field(init=False, default=None)
     answers_used: int = field(init=False, default=0)
     free_used: int = field(init=False, default=0)
@@ -445,8 +446,9 @@ class PanelHooks:
         dturn = DirectorTurn(
             ctx=turn.ctx, base_move=move, analysis=analysis, raw_text=raw,
             answers_used=self.answers_used, free_used=self.free_used,
-            wrap_up_due=self.wrap_up_due,
+            wrap_up_due=self.wrap_up_due, proposal=self.proposal,
         )
+        self.proposal = None  # one proposal, one turn
         decision = await self.director.decide_turn(dturn)
         self.decision = self._finish(decision)
         self._line = None

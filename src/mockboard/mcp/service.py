@@ -102,6 +102,7 @@ class McpSession:
     finished: bool = False
     report: Any = None  # SessionReport or PartnerReport, after end_session
     last_said: str = ""  # the voice room's last spoken lines: `you_said` when the AI leaves it out
+    moods: dict[str, str] = field(default_factory=dict)  # member -> mood, from the answers so far
     you_said: dict[str, str] = field(default_factory=dict)  # turn id -> the assistant's own line
 
 
@@ -271,6 +272,7 @@ class BoardService:
         for member in prep["members"]:
             member["voice"] = room.voices.get(member["id"], "")
         prep["plan_from"] = "your AI's preparation, checked by Mock Board"
+        room.ready.clear()  # the board waits for this drawing too
         await room.publish(prep)
         return {"session_id": ms.id, "drawn": len(lines), "dropped": dropped,
                 "next_step": "Now call say with the opening lines from the start tool."}
@@ -339,6 +341,7 @@ class BoardService:
             "segment_id": segment_id, "counted": bool(board.get("counted_as_answer", True)),
             "answers_used": board.get("answers_used", 0), "situation": bool(board.get("situation")),
             "signals": answer_signals(text), "candidate_said": text[:200],
+            "proposal": board.get("your_proposal"), "mood": board.get("mood", "neutral"),
         })
         if finished:
             await room.publish({"type": "finished"})
@@ -412,6 +415,7 @@ class BoardService:
         candidate_said: object,
         analysis: object = None,
         you_said: object = None,
+        proposal: object = None,
     ) -> dict[str, Any]:
         ms = self._get(session_id)
         try:
@@ -426,6 +430,8 @@ class BoardService:
                 raise ToolError("this sitting has finished: call end_session")
             s = ms.session
             ms.llm.analysis = clean_analysis(analysis)  # type: ignore[arg-type]
+            if ms.mode == UPSC:
+                s.hooks.proposal = self._proposal(ms, proposal, text)
             try:
                 if text:
                     s.submit_segment(text, segment_index=0)
@@ -450,6 +456,46 @@ class BoardService:
             "next_step": _DONE_STEP if out.finished else _NEXT_STEP,
         }
 
+    def _proposal(self, ms: McpSession, raw: object, text: str) -> Any:
+        """The client's proposed move, checked: a confrontation must quote the candidate's own
+        words, found in this answer or an earlier one (or it becomes no proposal)."""
+        from mockboard.brain.judge import _norm
+        from mockboard.brain.schemas import MoveProposal
+
+        if not isinstance(raw, Mapping):
+            return None
+        action = raw.get("action")
+        if action not in ("dig", "elaborate", "confront", "pivot", "plan"):
+            raise ToolError("proposal.action: one of dig, elaborate, confront, pivot, plan")
+        reason = " ".join(str(raw.get("reason", "")).split())[:200]
+        quote = " ".join(str(raw.get("quote", "")).split())[:300]
+        if action == "confront":
+            said = [text, *(t.transcript for t in ms.session.state.turns)]
+            if not quote or not any(_norm(quote) in _norm(x) for x in said if x):
+                quote = ""  # the director refuses a confrontation without the person's words
+        return MoveProposal(action=action, reason=reason, quote=quote)
+
+    @staticmethod
+    def _update_mood(ms: McpSession, move: Any) -> None:
+        """The speaking member's mood after this answer: code's reading, never the model's."""
+        turns = ms.session.state.turns
+        if not turns:
+            return
+        last = turns[-1]
+        analysis = last.analysis
+        signals = answer_signals(last.transcript)
+        if analysis is not None and analysis.honest_unknown:
+            mood = "patient"
+        elif move.move.value in ("counter", "pressure", "interrupt"):
+            mood = "pressing"
+        elif "unsure" in signals or "thin" in signals:
+            mood = "sceptical"
+        elif not signals and analysis is not None and analysis.reasons:
+            mood = "satisfied"
+        else:
+            mood = ms.moods.get(move.member, "neutral")
+        ms.moods[move.member] = mood
+
     def _upsc_turn(self, ms: McpSession, move: Any, line: Any) -> tuple[list, dict]:
         hooks = ms.session.hooks
         d = hooks.decision
@@ -458,10 +504,24 @@ class BoardService:
         n_fixed = len(parts) if fixed_only else len(hooks.spoken_preface_parts(move))
         say = [self._verbatim(ms, p.member, p.text) for p in parts[:n_fixed] if p.text]
         seeded = move.move in (Move.next_question, Move.move_on) and bool(d.seed)
+        self._update_mood(ms, move)
         how_to = (
             guidance.CASE_DEEP_GUIDE if move.rule_id == "D-DEEP"
+            else guidance.PROPOSAL_GUIDE[move.rule_id] if move.rule_id in guidance.PROPOSAL_GUIDE
             else guidance.MOVE_GUIDE.get(move.move.value, guidance.MOVE_GUIDE["probe"])
         )
+        if move.rule_id == "M-CONFRONT" and d.proposal and d.proposal.get("quote"):
+            how_to = how_to.replace("{quote}", d.proposal["quote"])
+        mood = ms.moods.get(move.member, "neutral")
+        how_to = f"{how_to} {guidance.MOOD_GUIDE.get(mood, '')}".strip()
+        if hooks.answers_used == 1 and d.answered_segment == "form_hr" and d.counted:
+            form = ms.session.form
+            facts = "; ".join(f"{k}: {v}" for k, v in (
+                ("home state", form.home_state), ("district", form.district),
+                ("degree", form.degree_subject), ("hobbies", ", ".join(form.hobbies)),
+                ("optional subject", form.optional_subject), ("work", form.work_experience),
+            ) if v)
+            how_to = f"{how_to} {guidance.INTRO_GAP_GUIDE.format(facts=facts)}"
         if move.move.value in guidance.CANDOUR_MOVES and ms.session.state.turns:
             found = [guidance.CANDOUR_NOTES[s]
                      for s in answer_signals(ms.session.state.turns[-1].transcript)]
@@ -488,6 +548,8 @@ class BoardService:
             "twist": move.rule_id == "D-TWIST",
             "end_confirmation_pending": d.pending_end,  # the value after this turn
             "long_answer_expected": ms.session.expects_long_turn,
+            "your_proposal": d.proposal,  # what Mock Board made of your proposal, if you sent one
+            "mood": ms.moods.get(move.member, "neutral"),
         }
         return say, board
 

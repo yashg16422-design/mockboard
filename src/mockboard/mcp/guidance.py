@@ -41,6 +41,33 @@ CASE_DEEP_GUIDE = (
     "do if the first step fails. Stay inside the situation already given; add no fact, figure or "
     "name. One question."
 )
+# The line after the candidate's introduction (the sitting's first answer, Nov 9).
+INTRO_GAP_GUIDE = (
+    "This follows the candidate's introduction. Their form says: {facts}. If the introduction "
+    "left one of these out or passed over it, ask about that one, in the spirit of the move "
+    "above; otherwise ask the move's question about the introduction itself."
+)
+
+# A move the client proposed and Mock Board allowed (next_turn's `proposal`, Nov 9).
+PROPOSAL_GUIDE: dict[str, str] = {
+    "M-DIG": "Your proposal to dig deeper was allowed: one sharper follow-up on the exact point "
+    "the candidate just made (the mechanism, the first step, who pays). One question.",
+    "M-ELABORATE": "Your proposal was allowed: say plainly that the answer was too thin, then ask "
+    "them to expand it with one concrete example or reason. One question.",
+    "M-CONFRONT": "Your confrontation was allowed: quote the candidate's own words exactly, "
+    "'{quote}', set them against what they have just said or against the obvious objection, and "
+    "ask them to reconcile it. Firm, never rude. One question.",
+}
+MOOD_GUIDE: dict[str, str] = {
+    "neutral": "",
+    "patient": "Your mood: patient (they admitted not knowing; be calm and give them a way in).",
+    "sceptical": "Your mood: sceptical (the last answer was unsure or thin; let it show in a "
+    "cooler, more exacting tone).",
+    "pressing": "Your mood: pressing (you are testing them; keep the pressure, stay courteous).",
+    "satisfied": "Your mood: satisfied (a reasoned answer; acknowledge nothing aloud, but raise "
+    "the level of the next question).",
+}
+
 # Added to a follow-up's guidance when Mock Board's code found a gap in the answer (actor.v12).
 CANDOUR_NOTES: dict[str, str] = {
     "unsure": "the candidate hedged and did not sound sure",
@@ -171,6 +198,8 @@ your `analysis` of the answer, and `you_said` (what you actually said last). Rep
 it returns, quote the candidate word for word with the turn id, call check_scores, and show only \
 the scores it keeps.
 
+{proposals}
+
 {honesty}
 
 {phrases}
@@ -194,8 +223,24 @@ only what it keeps.
 """
 
 
+PROPOSALS_TEXT = """Lead like a real board (optional, with each next_turn): send `proposal` \
+with the move you judge best after reading the answer, and a short `reason`:
+- `dig`: one level deeper on the point they just made;
+- `elaborate`: the answer was too thin, ask them to expand;
+- `confront`: set their own words against what they said now or against the obvious objection; \
+`quote` must be their exact words from this answer or an earlier one;
+- `pivot`: this member has heard enough, hand over to the next one;
+- `plan`: leave it to Mock Board's rules.
+Mock Board allows or refuses each proposal (an honest "I don't know" is never pressed, a member's \
+budget is never exceeded, the case study comes first, requests always win) and tells you why in \
+`board.your_proposal`. Speak the move Mock Board returns, not the one you proposed. The sitting \
+opens with the candidate's introduction: afterwards, ask about something on the form their \
+introduction left out."""
+
+
 def upsc_prompt() -> str:
-    return UPSC_PROMPT.format(honesty=honesty_text(), phrases=phrases_text())
+    return UPSC_PROMPT.format(honesty=honesty_text(), phrases=phrases_text(),
+                              proposals=PROPOSALS_TEXT)
 
 
 def partner_prompt() -> str:
@@ -236,6 +281,8 @@ def voice_prompt() -> str:
         "`waiting`, call wait_for_answer again.",
         "5. Say the next lines with say. Repeat until `finished`, then call end_session and show "
         "the report; to score, use check_scores.",
+        "",
+        PROPOSALS_TEXT,
         "",
         "Honesty rules:",
         *(f"- {rule}" for rule in HONESTY_RULES),

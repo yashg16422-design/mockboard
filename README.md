@@ -62,6 +62,28 @@ make cli-fake-debate
 make cli-fake-partner
 ```
 
+## Run the Claude room (Claude as the brain, Gnani speech)
+
+The same board with a stronger mind, as a local web app. Claude runs through **your own Claude
+Code login** (no API key) with only Mock Board's tools; Gnani Prisma hears you and Gnani Timbre
+speaks each member; Mock Board's code still decides and checks every move.
+
+```bash
+.venv/bin/python -m pip install -e ".[claude]"
+```
+
+```bash
+make claude-room
+```
+
+Open **http://localhost:7870** in Chrome (headphones on), fill the form or a study topic, press
+**Start with Claude**. You watch the board prepare (an animated graph of your form, the members,
+their lines of questioning and the weak spots they expect), then the sitting: the room, live
+captions, and how the board is deciding, including each move Claude proposes (dig, elaborate,
+confront with your own words, pivot) and whether Mock Board allowed it. The report appears on the
+page. `make claude-room-fake` is the same without Gnani (type your answers; free). Claude Code
+must be installed and logged in on this Mac.
+
 ## Run the voice app
 
 Free, in your browser, with the fake model and fake speech (nothing leaves your machine). In the `mockboard` folder:

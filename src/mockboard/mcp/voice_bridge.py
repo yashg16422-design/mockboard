@@ -526,7 +526,7 @@ _FONTS = (  # (family, weights, file)
     ("Geist Mono", "400 500", "geist-mono-latin.woff2"),
     ("Noto Sans Devanagari", "300 600", "noto-sans-devanagari.woff2"),
 )
-_PAGE_CACHE: dict[int, str] = {}
+_PAGE_CACHE: dict[tuple[str, int], str] = {}
 
 
 def _font_faces() -> str:
@@ -544,13 +544,19 @@ def _font_faces() -> str:
     return "\n".join(out)
 
 
-def page_html(port: int) -> str:
-    """The voice room page with the web app's tokens, fonts and particle field inside it."""
-    if port not in _PAGE_CACHE:
-        html = PAGE_PATH.read_text(encoding="utf-8")
+def build_page(template: Path, port: int) -> str:
+    """A page with the web app's tokens, fonts and particle field inside it (no file to load)."""
+    key = (str(template), port)
+    if key not in _PAGE_CACHE:
+        html = template.read_text(encoding="utf-8")
         tokens = (WEB_STATIC / "tokens.css").read_text(encoding="utf-8")
         presence = (WEB_STATIC / "presence.js").read_text(encoding="utf-8")
         html = html.replace("/*__TOKENS__*/", tokens + "\n" + _font_faces())
         html = html.replace("//__PRESENCE__", presence.replace("</script", "<\\/script"))
-        _PAGE_CACHE[port] = html.replace("__PORT__", str(port))
-    return _PAGE_CACHE[port]
+        _PAGE_CACHE[key] = html.replace("__PORT__", str(port))
+    return _PAGE_CACHE[key]
+
+
+def page_html(port: int) -> str:
+    """The voice room page."""
+    return build_page(PAGE_PATH, port)
