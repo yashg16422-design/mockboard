@@ -361,7 +361,8 @@ def test_upgrade_takes_only_the_segments_not_begun(form):
     assert texts_of(upgraded, FORM_HR) == texts_of(fallback, FORM_HR)  # begun: untouched
     assert texts_of(upgraded, HOME_DISTRICT) == GOOD[HOME_DISTRICT]  # not begun: upgraded
     assert upgraded.source == "nova"
-    late = upgrade_agenda(fallback, planned, started=1)
+    ids = [s.id for s in fallback.segments]
+    late = upgrade_agenda(fallback, planned, started=ids.index(HOME_DISTRICT))
     assert texts_of(late, HOME_DISTRICT) == texts_of(fallback, HOME_DISTRICT)
     assert late.source == "template"  # nothing it could take
     assert [s.budget for s in late.segments] == [s.budget for s in fallback.segments]
@@ -476,7 +477,8 @@ def test_the_planner_user_message_lists_only_what_nova_may_replace():
     form = CandidateForm(home_state="Kerala", degree_subject="History", work_experience="a mill")
     user = build_plan_user(form, fallback_for(form))
     body = json.loads(user.split("<segments>\n")[1].split("\n</segments>")[0])
-    assert [s["id"] for s in body] == list(PLANNED_SEGMENTS)
+    panel_order = [s.id for s in fallback_for(form).segments if s.id in PLANNED_SEGMENTS]
+    assert [s["id"] for s in body] == panel_order and set(panel_order) == set(PLANNED_SEGMENTS)
     assert body[0]["questions_needed"] == 2 and len(body[0]["template_questions"]) == 2
     assert "current_affairs" not in user.split("<segments>")[1]
     assert "<briefing>" not in user
@@ -563,9 +565,9 @@ async def test_a_late_plan_upgrades_only_the_segments_not_begun_and_says_so(
     session, _, _ = await start(quick(settings), cards, form, tmp_path, llm=llm)
     hooks = session.hooks
     template = fallback_for(form)
-    for i in range(2):  # the second answer hands off: Menon's segment (index 1) is now current
+    for i in range(2):  # the second answer hands off: Iyer's degree segment is now current
         await answer(session, PLAIN[i], think_s=0)
-    assert session.state.topic == HOME_DISTRICT
+    assert session.state.topic == "degree"
     release.set()
     for _ in range(40):
         await asyncio.sleep(0.01)
@@ -574,8 +576,8 @@ async def test_a_late_plan_upgrades_only_the_segments_not_begun_and_says_so(
     agenda = hooks.agenda
     assert agenda.source == "nova"
     assert texts_of(agenda, FORM_HR) == texts_of(template, FORM_HR)  # begun
-    assert texts_of(agenda, HOME_DISTRICT) == texts_of(template, HOME_DISTRICT)  # current: begun
-    assert texts_of(agenda, "degree") != texts_of(template, "degree")  # not begun: upgraded
+    assert texts_of(agenda, "degree") == texts_of(template, "degree")  # current: begun
+    assert texts_of(agenda, HOME_DISTRICT) != texts_of(template, HOME_DISTRICT)  # not begun
     assert texts_of(agenda, INTERESTS) != texts_of(template, INTERESTS)
     assert texts_of(agenda, CURRENT_AFFAIRS) == texts_of(template, CURRENT_AFFAIRS)
     assert [(s.id, s.member, s.budget) for s in agenda.segments] == [
@@ -583,8 +585,9 @@ async def test_a_late_plan_upgrades_only_the_segments_not_begun_and_says_so(
     assert hooks.director.agenda is agenda  # the director reads the upgrade too
     events = [json.loads(x) for x in session.recorder.path.read_text(encoding="utf-8").splitlines()]
     upgrade = next(e for e in events if e.get("event") == "agenda_upgraded")
-    assert upgrade["upgraded"] == ["degree", "interests"] and upgrade["agenda_source"] == "nova"
-    # The rest of the interview asks the planned degree questions, in order, and finishes.
+    assert upgrade["upgraded"] == ["home_district", "interests"]
+    assert upgrade["agenda_source"] == "nova"
+    # The rest of the interview asks the planned district questions, in order, and finishes.
     said = []
     for text in PLAIN * 8:
         if session.state.finished:
@@ -592,8 +595,8 @@ async def test_a_late_plan_upgrades_only_the_segments_not_begun_and_says_so(
         out = await answer(session, text, think_s=0)
         said += texts(out)
     assert session.state.finished
-    assert any(t in said for t in texts_of(agenda, "degree")) or any(
-        t.startswith(("Electronics padhte hue", "Ji")) for t in said)
+    assert any(t in said for t in texts_of(agenda, HOME_DISTRICT)) or any(
+        t.startswith(("Apne zile", "Ji")) for t in said)
     await session.close()
 
 

@@ -45,7 +45,7 @@ from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import END, START, StateGraph
 
 from mockboard.brain.affairs import AffairsNote, words_heard
-from mockboard.brain.agenda import twist_for
+from mockboard.brain.agenda import CASE_STUDY_SEGMENT, twist_for
 from mockboard.brain.graphs import make_serde
 from mockboard.brain.greeting_turn import is_greeting_only
 from mockboard.brain.panel_lines import (
@@ -245,10 +245,37 @@ def next_seed(
     unasked = _unasked(segment, memory)
     must = next((pair for pair in unasked if pair[1].must_ask), None)
     plain = next((pair for pair in unasked if not pair[1].must_ask), None)
+    if must is not None and segment.id == CASE_STUDY_SEGMENT:
+        return must  # the case study opens its segment, then is dug into (owner, Nov 9)
     room = 2 if must is not None and twist_for(must[1].text) else 1
     if must is not None and (questions_left <= room or plain is None):
         return must
     return plain
+
+
+# Follow-ups on the case study: its twist, then deeper questions on the candidate's own plan, the
+# way a board member digs into one situation (owner, Nov 9). Other seeds keep one follow-up.
+CASE_PROBES = 3
+
+
+def on_case(segment: AgendaSegment, memory: PanelMemory) -> bool:
+    """The segment's last asked seed is its DM/SP situation."""
+    asked = memory.asked_seeds.get(segment.id) or []
+    return bool(asked) and 0 <= asked[-1] < len(segment.seeds) and segment.seeds[asked[-1]].must_ask
+
+
+def _deep_probe_due(turn: DirectorTurn, segment: AgendaSegment, memory: PanelMemory) -> bool:
+    """One more question on the case: after its twist, while the answers have substance."""
+    analysis = turn.analysis
+    return (
+        on_case(segment, memory)
+        and 1 <= memory.probes_on_seed < CASE_PROBES
+        and not memory.pending_end
+        and not turn.wrap_up_due
+        and not analysis.honest_unknown
+        and not analysis.garbled
+        and word_count(turn.raw_text) >= TWIST_MIN_WORDS
+    )
 
 
 def _must_ask_unasked(segment: AgendaSegment, memory: PanelMemory) -> bool:
@@ -507,7 +534,13 @@ def understand(
         return TurnUnderstanding(node="next_question", **priced)
     if free_kind:  # free turns have run out: an answer now, with the same response
         return _handle(priced)
-    if memory.probes_on_seed >= 1 and turn.base_move.move != Move.reassure:
+    if not free_kind and kind is None and _deep_probe_due(turn, segment, memory):
+        return TurnUnderstanding(node="next_question", **priced)  # dig into the case
+    if (
+        memory.probes_on_seed >= 1
+        and turn.base_move.move != Move.reassure
+        and not turn.analysis.honest_unknown  # R3b's move on stands: honesty is never pressed
+    ):
         # A substantive answer to a follow-up returns to the plan even if the strategist would
         # otherwise counter or press again. Explicit requests above still take precedence.
         return TurnUnderstanding(node="next_question", **priced)
@@ -776,6 +809,12 @@ def plan_next_question(p: _Plan) -> PanelDecision:
         return p.advance((), "agenda")
     if p.turn.base_move.move == Move.reassure:
         return p.keep_base("next_question")
+    if not p.u.free_kind and not p.u.request_kind and _deep_probe_due(p.turn, p.segment, p.memory):
+        move = p.board_move(
+            Move.probe, p.segment.member, "D-DEEP",
+            "the case study: one level deeper into the candidate's own plan",
+        )
+        return p.decision(move, "next_question")
     if p.memory.probes_on_seed >= 1:
         seed = next_seed(p.segment, p.memory, _questions_left(p.segment, p.turn, p.cfg))
         if seed is not None:
@@ -934,7 +973,7 @@ def _fold_one(memory: PanelMemory, done: CompletedTurn) -> PanelMemory:
     if d.move.rule_id in {"D-TWIST", "D-VALUES"} and d.repeat_text:  # spoken whole: no `asked`
         update["last_question"] = d.repeat_text
         update["probes_on_seed"] = memory.probes_on_seed + 1
-    if d.move.move == Move.probe and d.move.rule_id in {"R8", "D-BRIEF", "D-ANSWER"}:
+    if d.move.move == Move.probe and d.move.rule_id in {"R8", "D-BRIEF", "D-ANSWER", "D-DEEP"}:
         update["probes_on_seed"] = memory.probes_on_seed + 1
     if d.move.rule_id == "R1" and d.move.move == Move.clarify:
         update["unclear_hearings"] = memory.unclear_hearings + 1

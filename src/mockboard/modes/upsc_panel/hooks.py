@@ -524,6 +524,7 @@ class PanelHooks:
                 else None
             ),
             briefing=self._briefing,
+            earlier_lines=[line.text for line in s.state.board_lines[-2:]],
         )
         tr.mark("actor_done")
         self._line = line
@@ -724,10 +725,13 @@ class PanelHooks:
                 prompt_versions=self.prompt_versions(),
             )
         else:
+            from mockboard.brain.report_panel import answer_turns
+
             report = await generate_report(
                 s.deps,
                 session_id=s.session_id,
-                turns=s.state.turns,
+                # Only answers are scored and quoted; requests stay in "How the board heard you".
+                turns=answer_turns(s.state.turns, self.director.requests, s.state.moves),
                 ledger=s.state.claim_ledger,
                 moves=s.state.moves,
                 language=language,

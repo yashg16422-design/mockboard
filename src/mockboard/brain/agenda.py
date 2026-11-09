@@ -45,21 +45,25 @@ INTERESTS = "interests"
 CURRENT_AFFAIRS = "current_affairs"
 
 # Segment id -> persona id, in panel order. Panel persona YAML `topics` must agree (a test checks).
+# The owner's order (Nov 9): the Chairperson's introduction, then the degree subject, then the case
+# study (a DM/SP situation dug into), then the home district and the hobbies.
 SEGMENT_MEMBERS: dict[str, str] = {
     FORM_HR: "chairman",
-    HOME_DISTRICT: "administrator",
     DEGREE: "economist",
-    INTERESTS: "humanities",
     CURRENT_AFFAIRS: "ips_officer",
+    HOME_DISTRICT: "administrator",
+    INTERESTS: "humanities",
 }
+# The segment whose DM/SP situation is asked first and then followed up (`director.CASE_PROBES`).
+CASE_STUDY_SEGMENT = CURRENT_AFFAIRS
 # Questions per segment for an uncapped session (CTO_NOTES_06 §4). Defaults only: read a budget
 # from `AgendaSegment.budget`, never from here.
-DEFAULT_SEGMENT_BUDGETS: dict[str, int] = {
+DEFAULT_SEGMENT_BUDGETS: dict[str, int] = {  # in panel order
     FORM_HR: 2,
-    HOME_DISTRICT: 3,
     DEGREE: 3,
-    INTERESTS: 3,
     CURRENT_AFFAIRS: 4,
+    HOME_DISTRICT: 3,
+    INTERESTS: 3,
 }
 # Extra budget for a cap above one question each, in order. Current affairs grows first, so the
 # DM/SP situation has room. Its length is the defaults' total minus one question per member.
@@ -328,47 +332,68 @@ _SEEDS: dict[str, dict[str, tuple[_Seed, ...]]] = {
             ),
         ),
     },
+    # UPSC-level subject questions (owner, Nov 9: "these questions are very simple"): explain a
+    # core idea plainly, apply the subject to a public decision with its cost, defend the subject
+    # against a challenge. No fact, figure, quiz or definition is asked for.
     DEGREE: {
         "hi-en": (
             _Seed(
-                "{degree} ki padhai ne aapke sochne ke tareeke ko kaise badla?",
-                "Aapki padhai ne aapke sochne ke tareeke ko kaise badla?",
+                "{degree} ka koi ek buniyadi siddhant gaon ke ek vyakti ko aap kaise samjhayenge, "
+                "aur woh unke liye kyun maayne rakhta hai?",
+                "Aapke vishay ka koi ek buniyadi siddhant gaon ke ek vyakti ko aap kaise "
+                "samjhayenge, aur woh unke liye kyun maayne rakhta hai?",
             ),
             _Seed(
-                "{degree} ka koi ek vichar aam logon ki zindagi se kaise judta hai?",
-                "Aapke vishay ka koi ek vichar aam logon ki zindagi se kaise judta hai?",
+                "{degree} ki samajh se aap kisi ek sarkari faisle ko kaise behtar banate, aur uski "
+                "keemat kaun chukata?",
+                "Aapke vishay ki samajh se aap kisi ek sarkari faisle ko kaise behtar banate, aur "
+                "uski keemat kaun chukata?",
             ),
             _Seed(
-                "Prashasan mein {degree} ki samajh aapke kis tarah kaam aayegi?",
-                "Prashasan mein aapke vishay ki samajh aapke kis tarah kaam aayegi?",
+                "Agar koi kahe ki {degree} padhne wale prashasan ke liye sahi nahi hote, to aap "
+                "kya jawab denge, aur kyun?",
+                "Agar koi kahe ki aapke vishay ke log prashasan ke liye sahi nahi hote, to aap kya "
+                "jawab denge, aur kyun?",
             ),
         ),
         "en": (
             _Seed(
-                "How has studying {degree} changed the way you think?",
-                "How have your studies changed the way you think?",
+                "How would you explain one basic principle of {degree} to a villager, and why does "
+                "it matter to them?",
+                "How would you explain one basic principle of your subject to a villager, and why "
+                "does it matter to them?",
             ),
             _Seed(
-                "How does one idea from {degree} connect to ordinary people's lives?",
-                "How does one idea from your subject connect to ordinary people's lives?",
+                "How could your grasp of {degree} improve one government decision, and who would "
+                "bear its cost?",
+                "How could your grasp of your subject improve one government decision, and who "
+                "would bear its cost?",
             ),
             _Seed(
-                "In what way would {degree} help you in administration?",
-                "In what way would your subject help you in administration?",
+                "If someone said that people trained in {degree} are unsuited to administration, "
+                "how would you answer, and why?",
+                "If someone said that people trained in your subject are unsuited to "
+                "administration, how would you answer, and why?",
             ),
         ),
         "hi": (
             _Seed(
-                "{degree} की पढ़ाई ने आपके सोचने के तरीक़े को कैसे बदला?",
-                "आपकी पढ़ाई ने आपके सोचने के तरीक़े को कैसे बदला?",
+                "{degree} का कोई एक बुनियादी सिद्धांत आप गाँव के एक व्यक्ति को कैसे समझाएँगे, और वह "
+                "उनके लिए क्यों मायने रखता है?",
+                "आपके विषय का कोई एक बुनियादी सिद्धांत आप गाँव के एक व्यक्ति को कैसे समझाएँगे, और वह "
+                "उनके लिए क्यों मायने रखता है?",
             ),
             _Seed(
-                "{degree} का कोई एक विचार आम लोगों की ज़िंदगी से कैसे जुड़ता है?",
-                "आपके विषय का कोई एक विचार आम लोगों की ज़िंदगी से कैसे जुड़ता है?",
+                "{degree} की समझ से आप किसी एक सरकारी फ़ैसले को कैसे बेहतर बनाते, और उसकी क़ीमत "
+                "कौन चुकाता?",
+                "आपके विषय की समझ से आप किसी एक सरकारी फ़ैसले को कैसे बेहतर बनाते, और उसकी क़ीमत "
+                "कौन चुकाता?",
             ),
             _Seed(
-                "प्रशासन में {degree} की समझ आपके किस तरह काम आएगी?",
-                "प्रशासन में आपके विषय की समझ आपके किस तरह काम आएगी?",
+                "अगर कोई कहे कि {degree} पढ़ने वाले प्रशासन के लिए सही नहीं होते, तो आप क्या जवाब "
+                "देंगे, और क्यों?",
+                "अगर कोई कहे कि आपके विषय के लोग प्रशासन के लिए सही नहीं होते, तो आप क्या जवाब "
+                "देंगे, और क्यों?",
             ),
         ),
     },

@@ -24,14 +24,17 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 # until then these are stand-ins. Persona ids, not names: the names live in the persona files.
 # UNVERIFIED: that any of these voices sounds right for its member, and Poorvi on a male-titled
 # member ("Shri Rathore"): v2.5 offers one verified male voice here, which the Chairperson has.
+# Members alternate along the panel order (form, degree, case study, district, hobbies since Nov 9),
+# so two members who speak one after the other never share a voice. Placeholders until the owner
+# picks with `make voice-lab`.
 DEFAULT_PANEL_VOICES: dict[str, dict[str, str]] = {
     "timbre-v2.5": {
-        "chairman": "Vikrant", "administrator": "Urmila", "economist": "Poorvi",
-        "humanities": "Urmila", "ips_officer": "Poorvi",
+        "chairman": "Vikrant", "economist": "Poorvi", "ips_officer": "Urmila",
+        "administrator": "Poorvi", "humanities": "Urmila",
     },
     "timbre-v3.0": {
-        "chairman": "Avinash", "administrator": "Vasudha", "economist": "Yashraj",
-        "humanities": "Vasudha", "ips_officer": "Yashraj",
+        "chairman": "Avinash", "economist": "Yashraj", "ips_officer": "Vasudha",
+        "administrator": "Yashraj", "humanities": "Vasudha",
     },
 }
 
@@ -290,8 +293,8 @@ class Settings(BaseSettings):
     # never edited, and are no longer used.
     prompt_listener_version: int = 7  # v6 + `prejudice` (owner's live sitting, Nov 9)
     prompt_librarian_version: int = 1
-    prompt_actor_version: int = 11  # v10 + Tamil-English Tanglish speech
-    prompt_judge_version: int = 1
+    prompt_actor_version: int = 12  # v11 + candour and the case-study dig (owner, Nov 9)
+    prompt_judge_version: int = 2  # v1 + specific, varied rationales; answers only (Round 57)
     prompt_opener_version: int = 3  # v2 + Tamil-English Tanglish speech
     prompt_repair_version: int = 1  # v2 did worse on Nova (CHANGELOG); v1 + is_script_change
     prompt_summary_version: int = 1  # likely-question hints (P9); not in a session's trace map

@@ -95,7 +95,7 @@ def test_the_answer_cap_cannot_be_set_below_what_the_panel_needs(monkeypatch):
 async def test_the_seats_are_the_five_members_in_agenda_order(settings, cards, form, tmp_path):
     session = make(settings, cards, form, tmp_path)
     assert session.panel_members() == [
-        "Chairperson Sharma", "Shrimati Menon", "Doctor Iyer", "Professor Sen", "Shri Rathore",
+        "Chairperson Sharma", "Doctor Iyer", "Shri Rathore", "Shrimati Menon", "Professor Sen",
     ]
     assert session.current_segment() == "form_hr"
     await session.close()
@@ -114,10 +114,10 @@ async def test_a_hand_off_is_the_chairpersons_and_the_question_the_next_members(
         spoken = [s async for s in session.speak_stream()]
         session.finish_line()
     kinds = {(s.speaker, s.kind) for s in spoken}
-    assert ("Chairperson Sharma", "preface") in kinds  # "Dhanyavaad. Shrimati Menon, please."
-    assert any(s.speaker == "Shrimati Menon" and s.kind in ("model", "line") for s in spoken)
-    assert spoken[0].speaker == "Chairperson Sharma" and "Menon" in spoken[0].text + spoken[1].text
-    assert {s.segment for s in spoken} == {"home_district"}
+    assert ("Chairperson Sharma", "preface") in kinds  # "Dhanyavaad. Doctor Iyer, please."
+    assert any(s.speaker == "Doctor Iyer" and s.kind in ("model", "line") for s in spoken)
+    assert spoken[0].speaker == "Chairperson Sharma" and "Iyer" in spoken[0].text + spoken[1].text
+    assert {s.segment for s in spoken} == {"degree"}
     assert [s.index for s in spoken] == list(range(len(spoken)))
     await session.close()
 

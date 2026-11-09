@@ -278,7 +278,7 @@ async def test_think_keeps_the_question_costs_nothing_and_expects_a_long_answer(
 async def test_change_topic_leaves_the_topic_and_never_returns(client):
     sid = (await client.call("start_interview", form=FORM_EN))["session_id"]
     seen_chess = False
-    for _ in range(8):  # reach the member who asks about hobbies
+    for _ in range(16):  # reach the member who asks about hobbies (last since Nov 9)
         t = await client.say(sid, PLAIN, ANALYSIS)
         q = _question_of(t) or ""
         if "chess" in q.lower():
@@ -287,7 +287,11 @@ async def test_change_topic_leaves_the_topic_and_never_returns(client):
     assert seen_chess, "the hobby question never came"
     t = await client.say(sid, "chess ke alawa kisi aur topic pe baat karte hain")
     assert t["board"]["request"] == "change_topic"
-    assert any("chess" in a.lower() for line in t["say"] for a in line.get("avoid", []))
+    # Hobbies are the last segment since Nov 9, so leaving them may close the sitting; when a
+    # member speaks next, their line carries the refused topic.
+    assert t["finished"] or any(
+        "chess" in a.lower() for line in t["say"] for a in line.get("avoid", [])
+    )
     for _ in range(20):
         if t["finished"]:
             break

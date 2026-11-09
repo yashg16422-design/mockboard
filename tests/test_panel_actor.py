@@ -106,7 +106,7 @@ def test_upsc_prompt_versions_are_the_panels_and_the_old_board_files_stay_on_dis
     """P7: one version map for UPSC. The old board's v3, v3 and v1 files are never edited and never
     deleted (the prompt rule), they are simply no longer named."""
     versions = settings.prompt_versions()
-    assert versions["listener"] == 7 and versions["actor"] == 11
+    assert versions["listener"] == 7 and versions["actor"] == 12
     assert versions["opener"] == 3 and versions["agenda_plan"] == 5
     for old in ("listener.v3.md", "actor.v3.md", "actor.v5.md", "actor.v6.md", "actor.v7.md",
                 "opener.v1.md"):
@@ -681,3 +681,22 @@ async def test_a_question_a_little_over_the_cap_is_said_whole(form, kit):
         kit, form, LONG_OK, kind=Move.counter, answer="Main sabse milunga."
     )
     assert out.text == LONG_OK and not out.is_fallback
+
+
+async def test_a_sentence_the_board_just_said_is_skipped_and_the_new_question_kept(form, kit):
+    """The owner's live run (Nov 9): Nova repeated its own last sentences, and in voice they were
+    spoken before the whole-line check. The gate now skips them as they stream."""
+    before = ("Aapka matlab hai ki har system mein kuch na kuch kshati hoti hai. Lekin kya aap "
+              "sochte hain ki har kshati buri hoti hai?")
+    reply = ("Lekin kya aap sochte hain ki har kshati buri hoti hai? "
+             "Solar urja mein yeh nuksaan kaun uthata hai, sarkar ya upbhokta?")
+    out, _ = await line_for_move(kit, form, reply, kind=Move.counter,
+                                 answer="Solar urja ka udaharan lijiye.", earlier_lines=[before])
+    assert out.text == "Solar urja mein yeh nuksaan kaun uthata hai, sarkar ya upbhokta?"
+
+
+async def test_a_line_that_only_repeats_the_board_falls_back(form, kit):
+    before = "Aapne dono taraf ke netaon ko bulaya. Ab aap unhe kya kahenge?"
+    out, _ = await line_for_move(kit, form, before, kind=Move.probe, answer="Main baat karunga.",
+                                 earlier_lines=[before])
+    assert out.is_fallback and out.text != before and out.text.endswith("?")

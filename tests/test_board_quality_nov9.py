@@ -270,3 +270,96 @@ def test_a_lone_ji_is_not_an_honest_i_dont_know():
 def test_the_panel_waits_longer_for_novas_first_word_than_debate(settings):
     assert settings.panel_actor_first_token_budget_s == 3.5
     assert settings.actor_first_token_budget_s == 2.5  # debate and the partner unchanged
+
+
+# --- Round 57: the owner's order, the case study dug into, a candid board, answers-only report ---
+
+
+@pytest.mark.parametrize(("answer", "signals"), [
+    ("Shayad haan, mujhe lagta hai ki yeh theek hai.", ["unsure", "thin", "no_reason"]),
+    ("Haan important hai.", ["thin"]),
+    ("Main traffic ke liye flyover banaunga aur public transport sudharunga aur signal "
+     "theek karunga.", ["thin", "no_reason"]),
+    ("Main pehle logon se milunga kyunki unhe zameeni sthiti pata hai, phir panchayat ke saath "
+     "kaam shuru karunga taaki sab ka bharosa bane.", []),
+    ("शायद मैं पुलिस बुला लूँगा, मुझे पक्का नहीं पता।", ["unsure", "thin", "no_reason"]),
+    ("", []),
+])  # fmt: skip
+def test_answer_signals(answer, signals):
+    from mockboard.brain.panel_actor import answer_signals
+
+    assert answer_signals(answer) == signals
+
+
+def test_signals_reach_the_member_only_on_a_follow_up():
+    import json
+
+    from mockboard.brain.panel_actor import board_context
+    from mockboard.brain.personas import load_personas
+    from mockboard.brain.schemas import BoardMove, CandidateForm, Move
+
+    persona = load_personas()["economist"]
+    form = CandidateForm(home_state="Kerala", degree_subject="Physics")
+    weak = "Shayad, pata nahi."
+
+    def ctx(move: Move) -> dict:
+        m = BoardMove(move=move, member="economist", reason="test", rule_id="R7")
+        text = board_context(persona, m, form=form, spoken=[], after_handoff=False,
+                             last_answer=weak)
+        return json.loads(text.split("\n", 1)[1].rsplit("\n", 1)[0])
+
+    assert ctx(Move.pressure)["answer_signals"] == ["unsure", "thin"]
+    assert "answer_signals" not in ctx(Move.next_question)
+
+
+def test_actor_v12_is_candid_and_keeps_v11():
+    v11 = load_prompt("actor", 11).body
+    v12 = load_prompt("actor", 12).body
+    assert "Be candid, the way a real UPSC board is." in v12
+    assert "Never praise a weak answer" in v12 and "do not invent a criticism" in v12
+    assert "politely press" in v11 and "politely press" not in v12
+    assert 'move_reason` says "case study"' in v12
+    for kept in ("Never repeat the candidate's words back to them", "Never state a fact",
+                 "Never ask the candidate for a number"):
+        assert kept in v12.replace("\n  ", " ") or kept in v12, kept
+
+
+def test_the_judge_reads_answers_only():
+    from mockboard.brain.report_panel import answer_turns
+    from mockboard.brain.schemas import BoardMove, CandidateTurn, Move, PanelRequest, Segment
+
+    def turn(i: int, text: str) -> CandidateTurn:
+        return CandidateTurn(turn_id=f"t{i}", turn_index=i, topic="degree", question="Q?",
+                             segments=[Segment(segment_id=f"s{i}", segment_index=0, text=text)])
+
+    turns = [turn(0, "namaste sir"), turn(1, "Ek lamba jawab kyunki..."), turn(2, "phir se boliye"),
+             turn(3, "ek minute"), turn(4, "Doosra jawab."), turn(5, "khatam karein"),
+             turn(6, "haan sir"), turn(7, "")]
+    requests = [PanelRequest(turn_id=t, kind=k, source="rules")
+                for t, k in [("t0", "greeting"), ("t2", "repeat"), ("t3", "think"), ("t5", "end")]]
+    moves = [BoardMove(move=Move.clarify, member="chairman", reason="x", rule_id="D-END-CONFIRM",
+                       for_turn="t5")]
+    assert [t.turn_id for t in answer_turns(turns, requests, moves)] == ["t1", "t4"]
+
+
+def test_the_practice_question_starts_at_the_question():
+    from mockboard.brain.report_panel import _asked
+
+    assert _asked("Shukriya. Ab Doctor Iyer ki baari hai. Physics se kya badla?") == (
+        "Physics se kya badla?"
+    )
+    assert _asked("Dhanyavaad. Shrimati Menon, please. Aapke zile mein kya karenge?") == (
+        "Aapke zile mein kya karenge?"
+    )
+
+
+def test_the_degree_questions_are_upsc_level_in_every_mix():
+    from mockboard.brain.agenda import build_fallback_agenda, seed_violations
+    from mockboard.brain.schemas import CandidateForm
+
+    for lang in ("hinglish", "english", "hindi"):
+        form = CandidateForm(home_state="Kerala", degree_subject="Physics", interview_language=lang)
+        seeds = [s.text for s in build_fallback_agenda(form).segment("degree").seeds]
+        assert all(seed_violations(s, "degree", form) == [] for s in seeds), seeds
+        joined = " ".join(seeds).lower()
+        assert "sochne ke tareeke" not in joined and "changed the way you think" not in joined
