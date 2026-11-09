@@ -18,8 +18,8 @@ MOVE_GUIDE: dict[str, str] = {
     "move_on": "Ask the agenda question in `question`, in your own words, as one question.",
     "probe": "Ask one follow-up that makes the candidate go one step deeper on what they just "
     "said (a reason, who is affected, a first step). One question.",
-    "pressure": "The answer was thin. Politely ask for one concrete reason or step. Firm, never "
-    "rude. One question.",
+    "pressure": "The answer was thin. Say plainly what is missing, then ask for one concrete "
+    "reason or step. Direct, never rude. One question.",
     "counter": "Name, without asserting it as fact, another side some would raise ('some would "
     "say...'), and ask how the candidate answers it. One question.",
     "steelman": "Ask the candidate to state the strongest form of the view they disagree with. "
@@ -32,6 +32,27 @@ MOVE_GUIDE: dict[str, str] = {
     "fact_challenge": "Do not challenge any figure: there are no fact cards in this channel. Ask "
     "where the candidate read it, as a question.",
 }
+
+# A follow-up on the case study (`D-DEEP`), as actor.v12 asks of Mock Board's own model (Nov 9:
+# the MCP run's own draft was "how would you explain this to an ordinary citizen?").
+CASE_DEEP_GUIDE = (
+    "The case study: go one level deeper into the candidate's own plan, on execution: the first "
+    "hours, whom they call, what the law and their office allow, who resists and why, or what they "
+    "do if the first step fails. Stay inside the situation already given; add no fact, figure or "
+    "name. One question."
+)
+# Added to a follow-up's guidance when Mock Board's code found a gap in the answer (actor.v12).
+CANDOUR_NOTES: dict[str, str] = {
+    "unsure": "the candidate hedged and did not sound sure",
+    "thin": "the answer was very short",
+    "no_reason": "the answer gave a conclusion without a reason",
+}
+CANDOUR_GUIDE = (
+    "Mock Board found: {found}. Open with ONE short, direct sentence that names this gap, in the "
+    "sitting's language, without softening it and without insult; then ask the sharper question. "
+    "Never praise a weak answer."
+)
+CANDOUR_MOVES = frozenset({"probe", "counter", "pressure", "steelman", "interrupt"})
 
 # The study partner's moves (its own rule table, `modes/partner/strategist.py`). Keys are the move,
 # or `move_on:<target>` for the recap and the close.

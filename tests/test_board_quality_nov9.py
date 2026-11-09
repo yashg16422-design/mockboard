@@ -363,3 +363,28 @@ def test_the_degree_questions_are_upsc_level_in_every_mix():
         assert all(seed_violations(s, "degree", form) == [] for s in seeds), seeds
         joined = " ".join(seeds).lower()
         assert "sochne ke tareeke" not in joined and "changed the way you think" not in joined
+
+
+# --- Round 58: a hedge at the end of a segment is named before the hand-off ----------------------
+
+
+async def test_a_hedged_last_answer_is_named_before_the_hand_off():
+    from mockboard.brain.panel_lines import HEDGE_PRESS_LINES
+
+    sim = Sim()
+    await sim.say()  # the Chairperson's second question is the segment's last
+    d = await sim.say("Shayad, mujhe pakka nahi pata ki kya karna chahiye sir.")
+    assert d.node == "handoff"
+    texts = [p.text for p in d.preface]
+    assert texts[0] == HEDGE_PRESS_LINES.variants["hi-en"][0]
+    assert d.preface[0].member == "chairman" and len(texts) == 2  # then the hand-off itself
+
+
+async def test_an_honest_i_dont_know_or_a_firm_answer_is_not_pressed():
+    from mockboard.brain.panel_lines import HEDGE_PRESS_LINES
+
+    for text, kw in [("Pata nahi sir.", {"honest_unknown": True}), (None, {})]:
+        sim = Sim()
+        await sim.say()
+        d = await sim.say(text, **kw) if text else await sim.say()
+        assert all(p.text not in HEDGE_PRESS_LINES.variants["hi-en"] for p in d.preface)

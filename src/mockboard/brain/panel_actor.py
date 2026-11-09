@@ -45,6 +45,7 @@ from mockboard.brain.actor import (
 )
 from mockboard.brain.affairs import AffairsNote, affairs_line
 from mockboard.brain.agenda import NEUTRAL_SEEDS
+from mockboard.brain.answer_signals import answer_signals  # re-exported for callers
 from mockboard.brain.avoid_terms import find_avoided, prompt_terms
 from mockboard.brain.cards import CardSet
 from mockboard.brain.llm import LLMClient, LLMError
@@ -381,37 +382,7 @@ def render_recent(notes: Sequence[TurnNote], n: int = RECENT_EXCHANGES) -> str:
     return "\n".join(rows)
 
 
-# What code can tell about the answer a member is following up (the owner, Nov 9: "if the student
-# feels under-confident or gives a less satisfactory answer, the board should be blunt"). actor.v12
-# names the gap in one direct sentence when a signal is present. Word lists are ours, unmeasured.
-_HEDGES = re.compile(
-    r"\b(?:shayad|shaayad|lagta hai|mujhe lagta|pata nahi|pakka nahi|pakka pata nahi|ho sakta hai|"
-    r"i think|i guess|maybe|perhaps|probably|not sure|i am not sure|kind of|sort of)\b"
-    r"|शायद|लगता है|पता नहीं|पक्का नहीं|हो सकता है",
-    re.IGNORECASE,
-)
-_REASONS = re.compile(
-    r"\b(?:kyunki|kyonki|kyuki|isliye|islie|taaki|because|since|so that|therefore|hence|"
-    r"isse|iski wajah)\b|क्योंकि|इसलिए|ताकि|इसकी वजह",
-    re.IGNORECASE,
-)
-THIN_ANSWER_WORDS = 15
 _SIGNAL_MOVES = frozenset({Move.probe, Move.counter, Move.pressure, Move.steelman, Move.interrupt})
-
-
-def answer_signals(answer: str) -> list[str]:
-    """`unsure`, `thin` and `no_reason` for a spoken answer; empty for silence. Pure."""
-    words = len(answer.split())
-    if words == 0:
-        return []
-    out = []
-    if _HEDGES.search(answer):
-        out.append("unsure")
-    if words < THIN_ANSWER_WORDS:
-        out.append("thin")
-    if words >= 6 and not _REASONS.search(answer):
-        out.append("no_reason")
-    return out
 
 
 def board_context(

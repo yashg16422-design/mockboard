@@ -46,6 +46,7 @@ from langgraph.graph import END, START, StateGraph
 
 from mockboard.brain.affairs import AffairsNote, words_heard
 from mockboard.brain.agenda import CASE_STUDY_SEGMENT, twist_for
+from mockboard.brain.answer_signals import answer_signals
 from mockboard.brain.graphs import make_serde
 from mockboard.brain.greeting_turn import is_greeting_only
 from mockboard.brain.panel_lines import (
@@ -58,6 +59,7 @@ from mockboard.brain.panel_lines import (
     END_DECLINED_LINES,
     GREETING_BACK_LINES,
     HANDOFF_LINES,
+    HEDGE_PRESS_LINES,
     REGISTER_LINES,
     REPEAT_PREFIX_LINES,
     SKIP_ACK_LINES,
@@ -777,7 +779,18 @@ def plan_handoff(p: _Plan) -> PanelDecision:
     before = (p.chair(END_DECLINED_LINES),) if p.u.free_kind == "end_declined" else ()
     if _values_due(p):  # the member who heard it answers it before the hand-off
         before = (*before, p.own(VALUES_LINES))
+    elif _hedge_press_due(p):  # a hedged last answer is named before the hand-off
+        before = (*before, p.own(HEDGE_PRESS_LINES))
     return p.handoff(before)
+
+
+def _hedge_press_due(p: _Plan) -> bool:
+    """The segment's last answer hedged and nothing else answers it: an answer, not a request,
+    and not an honest "I don't know", which the board never presses."""
+    return (
+        not p.u.free_kind and not p.u.request_kind and not p.turn.analysis.honest_unknown
+        and "unsure" in answer_signals(p.turn.raw_text)
+    )
 
 
 def plan_values(p: _Plan) -> PanelDecision:

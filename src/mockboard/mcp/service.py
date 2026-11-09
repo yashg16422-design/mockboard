@@ -24,6 +24,7 @@ from typing import Any
 from pydantic import ValidationError
 
 from mockboard.brain.agenda import is_situation
+from mockboard.brain.answer_signals import answer_signals
 from mockboard.brain.deps import BrainDeps, build_deps
 from mockboard.brain.graphs import TurnAnalyzer
 from mockboard.brain.judge import assemble_report, check_citations
@@ -283,12 +284,21 @@ class BoardService:
         n_fixed = len(parts) if fixed_only else len(hooks.spoken_preface_parts(move))
         say = [self._verbatim(ms, p.member, p.text) for p in parts[:n_fixed] if p.text]
         seeded = move.move in (Move.next_question, Move.move_on) and bool(d.seed)
+        how_to = (
+            guidance.CASE_DEEP_GUIDE if move.rule_id == "D-DEEP"
+            else guidance.MOVE_GUIDE.get(move.move.value, guidance.MOVE_GUIDE["probe"])
+        )
+        if move.move.value in guidance.CANDOUR_MOVES and ms.session.state.turns:
+            found = [guidance.CANDOUR_NOTES[s]
+                     for s in answer_signals(ms.session.state.turns[-1].transcript)]
+            if found:
+                how_to = f"{how_to} {guidance.CANDOUR_GUIDE.format(found='; '.join(found))}"
         for p in parts[n_fixed:]:
             say.append(self._own_words(
                 ms, p.member, p.text, move.move.value,
                 question=d.seed if seeded else None,
                 max_words=SEED_LINE_WORDS if seeded else self.settings.actor_max_words,
-                how_to=guidance.MOVE_GUIDE.get(move.move.value, guidance.MOVE_GUIDE["probe"]),
+                how_to=how_to,
                 avoid=list(hooks.avoid_for(d)),
             ))
         board = {

@@ -546,3 +546,29 @@ def test_the_server_runs_as_claude_desktop_starts_it(tmp_path):
     started = next(a for a in answers if a["id"] == 2)["result"]["structuredContent"]
     assert started["mode"] == "study_partner" and started["say"][0]["how"] == "verbatim"
     assert list(tmp_path.iterdir()) == []
+
+
+# --- Nov 9, the owner's MCP test with a strong client model (Round 58) ---------------------------
+
+
+async def test_a_case_study_follow_up_carries_the_execution_guidance(client):
+    """The MCP run's own D-DEEP draft was generic; the client now gets actor.v12's case rules."""
+    sid = (await client.call("start_interview", form=FORM_EN))["session_id"]
+    t = None
+    for _ in range(20):
+        t = await client.say(sid, PLAIN, ANALYSIS)
+        if t["board"]["rule"] == "D-DEEP" or t["finished"]:
+            break
+    assert t["board"]["rule"] == "D-DEEP"
+    own = [line for line in t["say"] if line["how"] == "own_words"]
+    assert own and "execution" in own[-1]["guidance"] and "first hours" in own[-1]["guidance"]
+
+
+async def test_a_hedged_answer_tells_the_client_to_name_the_gap(client):
+    sid = (await client.call("start_interview", form=FORM_EN))["session_id"]
+    t = await client.say(sid, "Maybe, I think so.", {**ANALYSIS, "reasons": [],
+                                                       "balance": "unclear"})
+    own = [line for line in t["say"] if line["how"] == "own_words"]
+    assert t["board"]["move"] in ("pressure", "probe", "counter", "steelman")
+    assert own and "did not sound sure" in own[-1]["guidance"]
+    assert "Never praise a weak answer" in own[-1]["guidance"]
