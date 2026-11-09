@@ -5,162 +5,339 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Mock Board</title>
 <link rel="icon" href="data:,">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,560&family=IBM+Plex+Mono:wght@400;500&family=Inter:wght@400;500;600&family=Noto+Sans+Devanagari:wght@400;500;600&family=Noto+Serif+Devanagari:wght@500&display=swap" rel="stylesheet">
+<link rel="preload" href="/static/fonts/geist-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/static/fonts.css">
 <link rel="stylesheet" href="/static/tokens.css">
 <link rel="stylesheet" href="/static/site.css">
 </head>
-<body>
+<body data-view="home">
+<canvas id="field" aria-hidden="true"></canvas>
+<div class="aurora" aria-hidden="true"></div>
+<div class="vignette" aria-hidden="true"></div>
+<div class="grain" aria-hidden="true"></div>
+
 <a class="skip" href="#content">Skip to content</a>
 <header class="top">
-  <a class="mark" href="/">Mock Board</a>
+  <a class="mark" href="/" aria-label="Mock Board, home">
+    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <circle cx="12" cy="12" r="10.5" stroke="rgba(255,255,255,.28)" stroke-width="1"/>
+      <circle cx="4.6" cy="13.6" r="1.3" fill="currentColor"/><circle cx="8" cy="9.2" r="1.3" fill="currentColor"/>
+      <circle cx="12" cy="7.6" r="1.7" fill="#5ef2c2"/><circle cx="16" cy="9.2" r="1.3" fill="currentColor"/><circle cx="19.4" cy="13.6" r="1.3" fill="currentColor"/>
+      <path d="M8.5 17.2h7" stroke="currentColor" stroke-width="1" stroke-linecap="round"/>
+    </svg>
+    <span>Mock Board</span>
+  </a>
   <p class="kicker" id="section-kicker">01 / Practice</p>
   <p class="badges">
+    <a class="badge guide-link" href="/guide">Guide</a>
     <span class="badge" id="mode-badge">…</span>
     <span class="badge demo" id="fake-badge" hidden>Demo mode</span>
   </p>
 </header>
+
 <main id="content">
+  <!-- 01 HOME -->
   <section id="view-home" data-view="home">
-    <div class="presence" id="home-presence" tabindex="0" aria-describedby="home-field-note">
-      <canvas id="home-field" aria-hidden="true"></canvas>
-      <p class="presence-label"><span>01</span> Pointer</p>
-      <p class="field-note" id="home-field-note">Move across the field. It follows your pointer.</p>
-    </div>
-    <div class="doc">
-      <div>
+    <div class="hero">
+      <div class="hero-copy">
+        <p class="tag">[ 01 / UPSC Personality Test — practice ]</p>
         <h1 id="home-title">The interview, spoken.</h1>
-        <p class="lede" id="home-lede">Mock Board is a practice interview for the UPSC Personality Test. You speak. A small panel replies, out loud, in Hinglish, Hindi or English.</p>
-        <p id="home-honest">This is a student's practice tool, built for the Gnani.ai Great Indian AI Internship Challenge. It is not run by the Union Public Service Commission, and it does not use the Commission's emblem. A report from this board is not a UPSC mark.</p>
+        <p class="lede" id="home-lede">Mock Board is a practice interview for the UPSC Personality Test. You speak. A small panel replies, out loud, in Hinglish, Tanglish, Hindi or English.</p>
         <div class="actions">
-          <button type="button" class="primary" id="begin">Begin</button>
+          <button type="button" class="primary" id="begin">Begin <span class="arr" aria-hidden="true">↗</span></button>
         </div>
         <p class="quiet" id="duration"></p>
         <p class="problem" id="boot" role="status"></p>
       </div>
-      <div>
-        <p class="kicker">How a session works</p>
-        <ol class="steps" id="steps-upsc">
-          <li><span class="idx">01</span><p><strong>Form</strong> Home state, studies, hobbies. No name, roll number, phone number, email or college.</p></li>
-          <li><span class="idx">02</span><p><strong>Your voice</strong> Your voice goes to our server and Gnani Prisma, which writes down what you say.</p></li>
-          <li><span class="idx">03</span><p><strong>The board</strong> Amazon Nova Pro chooses the next line. Gnani Timbre speaks it.</p></li>
-          <li><span class="idx">04</span><p><strong>Report</strong> At the end you get a practice report. It is not a UPSC mark.</p></li>
-        </ol>
-        <ol class="steps" id="steps-debate" hidden>
-          <li><span class="idx">01</span><p><strong>Motion</strong> The motion is fixed when the app starts. You are told which side is yours.</p></li>
-          <li><span class="idx">02</span><p><strong>Your voice</strong> Your voice goes to our server and Gnani Prisma, which writes down what you say.</p></li>
-          <li><span class="idx">03</span><p><strong>The other side</strong> Amazon Nova Pro answers. Gnani Timbre speaks that answer.</p></li>
-          <li><span class="idx">04</span><p><strong>Report</strong> At the end you get a practice report of the exchange. It is not a score from any institution.</p></li>
-        </ol>
+      <div class="hero-mid">
+        <p class="tag hero-line">It listens to how you answer,<br>and the board asks back.</p>
+        <p class="hero-honest" id="home-honest">This is a student's practice tool, built for the Gnani.ai Great Indian AI Internship Challenge. It is not run by the Union Public Service Commission, and it does not use the Commission's emblem. A report from this board is not a UPSC mark.</p>
+      </div>
+      <div class="hero-foot upsc-only">
+        <p class="tags"><span class="tag">[ Voice first ]</span><span class="dot" aria-hidden="true"></span><span class="tag">[ Five members ]</span><span class="dot" aria-hidden="true"></span><span class="tag">[ One practice report ]</span></p>
+        <dl class="stats">
+          <div class="stat"><dt>Minutes per sitting</dt><dd id="stat-minutes">—</dd></div>
+          <div class="stat"><dt>Board members, all fictional</dt><dd>5</dd></div>
+          <div class="stat"><dt>Languages you can answer in</dt><dd>4</dd></div>
+          <div class="stat"><dt>Names, roll numbers or emails asked</dt><dd>0</dd></div>
+        </dl>
       </div>
     </div>
-    <div class="notice" id="headphones">
-      <strong>Headphones.</strong> Without them the board can hear itself through your microphone
-      and may cut itself off. You can speak over the board to interrupt it.
+
+    <div class="doc">
+      <p class="tag">[ 02 / How a session works ]</p>
+      <h2 class="kicker-title">How a session works</h2>
+      <ol class="steps" id="steps-upsc">
+        <li><span class="idx">01</span><strong>Form</strong><p>Home state, studies, hobbies. No name, roll number, phone number, email or college.</p></li>
+        <li><span class="idx">02</span><strong>Your voice</strong><p>Your voice goes to our server and Gnani Prisma, which writes down what you say.</p></li>
+        <li><span class="idx">03</span><strong>The board</strong><p>Amazon Nova Pro chooses the next line. Gnani Timbre speaks it.</p></li>
+        <li><span class="idx">04</span><strong>Report</strong><p>At the end you get a practice report. It is not a UPSC mark.</p></li>
+      </ol>
+      <ol class="steps" id="steps-debate" hidden>
+        <li><span class="idx">01</span><strong>Motion</strong><p>You choose a motion and your side. The board takes the other side.</p></li>
+        <li><span class="idx">02</span><strong>Your voice</strong><p>Your voice goes to our server and Gnani Prisma, which writes down what you say.</p></li>
+        <li><span class="idx">03</span><strong>The other side</strong><p>Amazon Nova Pro answers. Gnani Timbre speaks that answer.</p></li>
+        <li><span class="idx">04</span><strong>Report</strong><p>At the end you get a practice report of the exchange. It is not a score from any institution.</p></li>
+      </ol>
+
+      <div class="models">
+        <div class="model"><span class="tag">Hearing</span><b>Gnani Prisma</b><p>Speech to text: writes down what you say.</p></div>
+        <div class="model"><span class="tag">Voice</span><b>Gnani Timbre</b><p>Text to speech: the board's lines, spoken.</p></div>
+        <div class="model"><span class="tag">The board</span><b>Amazon Nova Pro</b><p>Chooses each next line, and writes the report.</p></div>
+      </div>
+
+      <div class="notices">
+        <div class="notice" id="privacy">
+          <strong>What happens to your words.</strong> Your speech goes to Gnani Prisma to be written
+          down. The form and the transcript go to Amazon Bedrock (Nova Pro, Sydney region) so the board
+          can choose its next line. This server keeps a text record of the sitting (what was heard, the
+          board's lines and the report) so faults can be found. Your audio is not saved unless a
+          recording notice is shown on the interview screen. Use made-up details if you prefer.
+        </div>
+        <div class="notice" id="headphones">
+          <strong>Headphones.</strong> Without them the board can hear itself through your microphone
+          and may cut itself off. You can speak over the board to interrupt it.
+        </div>
+      </div>
     </div>
   </section>
 
-  <section id="view-form" data-view="form" hidden>
-    <h1>Before you enter.</h1>
-    <p class="quiet">No name, roll number, phone number, email or college. Only what a board would ask about.</p>
-    <form class="column" id="form" autocomplete="off">
-      <label class="field">Home state <span class="req">required</span>
-        <input name="home_state" required minlength="2" maxlength="60" autocomplete="off">
-      </label>
-      <label class="field">District
-        <input name="district" maxlength="60" autocomplete="off">
-      </label>
-      <label class="field">Degree subject <span class="req">required</span>
-        <input name="degree_subject" required minlength="2" maxlength="80" autocomplete="off">
-      </label>
-      <fieldset class="field">
-        <legend>Hobbies, up to 3</legend>
-        <div class="hobbies">
-          <input id="hobby-1" maxlength="60" autocomplete="off" aria-label="Hobby 1">
-          <input id="hobby-2" maxlength="60" autocomplete="off" aria-label="Hobby 2">
-          <input id="hobby-3" maxlength="60" autocomplete="off" aria-label="Hobby 3">
+  <!-- 02 CHOOSE A MODE -->
+  <section id="view-choose" data-view="choose" hidden>
+    <div class="form-intro choose-intro">
+      <p class="tag">[ 02 / Choose how to practise ]</p>
+      <h1 id="choose-title">Three ways to practise, out loud.</h1>
+      <p class="quiet">Each one listens to what you actually say and answers it. Pick one; you can come back and try another.</p>
+    </div>
+    <div class="modes" role="list">
+      <button type="button" class="mode-card" data-mode="upsc" role="listitem">
+        <span class="mode-no">01</span>
+        <span class="mode-name">UPSC interview</span>
+        <span class="mode-line">A five-member board asks from your form, follows up on your answers and puts one real situation to you.</span>
+        <span class="mode-meta">Up to 17 minutes · report with quotes</span>
+      </button>
+      <button type="button" class="mode-card" data-mode="debate" role="listitem">
+        <span class="mode-no">02</span>
+        <span class="mode-name">Debate</span>
+        <span class="mode-line">Pick a motion and a side. The board argues the other side, rebuts you and asks you to defend your case.</span>
+        <span class="mode-meta">Opening, rebuttals, closing · a judge's verdict</span>
+      </button>
+      <button type="button" class="mode-card" data-mode="partner" role="listitem">
+        <span class="mode-no">03</span>
+        <span class="mode-name">Study partner</span>
+        <span class="mode-line">Explain a topic you are studying to an intelligent friend. One good question at a time, the strongest counterpoint, no scores.</span>
+        <span class="mode-meta">No timer pressure · your points, made stronger</span>
+      </button>
+    </div>
+  </section>
+
+  <!-- 02B DEBATE SETUP -->
+  <section id="view-debate" data-view="debate" hidden>
+    <div class="form-intro">
+      <p class="tag">[ 02 / The motion ]</p>
+      <h1>Choose your motion.</h1>
+      <p class="quiet">You speak for one side. The board takes the other, out loud, and a judge gives a verdict at the end.</p>
+    </div>
+    <form class="column panel" id="debate-form" autocomplete="off">
+      <p class="panel-head"><span class="tag">Debate setup</span></p>
+      <div class="fields">
+        <label class="field full">Motion
+          <select name="motion" id="motion-select" required></select>
+        </label>
+        <fieldset class="field full sides">
+          <legend>Your side</legend>
+          <label class="side"><input type="radio" name="side" value="for" checked> For the motion</label>
+          <label class="side"><input type="radio" name="side" value="against"> Against the motion</label>
+        </fieldset>
+        <label class="field">Language
+          <select name="language">
+            <option value="hinglish">Hinglish</option>
+            <option value="english">English</option>
+            <option value="hindi">Hindi</option>
+          </select>
+        </label>
+        <label class="field">Your opponent
+          <select name="opponent">
+            <option value="logician">The Logician: calm and exact</option>
+            <option value="wit">The Wit: quick and sharp</option>
+          </select>
+        </label>
+        <label class="field">Length
+          <select name="length">
+            <option value="quick">Quick</option>
+            <option value="standard">Standard</option>
+          </select>
+        </label>
+      </div>
+      <p class="hint">To hear the board again, say: “Phir se boliye.” To think first, say: “Ek minute sochne dijiye.”</p>
+      <div class="actions enter">
+        <p class="quiet">Use headphones, so the board does not hear itself.</p>
+        <button type="submit" class="primary" id="debate-enter">Enter the debate <span class="arr" aria-hidden="true">↗</span></button>
+      </div>
+    </form>
+  </section>
+
+  <!-- 02C STUDY PARTNER SETUP -->
+  <section id="view-partner" data-view="partner" hidden>
+    <div class="form-intro">
+      <p class="tag">[ 02 / Study partner ]</p>
+      <h1>What are you studying?</h1>
+      <p class="quiet">Explain it the way you would to a sharp friend. Your partner restates your point, asks one good question at a time, and offers the strongest counterpoint, so your own points get stronger. No scores.</p>
+    </div>
+    <form class="column panel" id="partner-form" autocomplete="off">
+      <p class="panel-head"><span class="tag">Your topic</span></p>
+      <div class="fields">
+        <label class="field full">Topic <span class="req">required</span>
+          <input name="topic" id="partner-topic" required minlength="3" maxlength="80" autocomplete="off" placeholder="e.g. Federalism in India">
+        </label>
+        <div class="field full topic-ideas" aria-label="Topic ideas">
+          <button type="button" class="chip" data-topic="Federalism in India">Federalism in India</button>
+          <button type="button" class="chip" data-topic="Why inflation hurts the poor">Why inflation hurts the poor</button>
+          <button type="button" class="chip" data-topic="Ethics of AI in governance">Ethics of AI in governance</button>
+          <button type="button" class="chip" data-topic="Climate change and farming">Climate change and farming</button>
         </div>
+        <label class="field">Language
+          <select name="language">
+            <option value="hinglish">Hinglish</option>
+            <option value="english">English</option>
+            <option value="hindi">Hindi</option>
+            <option value="tanglish">Tamil + English (Tanglish)</option>
+          </select>
+        </label>
+      </div>
+      <p class="hint">Take your time: pauses do not end your turn. To think first, say: “Ek minute sochne dijiye.” To finish, say: “Session yahin khatam karte hain.”</p>
+      <div class="actions enter">
+        <p class="quiet">Nothing is scored. The summary keeps your own words.</p>
+        <button type="submit" class="primary" id="partner-enter">Start talking <span class="arr" aria-hidden="true">↗</span></button>
+      </div>
+    </form>
+  </section>
+
+  <!-- 02 FORM -->
+  <section id="view-form" data-view="form" hidden>
+    <div class="form-intro">
+      <p class="tag">[ 02 / Before you enter ]</p>
+      <h1>Before you enter.</h1>
+      <p class="quiet">No name, roll number, phone number, email or college. Only what a board would ask about.</p>
+      <p class="tag form-aside">The board reads this form once,<br>then plans the whole sitting.</p>
+    </div>
+    <form class="column panel" id="form" autocomplete="off">
+      <p class="panel-head"><span class="tag">Candidate form</span></p>
+      <div class="fields">
+        <label class="field">Home state <span class="req">required</span>
+          <input name="home_state" required minlength="2" maxlength="60" autocomplete="off">
+        </label>
+        <label class="field">District
+          <input name="district" maxlength="60" autocomplete="off">
+        </label>
+        <label class="field full">Degree subject <span class="req">required</span>
+          <input name="degree_subject" required minlength="2" maxlength="80" autocomplete="off">
+        </label>
+        <fieldset class="field full">
+          <legend>Hobbies, up to 3</legend>
+          <div class="hobbies">
+            <input id="hobby-1" maxlength="60" autocomplete="off" aria-label="Hobby 1">
+            <input id="hobby-2" maxlength="60" autocomplete="off" aria-label="Hobby 2">
+            <input id="hobby-3" maxlength="60" autocomplete="off" aria-label="Hobby 3">
+          </div>
+        </fieldset>
+        <label class="field">Optional subject
+          <input name="optional_subject" maxlength="80" autocomplete="off">
+        </label>
+        <label class="field">Interview language
+          <select name="interview_language">
+            <option value="hinglish">Hinglish</option>
+            <option value="english">English</option>
+            <option value="hindi">Hindi</option>
+            <option value="tanglish">Tamil + English (Tanglish)</option>
+          </select>
+        </label>
+        <label class="field full">Work experience
+          <textarea name="work_experience" maxlength="200" rows="2"></textarea>
+        </label>
+      </div>
+      <fieldset class="slot" id="mic-slot">
+        <legend><span class="idx">01</span> Microphone and language check</legend>
+        <p>Before you begin, read one short line in the language you chose. You will see what the board heard, so you can fix the microphone or the language now rather than mid-interview. Nothing is saved.</p>
+        <p class="check-line" id="mic-line" lang="hi"></p>
+        <div class="actions">
+          <button type="button" class="ghost" id="mic-btn">Check my microphone</button>
+          <button type="button" class="ghost" id="mic-done" hidden>I have finished reading</button>
+        </div>
+        <div id="mic-result" aria-live="polite"></div>
       </fieldset>
-      <label class="field">Optional subject
-        <input name="optional_subject" maxlength="80" autocomplete="off">
-      </label>
-      <label class="field">Work experience
-        <textarea name="work_experience" maxlength="200"></textarea>
-      </label>
-      <label class="field">Interview language
-        <select name="interview_language">
-          <option value="hinglish">Hinglish</option>
-          <option value="english">English</option>
-          <option value="hindi">Hindi</option>
-        </select>
-      </label>
       <fieldset class="slot" id="likely-slot">
-        <legend>Likely questions</legend>
+        <legend><span class="idx">02</span> Likely questions</legend>
         <p>Questions the board prepares from this form. It may word them differently and it will ask follow-ups, so use them to practise, not to memorise.</p>
         <button type="button" class="ghost" id="likely-btn">Show likely questions</button>
         <p class="quiet" id="likely-note" hidden></p>
         <ol id="likely-list" hidden></ol>
       </fieldset>
-      <p class="hint" id="topic-hint">To leave a subject at any time, say: kisi aur topic pe baat karte hain.</p>
+      <p class="hint" id="topic-hint" aria-live="polite">To change topics, say: “Kisi aur topic pe baat karte hain.” To hear a question again, say: “Phir se boliye.” To think before answering, say: “Ek minute sochne dijiye.”</p>
       <div id="access-slot" hidden>
         <p class="notice limit-notice" id="access-note"></p>
         <label class="field" id="access-code-label">Access code, if you are reviewing this project
           <input id="access-code" autocomplete="off" spellcheck="false" maxlength="200">
         </label>
       </div>
-      <div class="actions">
-        <button type="submit" class="primary" id="enter">Enter the room</button>
+      <div class="actions enter">
+        <p class="quiet">Use headphones, so the board does not hear itself.</p>
+        <button type="submit" class="primary" id="enter">Enter the room <span class="arr" aria-hidden="true">↗</span></button>
       </div>
     </form>
   </section>
 
+  <!-- 03 ROOM -->
   <section id="view-room" data-view="room" hidden>
     <div class="room-head">
       <h1 id="room-title">The panel</h1>
       <p class="timer"><span id="elapsed">00:00</span> <span>/ <span id="cap">00:00</span></span></p>
     </div>
-    <section id="debate-panel" hidden>
-      <p class="kicker">Motion</p>
-      <p class="debate-motion" id="motion"></p>
-    </section>
-    <ol class="seats" aria-label="Panel">
-      <li class="seat" data-seat="1"><span class="seat-no">01</span><span class="seat-name">—</span></li>
-      <li class="seat" data-seat="2"><span class="seat-no">02</span><span class="seat-name">—</span></li>
-      <li class="seat" data-seat="3"><span class="seat-no">03</span><span class="seat-name">—</span></li>
-      <li class="seat" data-seat="4"><span class="seat-no">04</span><span class="seat-name">—</span></li>
-      <li class="seat" data-seat="5"><span class="seat-no">05</span><span class="seat-name">—</span></li>
-    </ol>
-    <div class="presence presence-room" id="room-presence" tabindex="0" aria-describedby="room-field-note">
-      <canvas id="room-field" aria-hidden="true"></canvas>
-      <p class="presence-label"><span>02</span> Voice</p>
-      <p class="field-note" id="room-field-note">Quiet. It is waiting for a voice.</p>
+    <div class="room-state">
+      <section id="debate-panel" hidden>
+        <p class="kicker">Motion</p>
+        <p class="debate-motion" id="motion"></p>
+      </section>
+      <p class="tag">Now</p>
+      <p class="status-line" id="status" aria-live="polite">Not connected</p>
+      <p class="meta">
+        <span id="speaking"></span>
+        <span id="mic-state">Microphone closed</span>
+        <span id="answer-count" hidden></span>
+      </p>
+      <p class="notice" id="room-note" hidden></p>
+      <div class="notice" id="recording" hidden>
+        Recording is on: your microphone audio (not the board's voice) is saved on this computer
+        in the traces folder, so you can compare transcription settings later. It is never
+        uploaded. Restart the app without <code>--record-audio</code> to turn it off.
+      </div>
+      <p class="problem" id="problem" role="status"></p>
     </div>
-    <div class="voice" id="meter" data-who="" title="voice"><span class="voice-bar" id="level"></span></div>
-    <p class="meta">
-      <span id="status">Not connected</span>
-      <span id="mic-state">Microphone closed</span>
-      <span id="speaking"></span>
-      <span id="answer-count" hidden></span>
-    </p>
-    <p class="notice" id="room-note" hidden></p>
-    <div class="notice" id="recording" hidden>
-      Recording is on: your microphone audio (not the board's voice) is saved on this computer
-      in the traces folder, so you can compare transcription settings later. It is never
-      uploaded. Restart the app without <code>--record-audio</code> to turn it off.
-    </div>
-    <p class="problem" id="problem" role="status"></p>
     <div class="actions no-print">
-      <button id="start" class="primary" type="button">Start speaking</button>
+      <button id="start" class="primary" type="button" hidden>Start again</button>
       <button id="stop" class="ghost" type="button" disabled>End interview</button>
     </div>
-    <p class="kicker">Live captions</p>
-    <div class="captions" id="captions" aria-live="polite"></div>
+    <div class="room-caps">
+      <p class="kicker">Live captions</p>
+      <div class="captions" id="captions" aria-live="polite"></div>
+    </div>
+    <div class="voice" id="meter" data-who="" title="voice"><span class="voice-bar" id="level"></span></div>
+    <ol class="seats" aria-label="Panel">
+      <li class="seat" data-seat="1"><span class="seat-no">01</span><span class="seat-name">—</span><span class="seat-wave" aria-hidden="true"><i></i><i></i><i></i><i></i></span></li>
+      <li class="seat" data-seat="2"><span class="seat-no">02</span><span class="seat-name">—</span><span class="seat-wave" aria-hidden="true"><i></i><i></i><i></i><i></i></span></li>
+      <li class="seat" data-seat="3"><span class="seat-no">03</span><span class="seat-name">—</span><span class="seat-wave" aria-hidden="true"><i></i><i></i><i></i><i></i></span></li>
+      <li class="seat" data-seat="4"><span class="seat-no">04</span><span class="seat-name">—</span><span class="seat-wave" aria-hidden="true"><i></i><i></i><i></i><i></i></span></li>
+      <li class="seat" data-seat="5"><span class="seat-no">05</span><span class="seat-name">—</span><span class="seat-wave" aria-hidden="true"><i></i><i></i><i></i><i></i></span></li>
+    </ol>
   </section>
 
+  <!-- 04 REPORT -->
   <section id="view-report" data-view="report" hidden>
     <div class="room-head">
-      <h1>Report</h1>
+      <div>
+        <p class="tag">[ 04 / Report ]</p>
+        <h1>Report</h1>
+      </div>
       <button type="button" class="ghost no-print" id="print">Print</button>
     </div>
     <p class="quiet" id="report-demo" hidden>Demo mode. This sitting used stand-ins for the model, the speech, or both.</p>
@@ -177,7 +354,7 @@
 </main>
 <footer class="site-foot">
   <p>A practice tool for the UPSC Personality Test. Not affiliated with the Union Public Service Commission.</p>
-  <p class="models">Speech to text, Gnani Prisma. Text to speech, Gnani Timbre. The board, Amazon Nova Pro.</p>
+  <p class="models-line">Speech to text, Gnani Prisma. Text to speech, Gnani Timbre. The board, Amazon Nova Pro.</p>
 </footer>
 <!-- page_id is created once per page load in /static/app.js and sent with the offer (defect D). -->
 <script src="/static/presence.js"></script>

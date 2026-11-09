@@ -122,8 +122,12 @@ class TimbreTTSService(GnaniTTSService):
         first_byte_timeout_s: float = 3.0,
         request_timeout_s: float = 20.0,
         ledger: Any = None,
+        text_filter: Any = None,
         **kwargs: Any,
     ):
+        # Applied to the text sent to Timbre only (`request_body`); captions and the playback
+        # ledger keep the line as written. Hinglish sittings pass `tts_text.hinglish_for_tts`.
+        self.text_filter = text_filter
         if not api_key:
             raise ValueError("TimbreTTSService needs a Gnani API key")
         if language is not None and language not in SUPPORTED_TTS_LANGUAGES:
@@ -291,6 +295,8 @@ class TimbreTTSService(GnaniTTSService):
         `_build_tts_payload`), plus `language` for timbre-v3.0 too (the docs list it for
         both models; the plugin only sends it for v2.5). `voice` is the request's own (a resend
         passes the voice the first send used); without it, the current voice."""
+        if self.text_filter is not None:
+            text = self.text_filter(text)
         body: dict[str, Any] = {
             "text": text,
             "voice": voice or self.voice,

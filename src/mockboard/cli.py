@@ -4,6 +4,8 @@
     python -m mockboard.cli                             # real Nova Pro on Bedrock (Sydney)
     python -m mockboard.cli --fake --script answers.txt # scripted answers, one per line
     python -m mockboard.cli --mode debate --fake        # debate mode (curated motions)
+    python -m mockboard.cli --mode partner --fake --topic "Federalism in India" \
+        --script examples/partner_session.txt           # the study partner, scripted
     python -m mockboard.cli --fake --form-file examples/forms/sample_form.json
     python -m mockboard.cli --fake --script examples/fake_panel.txt   # the UPSC panel, scripted
     python -m mockboard.cli --fake --likely-questions --form-file examples/forms/sample_form.json
@@ -48,6 +50,9 @@ from mockboard.config import Settings, get_settings
 from mockboard.modes import DEFAULT_MODE, mode_ids
 from mockboard.modes.debate.report_format import format_debate_report
 from mockboard.modes.debate.setup_cli import read_debate_setup
+from mockboard.modes.partner.report import PartnerReport, format_partner_report
+from mockboard.modes.partner.session import LANGUAGES as PARTNER_LANGUAGES
+from mockboard.modes.partner.session import PartnerSetup
 from mockboard.modes.upsc_panel.setup import PanelSetup
 from mockboard.obs.trace import TraceRecorder
 from mockboard.obs.tracing import langfuse_callbacks
@@ -61,10 +66,17 @@ FORM_FIELDS: list[tuple[str, str, bool]] = [
     ("hobbies", "Hobbies, up to 3, comma-separated (optional)", False),
     ("optional_subject", "UPSC optional subject (optional)", False),
     ("work_experience", "Work experience in one line (optional)", False),
-    ("interview_language", "Interview language [hinglish/hindi/english] (default hinglish)", False),
+    (
+        "interview_language",
+        "Interview language [hinglish/hindi/english/tanglish] (default hinglish)",
+        False,
+    ),
 ]
 
 DEBATE_MODE = "debate"
+PARTNER_MODE = "study_partner"
+PARTNER_ALIAS = "partner"  # `--mode partner` is short for `--mode study_partner`
+DEFAULT_PARTNER_TOPIC = "Federalism in India"  # scripted --fake runs without a topic line
 
 DEFAULT_FAKE_FORM = {
     "home_state": "Uttar Pradesh",
@@ -164,9 +176,11 @@ def build_llm(settings: Settings, fake: bool, cards, recorder: TraceRecorder) ->
         ) from exc
 
 
-def format_report(report: SessionReport | DebateReport, cards) -> str:
+def format_report(report: SessionReport | DebateReport | PartnerReport, cards) -> str:
     if isinstance(report, DebateReport):
         return format_debate_report(report, cards)
+    if isinstance(report, PartnerReport):
+        return format_partner_report(report)
     lines = [
         "",
         "=" * 70,
@@ -219,6 +233,20 @@ def format_report(report: SessionReport | DebateReport, cards) -> str:
                 lines.append(f"    Weakest question: {block.weakest_question}")
             for point in block.outline:
                 lines.append(f"      - {point}")
+    if report.heard:
+        lines.append("How the board heard you:")
+        for row in report.heard:
+            lines.append(f"  {row.turn_id} [{row.member}] {row.status}")
+            if row.said:
+                lines.append(f"    heard: {row.said}")
+            for pair in row.likely:
+                lines.append(f"    likely misheard: {pair['heard']} -> {pair['likely']}")
+            if row.understood:
+                lines.append(f"    understood: {row.understood}")
+            if row.request:
+                lines.append(f"    request: {row.request} (found by {row.request_source})")
+            if row.next_step:
+                lines.append(f"    next: the board {row.next_step}")
     if report.practice_plan:
         lines.append("Practice plan:")
         for item in report.practice_plan:
@@ -291,12 +319,14 @@ async def run(args: argparse.Namespace) -> int:
     if args.mode == DEBATE_MODE:
         options = await read_debate_setup(ask, llm=llm, settings=settings,
                                           use_defaults=use_defaults)
+    elif args.mode == PARTNER_MODE:
+        options = read_partner_setup(args, ask, use_defaults=use_defaults)
     elif file_form is not None:
         form = file_form
         print(f"\nApplication form from {args.form_file}")
     else:
         form = read_form(ask, use_defaults=use_defaults)
-    if args.mode != DEBATE_MODE:  # the UPSC panel (P7); --max-answers is a test user's cap
+    if _is_panel(args):  # the UPSC panel (P7); --max-answers is a test user's cap
         options = PanelSetup(max_answers=args.max_answers)
     kwargs = {"session_id": session_id} if session_id else {}
     session = InterviewSession(
@@ -317,6 +347,28 @@ async def run(args: argparse.Namespace) -> int:
         return await _interview(args, settings, session, rt, ask, lines, recorder, cards)
     finally:
         await session.close()  # the panel's checkpointer thread, on every exit path
+
+
+def _is_panel(args: argparse.Namespace) -> bool:
+    return args.mode not in (DEBATE_MODE, PARTNER_MODE)
+
+
+def read_partner_setup(
+    args: argparse.Namespace, ask: Callable[[str], str | None], *, use_defaults: bool
+) -> PartnerSetup:
+    """The study partner's setup: `--topic`, or the first input line. No names are asked."""
+    topic = args.topic
+    if topic is None:
+        print("\n== Study partner: the topic you are studying (no names) ==")
+        topic = ask("Topic: ")
+        if topic is None:
+            if not use_defaults:
+                raise SystemExit("input ended before a topic was given")
+            topic = DEFAULT_PARTNER_TOPIC
+    try:
+        return PartnerSetup(topic=topic, language=args.partner_language)
+    except ValueError as exc:
+        raise SystemExit(f"The topic was refused: {exc}") from exc
 
 
 async def _replay(args, settings, file_form, cards) -> int:
@@ -420,7 +472,7 @@ def _print_panel_line(session: InterviewSession, line, tag: str = "") -> None:
 
 async def _interview(args, settings, session, rt, ask, lines, recorder, cards) -> int:
     opener = await session.open()
-    if args.mode != DEBATE_MODE:
+    if _is_panel(args):
         print(f"\n{session.hooks.agenda_note()}\n")
         _print_panel_line(session, opener)
     else:
@@ -438,7 +490,7 @@ async def _interview(args, settings, session, rt, ask, lines, recorder, cards) -
         await session.end_of_turn(args.deadline_s or settings.text_move_deadline_s)
         out = await session.speak()
         tag = f"{out.move.move.value}, {out.move.rule_id}"
-        if args.mode != DEBATE_MODE:
+        if _is_panel(args):
             _print_panel_line(session, out.line, tag)
         else:
             print(f"[{session.speaker_name(out.move.member)}] ({tag}) {out.line.text}")
@@ -480,9 +532,20 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument("--fake", action="store_true", help="run fully offline with the fake LLM")
     p.add_argument(
         "--mode",
-        choices=mode_ids(),
+        choices=[*mode_ids(), PARTNER_ALIAS],
         default=DEFAULT_MODE,
-        help=f"session mode (ADR-009; default {DEFAULT_MODE})",
+        help=f"session mode (ADR-009; default {DEFAULT_MODE}; '{PARTNER_ALIAS}' is short for "
+        f"{PARTNER_MODE})",
+    )
+    p.add_argument(
+        "--topic",
+        help="study partner only: the topic you are studying (otherwise the first input line)",
+    )
+    p.add_argument(
+        "--partner-language",
+        choices=PARTNER_LANGUAGES,
+        default="hinglish",
+        help="study partner only: the language Mitra speaks (default hinglish)",
     )
     p.add_argument("--script", help="file with scripted inputs, one per line (form, then answers)")
     p.add_argument(
@@ -547,6 +610,17 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument("--print-trace", action="store_true", help="print trace summary at the end")
     p.add_argument("--report-json", help="also write the report as JSON to this path")
     args = p.parse_args(argv)
+    if args.mode == PARTNER_ALIAS:
+        args.mode = PARTNER_MODE
+    if args.mode == PARTNER_MODE:
+        for flag, value in (("--form-file", args.form_file), ("--panel", args.panel),
+                            ("--likely-questions", args.likely_questions),
+                            ("--replay", args.replay), ("--max-answers", args.max_answers),
+                            ("--max-turns", args.max_turns)):
+            if value:
+                p.error(f"{flag} does not apply to the study partner")
+    elif args.topic is not None:
+        p.error("--topic is for the study partner (--mode partner)")
     if args.form_file and args.mode == DEBATE_MODE:
         p.error("--form-file is for the UPSC interview; debate has no application form")
     if args.panel and args.mode == DEBATE_MODE:
@@ -559,7 +633,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         p.error("--replay is for the UPSC interview")
     if args.replay and args.likely_questions:
         p.error("--replay and --likely-questions cannot be combined")
-    if args.mode != DEBATE_MODE and args.max_turns is not None:
+    if _is_panel(args) and args.max_turns is not None:
         p.error("--max-turns does not apply to the UPSC panel: the agenda sets the turn cap "
                 "(use --max-answers to shorten it)")
     if args.max_turns is None:

@@ -9,7 +9,7 @@ import json
 import pytest
 
 from conftest import make_claim
-from mockboard.brain.actor import CLARIFY_LINES, FILLER_TEMPLATES, LineResult
+from mockboard.brain.actor import FILLER_TEMPLATES, LineResult
 from mockboard.brain.agenda import build_fallback_agenda
 from mockboard.brain.llm import FakeLLMClient, LLMTransientError
 from mockboard.brain.panel_actor import (
@@ -26,6 +26,7 @@ from mockboard.brain.panel_actor import (
     undotted_titles,
     without_greeting,
 )
+from mockboard.brain.panel_lines import CLARIFY_PANEL_LINES
 from mockboard.brain.personas import load_personas
 from mockboard.brain.prompts import PROMPT_DIR, build_prompt_kit, load_prompt
 from mockboard.brain.schemas import (
@@ -88,12 +89,25 @@ def test_actor_v4_states_the_data_rule_and_the_new_blocks():
     assert "{{max_words}}" in body
 
 
+def test_actor_v10_allows_natural_openings_and_keeps_wit_grounded():
+    body = " ".join(load_prompt("actor", 10).body.split())
+    assert "Do not force a filler or acknowledgement before every question" in body
+    assert "A witty line is occasional" in body
+    assert "Do not turn every answer into the same trade-off checklist" in body
+
+
+def test_actor_v11_supports_respectful_tanglish():
+    body = " ".join(load_prompt("actor", 11).body.split())
+    assert "Tamil in Tamil script" in body
+    assert "respectful Tamil address" in body
+
+
 def test_upsc_prompt_versions_are_the_panels_and_the_old_board_files_stay_on_disk(settings):
     """P7: one version map for UPSC. The old board's v3, v3 and v1 files are never edited and never
     deleted (the prompt rule), they are simply no longer named."""
     versions = settings.prompt_versions()
-    assert versions["listener"] == 4 and versions["actor"] == 9
-    assert versions["opener"] == 2 and versions["agenda_plan"] == 3
+    assert versions["listener"] == 6 and versions["actor"] == 11
+    assert versions["opener"] == 3 and versions["agenda_plan"] == 3
     for old in ("listener.v3.md", "actor.v3.md", "actor.v5.md", "actor.v6.md", "actor.v7.md",
                 "opener.v1.md"):
         assert (PROMPT_DIR / old).exists(), old
@@ -435,7 +449,8 @@ async def test_a_garbled_turn_is_a_fixed_generic_clarify_never_an_echo(form, kit
         line_complete=False, after_handoff=False, last_question="Q?", last_answer="kuchh badh mein",
         avoid=(), max_words=30, max_tokens=120, turn_id="t1",
     )
-    assert out.text == CLARIFY_LINES["hi-en"] and "badh" not in out.text and not llm.calls
+    first = CLARIFY_PANEL_LINES.variants["hi-en"][0]
+    assert out.text == first and "badh" not in out.text and not llm.calls
 
 
 async def test_a_conceded_error_is_acknowledged_by_the_member_who_heard_it(form, kit):

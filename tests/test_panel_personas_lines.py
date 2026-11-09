@@ -109,7 +109,7 @@ def test_domain_stays_out_of_the_persona_pack():
 
 @pytest.mark.parametrize("table", ALL_LINE_TABLES)
 def test_every_table_has_every_mix(table):
-    assert set(table) == {"hi-en", "en", "hi"}
+    assert set(table) == {"hi-en", "en", "hi", "ta-en"}
     assert all(line.strip() for line in table.values())
 
 
@@ -119,7 +119,7 @@ def test_rulings_wording():
     assert line_for(CLOSE_LINES, "hi-en") == "Thank you, that will be all."
 
 
-@pytest.mark.parametrize("mix", ["hi-en", "en", "hi"])
+@pytest.mark.parametrize("mix", ["hi-en", "en", "hi", "ta-en"])
 def test_end_confirmation_is_a_question(mix):
     assert line_for(END_CONFIRM_LINES, mix).endswith("?")
 
@@ -161,6 +161,7 @@ def test_repeat_prefix_is_a_whole_courteous_line():
         "hi-en": "Zaroor, sawal phir se suniye.",
         "en": "Certainly. Here is the question again.",
         "hi": "ज़रूर, प्रश्न फिर से सुनिए।",
+        "ta-en": "நிச்சயமாக, கேள்வியை மீண்டும் கேளுங்கள்.",
     }
 
 
@@ -216,11 +217,12 @@ ALL_WORDINGS = [
     for text in options
 ]
 DEVANAGARI = re.compile(r"[\u0900-\u097f]")
+TAMIL = re.compile(r"[\u0b80-\u0bff]")
 
 
 @pytest.mark.parametrize("table", REPEATABLE, ids=lambda t: t.id)
 def test_a_line_that_can_come_up_twice_has_two_or_three_wordings_in_every_mix(table):
-    assert set(table.variants) == {"hi-en", "en", "hi"}
+    assert set(table.variants) == {"hi-en", "en", "hi", "ta-en"}
     for options in table.variants.values():
         assert 2 <= len(options) <= 3 and len(set(options)) == len(options)
 
@@ -232,7 +234,7 @@ def test_the_first_wording_is_the_one_the_table_has_always_had(table):
 
 
 @pytest.mark.parametrize("table", REPEATABLE, ids=lambda t: t.id)
-@pytest.mark.parametrize("mix", ["hi-en", "en", "hi"])
+@pytest.mark.parametrize("mix", ["hi-en", "en", "hi", "ta-en"])
 def test_no_two_uses_in_a_row_give_the_same_words_even_after_wrapping(table, mix):
     said = [line_for(table, mix, uses) for uses in range(10)]
     assert all(a != b for a, b in itertools.pairwise(said))
@@ -252,20 +254,21 @@ def test_every_wording_keeps_the_register_and_states_nothing(table_id, mix, line
 
 @pytest.mark.parametrize(("table_id", "mix", "line"), ALL_WORDINGS)
 def test_wordings_are_language_aware(table_id, mix, line):
-    """Devanagari only in `hi`; the English mix has no Hindi words in Latin script to speak."""
+    """Script follows the selected language mix."""
     assert bool(DEVANAGARI.search(line)) == (mix == "hi")
+    assert bool(TAMIL.search(line)) == (mix == "ta-en")
     if mix == "en":
         hindi_in_latin = r"\b(?:aap|kijiye|suniye|dhanyavaad|shukriya|theek|zaroor)\b"
         assert not re.search(hindi_in_latin, line.lower())
 
 
-@pytest.mark.parametrize("mix", ["hi-en", "en", "hi"])
+@pytest.mark.parametrize("mix", ["hi-en", "en", "hi", "ta-en"])
 def test_every_confirmation_wording_is_a_question(mix):
     assert all(text.endswith("?") for text in END_CONFIRM_LINES.variants[mix])
 
 
 @pytest.mark.parametrize("persona", PANEL.values(), ids=lambda p: p.id)
-@pytest.mark.parametrize("mix", ["hi-en", "en", "hi"])
+@pytest.mark.parametrize("mix", ["hi-en", "en", "hi", "ta-en"])
 def test_every_handoff_wording_stays_whole_and_names_the_member(persona, mix):
     for uses in range(len(HANDOFF_LINES.variants[mix])):
         line = handoff_line(persona.name, mix, uses)
@@ -273,10 +276,16 @@ def test_every_handoff_wording_stays_whole_and_names_the_member(persona, mix):
         assert len(split_sentences(line)) == 2, line  # a thanks, then the call (CTO_NOTES_12 M1)
 
 
-def test_clarify_keeps_the_ruling_37_wording_first_and_never_echoes():
+def test_clarify_is_generic_never_echoes_and_is_not_gendered():
+    """Ruling 37's generic clarify. Three members are women, so no wording may carry a masculine
+    first-person verb ("sun nahi paaya", "सुन नहीं पाया"); English and Tamil keep CLARIFY_LINES."""
     from mockboard.brain.actor import CLARIFY_LINES
 
-    for mix, line in CLARIFY_LINES.items():
-        assert CLARIFY_PANEL_LINES.variants[mix][0] == line
+    for mix in ("en", "ta-en"):
+        assert CLARIFY_PANEL_LINES.variants[mix][0] == CLARIFY_LINES[mix]
+    masculine = ("paaya", "पाया", "rokta", "रोकता", "sakta hoon", "सकता हूँ")
+    for mix in ("hi-en", "hi"):
+        for text in CLARIFY_PANEL_LINES.variants[mix]:
+            assert not any(word in text for word in masculine), text
     for options in CLARIFY_PANEL_LINES.variants.values():
         assert all("{" not in text for text in options)

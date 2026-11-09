@@ -167,6 +167,9 @@ class Settings(BaseSettings):
     likely_questions_timeout_s: float = Field(default=20.0, gt=0)
     # Debate keeps the 10-minute stop it always had (ADR-009: debate is unchanged).
     voice_debate_max_s: float = Field(default=600.0, gt=0)
+    # The study partner has no wrap-up and no time pressure: one soft stop at 20 minutes (our
+    # choice, from the owner's brief "no timer pressure").
+    voice_partner_max_s: float = Field(default=1200.0, gt=0)
     # Defect D: a WebRTC connection that is not `connected` within this time is closed and
     # gets no session (no Prisma or Timbre connection is ever opened for it). Localhost ICE
     # takes well under a second; our choice.
@@ -281,11 +284,12 @@ class Settings(BaseSettings):
     # --- Prompt versions (prompts/<id>.v<N>.md) ---
     # UPSC is the panel (P7). The old board's listener.v3, actor.v3 and opener.v1 stay on disk,
     # never edited, and are no longer used.
-    prompt_listener_version: int = 4  # v3 + the candidate's request, English-only notes
+    prompt_listener_version: int = 6  # v5 + Tamil-English Tanglish input
     prompt_librarian_version: int = 1
-    prompt_actor_version: int = 9  # v8, but a follow-up stays on the choice just made (Nova next)
+    prompt_actor_version: int = 11  # v10 + Tamil-English Tanglish speech
     prompt_judge_version: int = 1
-    prompt_opener_version: int = 2  # no greeting: the ritual line is said by code
+    prompt_opener_version: int = 3  # v2 + Tamil-English Tanglish speech
+    prompt_repair_version: int = 1  # v2 did worse on Nova (CHANGELOG); v1 + is_script_change
     prompt_summary_version: int = 1  # likely-question hints (P9); not in a session's trace map
     prompt_agenda_plan_version: int = 3  # v2, plus a briefing the planner must not copy into a seed
     # Debate mode (ADR-009, CTO_NOTES_04).
@@ -295,6 +299,10 @@ class Settings(BaseSettings):
     prompt_judge_debate_version: int = 1
     prompt_motion_screen_version: int = 1
     prompt_case_file_version: int = 1
+    # Study partner mode (`modes/partner`); its listener is the UPSC one (prompt_listener_version).
+    prompt_shared_partner_version: int = 1
+    prompt_partner_actor_version: int = 2
+    prompt_partner_summary_version: int = 1
     report_language: str = Field(default="en", pattern=r"^(en|hi)$")
 
     # --- Panel agenda planning (P6, CTO_NOTES_06 §2, CTO_NOTES_12 §7). Nova only rewrites seed
@@ -385,6 +393,8 @@ class Settings(BaseSettings):
         16 and 17 minutes, or debate's single 10-minute stop (debate has no wrap-up)."""
         if mode == "debate":
             return None, self.voice_debate_max_s
+        if mode == "study_partner":
+            return None, self.voice_partner_max_s
         return self.voice_wrap_up_s, self.voice_hard_stop_s
 
     def panel_voices(self) -> dict[str, str]:
@@ -417,6 +427,13 @@ class Settings(BaseSettings):
                 "librarian": self.prompt_librarian_version,  # the fact-check graph is shared
                 "motion_screen": self.prompt_motion_screen_version,
                 "case_file": self.prompt_case_file_version,
+            }
+        if mode == "study_partner":
+            return {
+                "shared_partner": self.prompt_shared_partner_version,
+                "listener": self.prompt_listener_version,  # the UPSC listener, unchanged
+                "partner_actor": self.prompt_partner_actor_version,
+                "partner_summary": self.prompt_partner_summary_version,
             }
         raise ValueError(f"no prompt versions for mode {mode!r}")
 

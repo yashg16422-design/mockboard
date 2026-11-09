@@ -23,8 +23,11 @@ development runner calls `load_dotenv(override=True)` at import and scans for a 
 from __future__ import annotations
 
 import argparse
+import asyncio
+import contextlib
 import json
 import sys
+import time
 import uuid
 from collections import Counter  # access: in-flight offers
 from contextlib import asynccontextmanager
@@ -34,7 +37,7 @@ from pathlib import Path
 from typing import Any
 
 # FastAPI reads these annotations at runtime, so they are imported at module level.
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, JSONResponse, Response
 from loguru import logger
 from pipecat.transports.smallwebrtc.request_handler import (
@@ -64,12 +67,21 @@ from mockboard.config import Settings
 from mockboard.obs.trace import TraceRecorder
 from mockboard.session import InterviewSession
 from mockboard.speech.keyterms import speech_context
+from mockboard.speech.mic_check import lang_code_for
+from mockboard.speech.tts_text import hinglish_for_tts
 from mockboard.voice.gate import PageSessions
 from mockboard.voice.lines import PlaybackLedger
 
 HERE = Path(__file__).resolve().parent
 _STATIC = (HERE / "static").resolve()  # access: the page's own files
-_STATIC_FILES = frozenset({"app.js", "presence.js", "site.css", "tokens.css"})  # access:
+_FONT_FILES = (  # served from here, so the page calls no font service (Nov 7)
+    "geist-latin.woff2", "geist-latin-ext.woff2", "geist-mono-latin.woff2",
+    "geist-mono-latin-ext.woff2", "noto-sans-devanagari.woff2", "noto-sans-tamil.woff2",
+)
+_STATIC_FILES = frozenset(  # access: an exact allowlist, fonts included by name
+    {"app.js", "presence.js", "site.css", "tokens.css", "fonts.css", "guide.css"}
+    | {f"fonts/{name}" for name in _FONT_FILES}
+)
 _LOOPBACK = frozenset({"localhost", "127.0.0.1", "::1"})  # access:
 MAX_OFFERS_PER_IP = 4  # access: in-flight offers per IP hash; each holds a peer connection
 MODES = {"upsc": "upsc_interview", "debate": "debate"}
@@ -124,9 +136,41 @@ class AppConfig:
         if self.motion is not None:
             out.update(motion=self.motion.text, motion_number=self.motion.number, side=self.side,
                        length=self.length, language=self.language, opponent=self.opponent)
+        out["modes"] = available_modes()
+        out["minutes_by_mode"] = {
+            m: round(self.settings.time_limits(SITTING_MODES[m])[1] / 60, 1) for m in out["modes"]
+        }
+        out["motions"] = curated_motion_list()
         return out
 
 
+def available_modes() -> list[str]:
+    """The modes this server can run, in the picker's order. The study partner shows only when
+    its package is installed (it is new on Nov 7)."""
+    modes = ["upsc", "debate"]
+    try:
+        import mockboard.modes.partner.session  # noqa: F401
+    except ImportError:
+        return modes
+    return [*modes, "partner"]
+
+
+def curated_motion_list() -> list[dict[str, Any]]:
+    """The debate picker's choices: number, short title and the motion, nothing else."""
+    from mockboard.modes.debate.motions import load_curated_motions
+
+    return [{"number": m.number, "title": m.title, "text": m.text}
+            for m in load_curated_motions().values()]
+
+
+UTILITY_REPLAY = "replay"  # the `kind` access counts spoken second attempts under (Timbre+Prisma)
+REPLAY_TTL_S = 900  # an attempt's token lives this long
+REPLAY_MAX_AUDIO_S = 90  # the relay stops listening after this much audio
+REPLAY_DEMO_ANSWER = (
+    "Sabse pehle main prabhavit logon se baat karunga, kyunki unki zaroorat samajhna zaroori hai. "
+    "Lekin iski ek keemat bhi hai: samay lagega."
+)
+UTILITY_MIC_CHECK = "mic_check"  # the `kind` access counts microphone checks under (Prisma)
 UTILITY_LIKELY = "likely_questions"  # the `kind` access counts the likely-questions calls under
 
 
@@ -155,30 +199,149 @@ def parse_form(data: dict[str, Any] | None, *, allow_default: bool) -> Candidate
     return CandidateForm.model_validate(_form_values(raw))
 
 
+# The page's mode picker (Nov 7, owner): one server offers every mode, and each sitting says
+# which it wants. `--mode` stays the default for a page that sends none.
+SITTING_MODES = {"upsc": "upsc_interview", "debate": "debate", "partner": "study_partner"}
+DEBATE_LANGUAGES = ("hinglish", "hindi", "english")
+PARTNER_LANGUAGES = ("hinglish", "english", "hindi", "tanglish")
+
+
+@dataclass(frozen=True)
+class Sitting:
+    """What one offer asked for: the mode and its own options. Holds no identifier."""
+
+    mode: str  # a key of SITTING_MODES
+    form: CandidateForm | None = None  # upsc
+    motion: Any = None  # debate: the curated Motion
+    side: str = "for"
+    language: str = "hinglish"  # debate and partner; upsc reads the form's
+    opponent: str = "logician"
+    length: str = "quick"
+    topic: str = ""  # partner
+
+    @property
+    def speech_language(self) -> str:
+        """The interview language speech uses (Prisma's locale, Timbre's text filter)."""
+        return self.form.interview_language if self.form is not None else self.language
+
+
+class SittingError(ValueError):
+    def __init__(self, problems: list[str]):
+        super().__init__("; ".join(problems))
+        self.problems = problems
+
+
+def parse_sitting(data: dict[str, Any] | None, cfg: AppConfig) -> Sitting:
+    """The sitting an offer asks for, checked before any WebRTC work. Unknown keys are ignored;
+    a bad value raises `SittingError` with plain-words problems for the page."""
+    data = data if isinstance(data, dict) else {}
+    default = "debate" if cfg.mode == "debate" else "upsc"
+    mode = str(data.get("mode") or default)
+    if mode not in SITTING_MODES:
+        raise SittingError([f"mode: choose one of {', '.join(SITTING_MODES)}"])
+    if mode == "upsc":
+        try:
+            return Sitting("upsc", form=parse_form(data.get("form"), allow_default=cfg.fake_llm))
+        except ValidationError as e:
+            raise SittingError(
+                [f"{'.'.join(map(str, x['loc']))}: {x['msg']}" for x in e.errors()]
+            ) from e
+    if mode == "debate":
+        from mockboard.modes.debate.motions import find_motion, load_curated_motions
+
+        raw = data.get("debate") if isinstance(data.get("debate"), dict) else {}
+        problems = []
+        motion = cfg.motion
+        if raw.get("motion") not in (None, ""):
+            try:
+                motion = find_motion(load_curated_motions(), str(raw["motion"]))
+            except KeyError:
+                problems.append("motion: choose one of the listed motions")
+        if motion is None:
+            problems.append("motion: choose a motion")
+        side = str(raw.get("side") or cfg.side or "for")
+        language = str(raw.get("language") or cfg.language)
+        opponent = str(raw.get("opponent") or cfg.opponent)
+        length = str(raw.get("length") or cfg.length)
+        if side not in ("for", "against"):
+            problems.append("side: for or against")
+        if language not in DEBATE_LANGUAGES:
+            problems.append(f"language: one of {', '.join(DEBATE_LANGUAGES)}")
+        if opponent not in ("logician", "wit"):
+            problems.append("opponent: logician or wit")
+        if length not in ("quick", "standard"):
+            problems.append("length: quick or standard")
+        if problems:
+            raise SittingError(problems)
+        return Sitting("debate", motion=motion, side=side, language=language, opponent=opponent,
+                       length=length)
+    raw = data.get("partner") if isinstance(data.get("partner"), dict) else {}
+    topic = " ".join(str(raw.get("topic") or "").split())
+    language = str(raw.get("language") or "hinglish")
+    problems = []
+    if language not in PARTNER_LANGUAGES:
+        problems.append(f"language: one of {', '.join(PARTNER_LANGUAGES)}")
+    try:
+        from mockboard.modes.partner.session import PartnerSetup
+
+        PartnerSetup(topic=topic, language=language if not problems else "hinglish")
+    except ImportError:
+        problems.append("mode: the study partner is not available on this server")
+    except (ValueError, ValidationError) as e:
+        problems.append(f"topic: {e}" if topic else "topic: say what you want to talk about")
+    if problems:
+        raise SittingError(problems)
+    return Sitting("partner", language=language, topic=topic)
+
+
 def make_session(
-    cfg: AppConfig, form: CandidateForm | None, max_answers: int | None = None
+    cfg: AppConfig, sitting: Sitting | CandidateForm | None, max_answers: int | None = None
 ) -> InterviewSession:
     """The same session the text CLI builds (cli.run), with a fresh trace file. `max_answers` is
-    the admission decision's cap for the UPSC panel (None: uncapped); debate ignores it."""
+    the admission decision's cap for the UPSC panel (None: uncapped); debate ignores it. A bare
+    form (or None) is a sitting in the server's default mode, as before the mode picker."""
     from mockboard.modes.debate.motions import Side
     from mockboard.modes.debate.session import DebateSetup, Length, OpponentStyle
     from mockboard.modes.upsc_panel.setup import PanelSetup
 
+    if not isinstance(sitting, Sitting):
+        if cfg.mode == "debate":
+            sitting = Sitting("debate", motion=cfg.motion, side=cfg.side, language=cfg.language,
+                              opponent=cfg.opponent, length=cfg.length)
+        else:
+            sitting = Sitting("upsc", form=sitting)
     s = cfg.settings
     cards, _origin = load_cards_or_builtin(s.cards_dir)
     session_id = f"voice-{uuid.uuid4().hex[:10]}"
     recorder = TraceRecorder(s.trace_dir, session_id)
     llm = build_llm(s, cfg.fake_llm, cards, recorder)
     deps = build_deps(s, llm, cards=cards)
-    options = PanelSetup(max_answers=max_answers)
-    if cfg.mode == "debate":
-        options = DebateSetup(motion=cfg.motion, user_side=Side(cfg.side),
-                              length=Length(cfg.length), language=cfg.language,
-                              opponent_style=OpponentStyle(cfg.opponent))
+    form = sitting.form
+    options: Any = PanelSetup(max_answers=max_answers)
+    if sitting.mode == "debate":
+        options = DebateSetup(motion=sitting.motion, user_side=Side(sitting.side),
+                              length=Length(sitting.length), language=sitting.language,
+                              opponent_style=OpponentStyle(sitting.opponent))
         form = None
-    return InterviewSession(deps=deps, form=form, recorder=recorder, analyzer=TurnAnalyzer(deps),
-                            session_id=session_id, max_turns=cfg.max_turns, mode=cfg.mode,
-                            mode_options=options)
+    elif sitting.mode == "partner":
+        from mockboard.modes.partner.session import PartnerSetup
+
+        options = PartnerSetup(topic=sitting.topic, language=sitting.language)
+        form = None
+    session = InterviewSession(deps=deps, form=form, recorder=recorder,
+                               analyzer=TurnAnalyzer(deps), session_id=session_id,
+                               max_turns=cfg.max_turns, mode=SITTING_MODES[sitting.mode],
+                               mode_options=options)
+    session.sitting_language = sitting.speech_language  # read by make_speech
+    return session
+
+
+def _speech_language(session: InterviewSession) -> str:
+    """The sitting's interview language: the form's, or the mode setup's (debate, partner)."""
+    language = getattr(session, "sitting_language", None)
+    if language:
+        return language
+    return session.form.interview_language if session.form else "hinglish"
 
 
 def make_speech(cfg: AppConfig, session: InterviewSession, ledger: PlaybackLedger):
@@ -196,15 +359,19 @@ def make_speech(cfg: AppConfig, session: InterviewSession, ledger: PlaybackLedge
     # UNVERIFIED: against the real Prisma and Timbre services (fake servers only so far).
     stt = PrismaSTTService.from_settings(
         s, keyterms=keyterms or None, topic=topic,
+        lang_code=lang_code_for(_speech_language(session), s),
         service_kwargs={"request_id_prefix": session.session_id},
     )
+    hinglish = _speech_language(session) == "hinglish"
     tts = TimbreTTSService.from_settings(s, voice=cfg.voice, sample_rate=s.tts_sample_rate,
-                                         ledger=ledger)
+                                         ledger=ledger,
+                                         text_filter=hinglish_for_tts if hinglish else None)
     return stt, tts
 
 
 async def run_session(
-    webrtc_connection, cfg: AppConfig, form: CandidateForm | None, max_answers: int | None = None
+    webrtc_connection, cfg: AppConfig, form: Sitting | CandidateForm | None,
+    max_answers: int | None = None,
 ) -> None:
     """One browser connection, until it disconnects or the session ends. `max_answers` is the
     answer cap the server's admission decision gave this connection (None: uncapped).
@@ -376,7 +543,7 @@ def _redeemed(identity: Identity) -> Identity:  # access:
 def create_app(cfg: AppConfig) -> FastAPI:
     # Localhost only, so no STUN/TURN servers: host candidates are enough (V1b adds them).
     handler = SmallWebRTCRequestHandler()
-    pending_forms: dict[str, CandidateForm | None] = {}
+    pending_forms: dict[str, Sitting | None] = {}  # the sitting each offer asked for
     pending_counts: dict[str, Any] = {}  # access: Decisions, committed once connected
     # access: pc_id to `decision.max_answers`. Only `on_connection` writes it; `start_session`
     # reads it and passes it to the panel. A missing entry means capped.
@@ -447,6 +614,11 @@ def create_app(cfg: AppConfig) -> FastAPI:
     @app.get("/")
     async def index():
         return FileResponse(HERE / "static" / "index.html")
+
+    @app.get("/guide")
+    async def guide():
+        """The guide: what is where, how to use each mode, what you can say (Nov 7, owner)."""
+        return FileResponse(HERE / "static" / "guide.html")
 
     @app.get("/static/{asset:path}")
     async def static_files(asset: str):
@@ -547,17 +719,241 @@ def create_app(cfg: AppConfig) -> FastAPI:
                                 "message": _limit_message(decision, book.config)}
         return _stamp_cookie(JSONResponse(payload), token, request)
 
+    @app.post("/api/mic-check")
+    async def mic_check_route(request: Request):
+        """Upgrade #2: `?language=<interview language>` and a raw body of 16 kHz mono 16-bit PCM
+        (at most `MAX_CHECK_SECONDS`). Prisma transcribes it with the locale the sitting will use,
+        and the reply says what was heard, which words matched, and what to do. Nothing is stored.
+        A real check spends a few seconds of Prisma, so it goes through access admission; when it
+        is not admitted the page is told politely and the interview is not affected."""
+        from mockboard.speech.mic_check import (
+            CHECK_LINES,
+            MAX_CHECK_SECONDS,
+            MIN_SPEECH_RMS,
+            lang_code_for,
+            rms,
+            score,
+            transcribe_once,
+        )
+
+        if cfg.mode == "debate":
+            return JSONResponse({"error": "mode"}, status_code=404)
+        language = request.query_params.get("language", "hinglish")
+        if language not in CHECK_LINES:
+            return JSONResponse({"error": "language"}, status_code=400)
+        pcm = await request.body()
+        rate = cfg.settings.stt_sample_rate
+        if len(pcm) > MAX_CHECK_SECONDS * rate * 2 or len(pcm) % 2:
+            return JSONResponse({"error": "audio"}, status_code=413)
+        lang_code = lang_code_for(language, cfg.settings)
+        silent = rms(pcm) < MIN_SPEECH_RMS
+        if silent:  # nothing to send: no Prisma call, no count
+            return JSONResponse(score(language, "", lang_code=lang_code, silent=True).as_json())
+        if cfg.fake_speech:  # the free demo: a fake "heard" line, labelled as such
+            result = score(language, CHECK_LINES[language], lang_code=lang_code).as_json()
+            return JSONResponse({**result, "demo": True})
+        identity, token = _identity(request, book)
+        decision = book.admit_utility(identity, datetime.now(UTC), UTILITY_MIC_CHECK)
+        if not (decision.allowed and decision.commit()):  # counted BEFORE Prisma is called
+            payload = {"limit": {"reason": decision.reason or "mic_check_used", "message": (
+                "You have used the microphone checks for now. The interview itself is not "
+                "affected, and you can begin whenever you are ready.")}}
+            return _stamp_cookie(JSONResponse(payload), token, request)
+        key = cfg.settings.gnani_api_key
+        try:
+            if key is None:
+                raise ConnectionError("no speech key configured")
+            heard, latency = await transcribe_once(
+                pcm, cfg.settings, lang_code=lang_code, api_key=key.get_secret_value(),
+            )
+            result = score(language, heard, lang_code=lang_code, latency_ms=latency)
+        except Exception as e:
+            logger.warning(f"[mic-check] {type(e).__name__}")
+            result = score(language, "", lang_code=lang_code, error=True)
+        return _stamp_cookie(JSONResponse(result.as_json()), token, request)
+
+    # --- Upgrade #3: a spoken second attempt at the weakest question --------------------------
+    # One attempt = one admission count (real speech only), then at most one spoken question
+    # (Timbre, in the member's voice) and one live listen (Prisma). The comparison is code-only.
+    replay_attempts: dict[str, dict[str, Any]] = {}
+
+    def _attempt(attempt_id: str) -> dict[str, Any] | None:
+        now = time.monotonic()
+        for key in [k for k, v in replay_attempts.items() if v["expires"] < now]:
+            replay_attempts.pop(key, None)
+        return replay_attempts.get(attempt_id)
+
+    @app.post("/api/replay/start")
+    async def replay_start(request: Request):
+        from mockboard.brain.agenda import SEGMENT_MEMBERS
+        from mockboard.speech.mic_check import CHECK_LINES
+
+        if cfg.mode == "debate":
+            return JSONResponse({"error": "mode"}, status_code=404)
+        try:
+            body = await request.json()
+        except ValueError:
+            body = None
+        body = body if isinstance(body, dict) else {}
+        language = str(body.get("language") or "hinglish")
+        if language not in CHECK_LINES:
+            return JSONResponse({"error": "language"}, status_code=400)
+        member = SEGMENT_MEMBERS.get(str(body.get("segment") or ""), "chairman")
+        token = None
+        if not cfg.fake_speech:
+            identity, token = _identity(request, book)
+            decision = book.admit_utility(identity, datetime.now(UTC), UTILITY_REPLAY)
+            if not (decision.allowed and decision.commit()):  # counted BEFORE any speech call
+                payload = {"limit": {"reason": decision.reason or "replay_used", "message": (
+                    "You have used the spoken practice attempts for now. You can still type a "
+                    "second answer below and compare it with your first.")}}
+                return _stamp_cookie(JSONResponse(payload), token, request)
+        if len(replay_attempts) > 500:
+            return JSONResponse({"error": "busy"}, status_code=503)
+        pick = cfg.voice_for()
+        attempt_id = uuid.uuid4().hex
+        replay_attempts[attempt_id] = {
+            "expires": time.monotonic() + REPLAY_TTL_S, "speak": 1, "listen": 1, "repair": 1,
+            "language": language, "voice": pick(member) if pick else cfg.voice,
+            "demo": cfg.fake_speech,
+        }
+        response = JSONResponse({"attempt": attempt_id, "demo": cfg.fake_speech})
+        return _stamp_cookie(response, token, request) if token else response
+
+    @app.post("/api/replay/{attempt_id}/question")
+    async def replay_question(attempt_id: str, request: Request):
+        from mockboard.speech.replay_speech import MAX_TTS_CHARS, synthesize, wav_bytes
+
+        attempt = _attempt(attempt_id)
+        if attempt is None or attempt["speak"] < 1:
+            return JSONResponse({"error": "attempt"}, status_code=404)
+        try:
+            body = await request.json()
+        except ValueError:
+            body = None
+        question = str((body or {}).get("question") or "").strip() if isinstance(body, dict) else ""
+        if not question or len(question) > MAX_TTS_CHARS:
+            return JSONResponse({"error": "question"}, status_code=400)
+        attempt["speak"] -= 1
+        if attempt["demo"]:
+            return Response(status_code=204)  # the free demo has no voice; the page shows text
+        key = cfg.settings.gnani_api_key
+        try:
+            if key is None:
+                raise ConnectionError("no speech key configured")
+            spoken = hinglish_for_tts(question) if attempt["language"] == "hinglish" else question
+            pcm = await synthesize(spoken, attempt["voice"], cfg.settings,
+                                   api_key=key.get_secret_value())
+        except Exception as e:
+            logger.warning(f"[replay] question audio {type(e).__name__}")
+            return JSONResponse({"error": "speech"}, status_code=502)
+        return Response(wav_bytes(pcm, cfg.settings.tts_sample_rate), media_type="audio/wav")
+
+    @app.websocket("/ws/replay/{attempt_id}")
+    async def replay_listen(websocket: WebSocket, attempt_id: str):
+        """Binary messages: 16 kHz mono 16-bit PCM as the candidate speaks. A text message
+        `{"type": "done"}` ends the answer. One JSON reply: `{"heard", "latency_ms"}`."""
+        from mockboard.speech.mic_check import lang_code_for
+        from mockboard.speech.replay_speech import PrismaRelay
+
+        await websocket.accept()
+        attempt = _attempt(attempt_id)
+        if attempt is None or attempt["listen"] < 1:
+            await websocket.close(code=1008)
+            return
+        attempt["listen"] -= 1
+        limit = REPLAY_MAX_AUDIO_S * cfg.settings.stt_sample_rate * 2
+        relay = None
+        try:
+            if not attempt["demo"]:
+                key = cfg.settings.gnani_api_key
+                if key is None:
+                    raise ConnectionError("no speech key configured")
+                relay = PrismaRelay(cfg.settings,
+                                    lang_code=lang_code_for(attempt["language"], cfg.settings),
+                                    api_key=key.get_secret_value())
+                await relay.open()
+            received = 0
+            while received < limit:
+                message = await asyncio.wait_for(websocket.receive(), REPLAY_MAX_AUDIO_S + 30)
+                if message.get("type") == "websocket.disconnect":
+                    return
+                data = message.get("bytes")
+                if data:
+                    received += len(data)
+                    if relay is not None:
+                        await relay.push(data)
+                elif message.get("text") and "done" in message["text"]:
+                    break
+            if relay is None:
+                await websocket.send_json({"heard": REPLAY_DEMO_ANSWER, "demo": True})
+            else:
+                heard, latency = await relay.finish()
+                await websocket.send_json({"heard": heard, "latency_ms": latency})
+        except WebSocketDisconnect:
+            return
+        except Exception as e:
+            logger.warning(f"[replay] listen {type(e).__name__}")
+            with contextlib.suppress(Exception):
+                await websocket.send_json({"error": "speech"})
+        finally:
+            if relay is not None:
+                await relay.close()
+            with contextlib.suppress(Exception):
+                await websocket.close()
+
+    @app.post("/api/replay/{attempt_id}/repair")
+    async def replay_repair(attempt_id: str, request: Request):
+        """Likely-misheard words in the second attempt (repair.v1, one Nova call per attempt).
+        The transcript is never edited; the page shows the pairs beside it."""
+        from mockboard.brain.heard_repair import MAX_CHARS, repairs_for
+
+        attempt = _attempt(attempt_id)
+        if attempt is None or attempt["repair"] < 1:
+            return JSONResponse({"error": "attempt"}, status_code=404)
+        try:
+            body = await request.json()
+        except ValueError:
+            body = None
+        body = body if isinstance(body, dict) else {}
+        heard = str(body.get("heard") or "")[:4000]
+        question = str(body.get("question") or "")[:400]
+        if not heard.strip() or attempt["demo"]:  # the free demo makes no model call
+            return JSONResponse({"likely": []})
+        attempt["repair"] -= 1
+        llm, kit, _ = utility_model()
+        from dataclasses import replace as _replace
+
+        kit = _replace(kit, versions={**kit.versions, "repair": cfg.settings.prompt_repair_version})
+        found = await repairs_for([heard], llm=llm, kit=kit, question=question)
+        pairs = [{"heard": p.heard, "likely": p.likely} for p in found
+                 if len(p.likely) <= MAX_CHARS]
+        return JSONResponse({"likely": pairs})
+
+    @app.post("/api/replay/compare")
+    async def replay_compare(request: Request):
+        """Free and code-only: the first answer and the second attempt, compared on observable
+        parts of an answer. No model call and no score."""
+        from mockboard.brain.second_attempt import MAX_ANSWER_CHARS, compare_attempts
+
+        try:
+            body = await request.json()
+        except ValueError:
+            body = None
+        if not isinstance(body, dict):
+            return JSONResponse({"error": "body"}, status_code=400)
+        before = str(body.get("before") or "")[:MAX_ANSWER_CHARS]
+        after = str(body.get("after") or "")[:MAX_ANSWER_CHARS]
+        return JSONResponse(compare_attempts(before, after).as_json())
+
     @app.post("/api/offer")
     async def offer(request: Request):
         body = await request.json()
         data = body.get("request_data") or body.get("requestData") or {}
-        form = None
-        if cfg.mode != "debate":
-            try:
-                form = parse_form(data.get("form"), allow_default=cfg.fake_llm)
-            except ValidationError as e:
-                problems = [f"{'.'.join(map(str, x['loc']))}: {x['msg']}" for x in e.errors()]
-                return JSONResponse({"error": "form", "problems": problems}, status_code=400)
+        try:
+            form = parse_sitting(data, cfg)  # the sitting: mode, form or setup
+        except SittingError as e:
+            return JSONResponse({"error": "form", "problems": e.problems}, status_code=400)
         # access: admission hook, before any WebRTC work
         now = datetime.now(UTC)
         identity, token = _identity(request, book)

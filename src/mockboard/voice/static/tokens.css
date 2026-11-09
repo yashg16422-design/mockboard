@@ -1,39 +1,39 @@
 /* Mock Board design tokens.
-   Near-black ground, hairline borders, one warm accent.
-   Fonts (SIL Open Font License 1.1, loaded from Google Fonts, checked Nov 1, 2026):
-   Inter; Fraunces (Undercase Type); IBM Plex Mono (reserved name "Plex", used unmodified);
-   Noto Sans Devanagari and Noto Serif Devanagari, so Hindi captions sit with the Latin text.
-   The one gradient lives on the voice indicator (see site.css), not here. */
+   A dark, living interface: near-black ground, hairline borders, one particle cloud in
+   mint and violet behind the page (presence.js). Owner's direction, Nov 7, 2026.
+   Fonts (SIL Open Font License 1.1, loaded from Google Fonts): Geist and Geist Mono (Vercel);
+   Noto Sans Devanagari and Noto Sans Tamil, so Hindi and Tamil captions sit with the Latin text. */
 
 :root {
-  --bg: #050505;
-  --bg-raised: #0a0a0a;
-  --bg-inset: #141414;
-  --fg: #e4e4e7;
-  --muted: #a1a1aa;
+  --bg: #030405;
+  --bg-raised: rgba(8, 10, 12, 0.82);
+  --bg-inset: rgba(255, 255, 255, 0.03);
+  --fg: #eef1f0;
+  --muted: rgba(238, 241, 240, 0.66);
   --faint: #8a8a93;
-  --line: rgba(255, 255, 255, 0.08);
-  --line-strong: rgba(255, 255, 255, 0.14);
-  --line-input: rgba(255, 255, 255, 0.28);
-  --accent: #e39a6a;
-  --accent-ink: #1a100c;
-  --voice-a: #f3c7a6;
-  --voice-b: #d4784a;
-  --field-mint: #7de8c6;
-  --field-violet: #8a7cff;
+  --line: rgba(255, 255, 255, 0.09);
+  --line-strong: rgba(255, 255, 255, 0.16);
+  --line-input: rgba(255, 255, 255, 0.2);
+  --accent: #5ef2c2;
+  --accent-ink: #04120d;
+  --solid: #eef1f0;
+  --solid-ink: #050607;
+  --mint: #5ef2c2;
+  --teal: #3fc6d9;
+  --violet: #7d5cff;
   --demo: #e4c48a;
-  --problem: #e7b4ae;
+  --problem: #f0b6ae;
 
-  --sans: "Inter", "Noto Sans Devanagari", sans-serif;
-  --serif: "Fraunces", "Noto Serif Devanagari", serif;
-  --mono: "IBM Plex Mono", ui-monospace, monospace;
+  --sans: "Geist", "Noto Sans Devanagari", "Noto Sans Tamil", ui-sans-serif, system-ui, sans-serif;
+  --display-font: "Geist", "Noto Sans Devanagari", "Noto Sans Tamil", ui-sans-serif, sans-serif;
+  --mono: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
 
-  --text-xs: 0.75rem;
-  --text-sm: 0.875rem;
-  --text-md: 1rem;
-  --text-lg: 1.25rem;
+  --text-xs: 0.6875rem;
+  --text-sm: 0.8125rem;
+  --text-md: 0.9375rem;
+  --text-lg: 1.1875rem;
   --text-xl: 1.75rem;
-  --display: clamp(2.5rem, 6vw, 4.25rem);
+  --display: clamp(3rem, 7.4vw, 7.25rem);
 
   --space-1: 8px;
   --space-2: 16px;
@@ -44,8 +44,9 @@
   --space-8: 64px;
   --space-10: 80px;
 
+  --gutter: 40px;
   --radius: 2px;
-  --measure: 66ch;
-  --page: 1080px;
+  --measure: 62ch;
   --line-height: 1.6;
+  --ease: cubic-bezier(0.2, 0.7, 0.1, 1);
 }

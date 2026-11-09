@@ -414,7 +414,9 @@ class CandidateForm(_Model):
     hobbies: list[str] = Field(default_factory=list, max_length=3)
     optional_subject: str | None = Field(default=None, max_length=80)
     work_experience: str | None = Field(default=None, max_length=200)
-    interview_language: str = Field(default="hinglish", pattern=r"^(hinglish|hindi|english)$")
+    interview_language: str = Field(
+        default="hinglish", pattern=r"^(hinglish|hindi|english|tanglish)$"
+    )
 
     @field_validator("hobbies")
     @classmethod
@@ -667,6 +669,8 @@ class PanelDecision(_Model):
     close_reason: CloseReason | None = None
     finished: bool = False
     pending_end: bool = False  # the value after this turn
+    # The candidate asked for a moment to think: the next turn is a long one (think_time).
+    thinking: bool = False
     request_kind: str | None = None
     request_source: str = "none"
     request_pattern: str = ""
@@ -756,6 +760,25 @@ class WeakestMoment(_Model):
     score: int = 0
 
 
+class HeardTurn(_Model):
+    """One answer as the board heard it: the transcript, the listener's note and what came next.
+
+    Built by code from the session state (`report_panel.heard_turns`), never by the judge. It lets
+    the candidate see a misrecognition or a misunderstanding instead of guessing at it."""
+
+    turn_id: str
+    member: str = ""
+    question: str = ""
+    said: str = ""  # the speech-to-text transcript, trimmed
+    understood: str = ""  # the listener's own-words note, English; empty when there is none
+    status: str = "answer"  # answer | request | unclear | silence | not_analysed | honest_unknown
+    request: str = ""  # plain words, e.g. "change the topic"; empty when none
+    request_source: str = ""  # plain words, e.g. "the board's rules"
+    next_step: str = ""  # what the board did next, in plain words
+    # Likely-misheard words, as {"heard", "likely"}: shown beside the transcript, never applied.
+    likely: list[dict[str, str]] = Field(default_factory=list)
+
+
 class PracticeCompare(_Model):
     """Text-only replay comparison (Ruling 48). No audio."""
 
@@ -793,6 +816,8 @@ class SessionReport(_Model):
     form: CandidateForm | None = None
     # The members' closing talk, built from their notes and the plan. Empty for debate.
     discussion: list[str] = Field(default_factory=list)
+    # How the board heard each answer (transcript, listener note, next step). Empty for debate.
+    heard: list[HeardTurn] = Field(default_factory=list)
 
     @field_validator("scores")
     @classmethod

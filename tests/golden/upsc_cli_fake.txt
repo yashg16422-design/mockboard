@@ -8,7 +8,7 @@ Degree subject: Electronics
 Hobbies, up to 3, comma-separated (optional): chess, cycling
 UPSC optional subject (optional): Public Administration
 Work experience in one line (optional): 
-Interview language [hinglish/hindi/english] (default hinglish): hinglish
+Interview language [hinglish/hindi/english/tanglish] (default hinglish): hinglish
 
 Agenda: nova (11 questions written by the planner, 0 replaced by templates, <n> ms)
 
@@ -106,28 +106,89 @@ Board discussion:
   Professor Sen still had ready: Cycling mein aapko kya kathin laga, aur usse aapne dhairya ke baare mein kaise seekha?
   Shri Rathore: I heard this. Candidate spoke about pakshon, karunga, dekhunga.
   Shri Rathore still had ready: Apni pasand ke kisi rashtriya mudde par aap doosre paksh ki baat ko kaise tolte hain?
-  Chairperson: The thin moment to practise is this question. Agar yeh tareeka na chale, to aapka doosra raasta kya hoga?
+  Chairperson: The thin moment to practise is this question. Haal ke samay mein aapne kis rashtriya mudde ko dhyan se follow kiya hai, aur kyun?
 By panel member:
   Chairperson Sharma (form_hr)
     Candidate spoke about electronics, training, badhaunga. Candidate spoke about exampleland, tourism, percent.
   Shrimati Menon (home_district)
     Candidate spoke about environment, carrying, capacity. Candidate spoke about karunga, tourism, important. Candidate spoke about homestays, chahiye, management.
   Doctor Iyer (degree)
-    Candidate spoke about electronics, padhne, system. Candidate spoke about please, repeat. Candidate spoke about technology, daftaron, training. Candidate spoke about digital, system, chahiye.
+    Candidate spoke about electronics, padhne, system. Candidate spoke about technology, daftaron, training. Candidate spoke about digital, system, chahiye.
   Professor Sen (interests)
-    Candidate spoke about seekha, jaldbaazi, chahiye. Candidate spoke about chess, alawa, topic. The candidate asked to change topic.
+    Candidate spoke about seekha, jaldbaazi, chahiye. The candidate asked to change the topic.
   Shri Rathore (current_affairs)
     Candidate spoke about public, administration, zameeni. Candidate spoke about samasya, samajhni, chahiye. Candidate spoke about samagri, zaroorat, pahunchaunga. Candidate spoke about pakshon, karunga, dekhunga.
-    Weakest question: Agar yeh tareeka na chale, to aapka doosra raasta kya hoga?
+    Weakest question: Haal ke samay mein aapne kis rashtriya mudde ko dhyan se follow kiya hai, aur kyun?
       - Define the terms you will use, in one sentence.
       - Name two sides of the question and who is affected.
       - Say what you would do first, and why.
       - Name one trade-off you would not ignore.
+How the board heard you:
+  t0 [Chairperson Sharma] answer
+    heard: Kanpur mein maine dekha ki small electronics repair shops bahut hain, lekin skilled training kam hai. Main ITI ke saath tie-up karke repair skilling badhaunga.
+    understood: Candidate spoke about electronics, training, badhaunga.
+    next: the board asked a follow-up on this answer
+  t1 [Chairperson Sharma] answer
+    heard: Exampleland mein tourism GDP ka 30 percent hai in 2023, isliye tourism hi growth ka main engine hai and jobs bhi wahi deta hai.
+    understood: Candidate spoke about exampleland, tourism, percent.
+    next: the board handed over to Shrimati Menon
+  t2 [Shrimati Menon] answer
+    heard: Mujhe lagta hai tourism se local logon ko rozgaar milta hai. Lekin environment par bhi asar padta hai, so carrying capacity rules zaroori hain.
+    understood: Candidate spoke about environment, carrying, capacity.
+    next: the board asked where your figure came from
+  t3 [Shrimati Menon] answer
+    heard: Haan, shayad mera figure galat tha. Main card wala data check karunga, lekin mera point ki tourism important hai abhi bhi valid hai.
+    understood: Candidate spoke about karunga, tourism, important.
+    next: the board asked a follow-up on this answer
+  t4 [Shrimati Menon] answer
+    heard: Homestays aur local guides ko train karna chahiye. Saath hi waste management par cess lagana chahiye.
+    understood: Candidate spoke about homestays, chahiye, management.
+    next: the board handed over to Doctor Iyer
+  t5 [Doctor Iyer] answer
+    heard: Electronics padhne se mujhe system ki tarah sochna aaya, har cheez ke input aur output hote hain.
+    understood: Candidate spoke about electronics, padhne, system.
+    next: the board asked you to weigh another side
+  t6 [Doctor Iyer] request
+    heard: please repeat
+    request: hear the question again (found by the board's phrase rules)
+    next: the board repeated the question
+  t7 [Doctor Iyer] answer
+    heard: Mujhe lagta hai ki technology se sarkari daftaron mein kaam tez ho sakta hai, lekin logon ki training bhi zaroori hai.
+    understood: Candidate spoke about technology, daftaron, training.
+    next: the board asked for a reason or an example
+  t8 [Doctor Iyer] answer
+    heard: Digital system sab jagah kaam nahi karta, isliye pehle kuch gaon mein try karna chahiye.
+    understood: Candidate spoke about digital, system, chahiye.
+    next: the board handed over to Professor Sen
+  t9 [Professor Sen] answer
+    heard: Mera hobby chess hai, usse maine seekha ki jaldbaazi mein faisla nahi lena chahiye.
+    understood: Candidate spoke about seekha, jaldbaazi, chahiye.
+    next: the board asked you to weigh another side
+  t10 [Professor Sen] request
+    heard: chess ke alawa kisi aur topic pe baat karte hain
+    request: change the topic (found by the board's phrase rules)
+    next: the board handed over to Shri Rathore
+  t11 [Shri Rathore] answer
+    heard: Public administration mujhe isliye pasand hai kyunki usme niti aur zameeni kaam dono hain.
+    understood: Candidate spoke about public, administration, zameeni.
+    next: the board asked you to weigh another side
+  t12 [Shri Rathore] honest_unknown
+    heard: Mujhe exact pata nahi hai, but I think local logon se baat karke pehle samasya samajhni chahiye.
+    understood: Candidate spoke about samasya, samajhni, chahiye.
+    next: the board gave you time and an easier place to start
+  t13 [Shri Rathore] answer
+    heard: Pehle rahat samagri ki list banakar sabse zaroorat mand logon tak pahunchaunga, aur gaon ke pradhan se baat karunga.
+    understood: Candidate spoke about samagri, zaroorat, pahunchaunga.
+    next: the board asked the next prepared question
+  t14 [Shri Rathore] answer
+    heard: Main dono pakshon se baat karunga, lekin kaam rokne ka asar bhi dekhunga.
+    understood: Candidate spoke about pakshon, karunga, dekhunga.
+    next: the board closed the interview
 Practice plan:
   - Practise answering in two breaths: the point, then one reason.
   - Take one claim you made and name the strongest objection to it.
-  - Say the same answer once more, in three short sentences only.
-Replay this moment (text): Agar yeh tareeka na chale, to aapka doosra raasta kya hoga?
+  - Pick one issue you follow, two sides, and a first administrative step.
+Replay this moment (text): Haal ke samay mein aapne kis rashtriya mudde ko dhyan se follow kiya hai, aur kyun?
 note: Request at t6: repeat, found by the board's rules (repeat_bare).
 note: Request at t10: change_topic, found by the board's rules (change_other_baat).
 note: Listed request sentences work every time, in our tests, with the listener up or down, in Latin and Devanagari. Rephrased requests are caught less often: 0.75 on held-out synthetic lines by rules alone. Accuracy on real speech has not been measured yet.

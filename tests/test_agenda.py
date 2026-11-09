@@ -31,7 +31,7 @@ from mockboard.brain.agenda import (
 from mockboard.brain.schemas import Agenda, AgendaSeed, AgendaSegment, CandidateForm
 
 SAMPLE_FORM = Path(__file__).parent.parent / "examples" / "forms" / "sample_form.json"
-LANGUAGES = ("hinglish", "english", "hindi")
+LANGUAGES = ("hinglish", "english", "hindi", "tanglish")
 
 
 def make_form(**overrides) -> CandidateForm:
@@ -77,7 +77,7 @@ def test_fixed_generic_seeds_pass_with_nothing_usable_in_the_form(language):
 
 def test_every_situation_passes_in_every_language():
     for situation in SITUATIONS:
-        assert set(situation) == {"hi-en", "en", "hi"}
+        assert set(situation) == {"hi-en", "en", "hi", "ta-en"}
         for text in situation.values():
             assert seed_violations(text, CURRENT_AFFAIRS) == []
 

@@ -26,12 +26,13 @@ import time
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
-from mockboard.brain.actor import FILLER_TEMPLATES, LineResult, language_mix
+from mockboard.brain.actor import LineResult, filler_for, language_mix, token_budget
 from mockboard.brain.agenda import (
     NEUTRAL_SEEDS,
     SEGMENT_MEMBERS,
     build_fallback_agenda,
     capped_budgets,
+    is_situation,
     one_question_agenda,
     seed_alternatives,
 )
@@ -78,6 +79,10 @@ REQUEST_ACCURACY_NOTE = (
     "Listed request sentences work every time, in our tests, with the listener up or down, in "
     "Latin and Devanagari. Rephrased requests are caught less often: 0.75 on held-out synthetic "
     "lines by rules alone. Accuracy on real speech has not been measured yet."
+)
+TAMIL_REQUEST_NOTE = (
+    "Tamil-script and romanised Tanglish requests are matched by a short phrase list of our own. "
+    "A fluent Tamil speaker has not reviewed it, and it has not been tested on real speech."
 )
 _SOURCE_WORDS = {
     "rules": "found by the board's rules",
@@ -193,6 +198,17 @@ class PanelHooks:
         """The answer cap of this interview; None means no cap."""
         return self.setup.max_answers
 
+    def expects_long_turn(self) -> bool:
+        """True when the candidate's next turn may be long, so a pause should not end it: after
+        they asked for a moment to think, and after a scenario question (owner's request, Nov 7).
+        The voice loop then uses the long-turn values (`Settings.voice_long_turn_*`)."""
+        d = self.decision
+        if d is None or self.session.state.finished or d.finished:
+            return False
+        if d.thinking or d.move.rule_id == "D-TWIST":
+            return True
+        return d.seed is not None and is_situation(d.seed)
+
     def current_segment(self) -> str:
         return self.session.state.topic
 
@@ -229,7 +245,7 @@ class PanelHooks:
             Move.next_question, Move.move_on
         ):
             return d.panel.seed
-        return FILLER_TEMPLATES.get(move.move, FILLER_TEMPLATES[Move.probe])
+        return filler_for(move.move, language_mix(self.persona(move.member), self.session.form))
 
     def confer_line(self) -> str | None:
         """The Chairperson's time line when the interview is ending and no close was spoken: the
@@ -378,7 +394,8 @@ class PanelHooks:
         tuning = self.settings
         opener = await generate_panel_opener(
             s.deps.llm, self.kit, s.form, s.deps.cards, seed,
-            max_words=max(tuning.actor_max_words, 40), max_tokens=tuning.actor_max_tokens,
+            max_words=max(tuning.actor_max_words, 40),
+            max_tokens=token_budget(tuning.actor_max_tokens, self.mix),
             turn_id="opener", first_token_budget_s=tuning.actor_first_token_budget_s,
         )
         self.director.memory = opening_memory(self.agenda, opener.text)
@@ -493,7 +510,11 @@ class PanelHooks:
             repeat_text=d.repeat_text, line_complete=d.line_complete,
             after_handoff=d.node == "handoff", last_question=self.director.memory.last_question,
             last_answer=answer, avoid=self.avoid_for(d), max_words=tuning.actor_max_words,
-            max_tokens=tuning.actor_max_tokens, turn_id=turn.turn_id, claim=claim, card=card,
+            max_tokens=token_budget(
+                tuning.actor_max_tokens,
+                language_mix(self.persona(move.member), s.form),
+            ),
+            turn_id=turn.turn_id, claim=claim, card=card,
             on_first_token=lambda: tr.mark("actor_first_token"),
             first_token_budget_s=tuning.actor_first_token_budget_s,
             filler_played=lambda: turn.filler_played,
@@ -646,6 +667,9 @@ class PanelHooks:
         if not notes:
             notes.append("No candidate request was detected in this session.")
         notes.append(REQUEST_ACCURACY_NOTE)
+        form = getattr(self.session, "form", None)
+        if form is not None and form.interview_language == "tanglish":
+            notes.append(TAMIL_REQUEST_NOTE)
         if self._briefing_source == "search":
             notes.append(
                 "The members' briefing came from a news search at the start of the sitting."
@@ -653,6 +677,34 @@ class PanelHooks:
         elif self._briefing_source == "file":
             notes.append("A news search returned nothing usable, so the saved briefing stands.")
         return notes
+
+    async def _with_repairs(self, report):
+        """Likely-misheard words beside each answer in "How the board heard you" (repair.v1).
+        One call for the whole sitting; any failure leaves the rows as they were."""
+        from dataclasses import replace as _replace
+
+        from mockboard.brain.heard_repair import repairs_for
+
+        rows = [r for r in report.heard if r.status in ("answer", "honest_unknown") and r.said]
+        if not rows:
+            return report
+        s = self.session
+        kit = _replace(self.kit, versions={
+            **self.kit.versions, "repair": s.deps.settings.prompt_repair_version,
+        })
+        found = await repairs_for([r.said.removesuffix(" …") for r in rows],
+                                  llm=s.deps.llm, kit=kit, tag_=s.session_id)
+        if not found:
+            return report
+        by_turn: dict[str, list[dict[str, str]]] = {}
+        for pair in found:
+            turn_id = rows[pair.answer - 1].turn_id
+            by_turn.setdefault(turn_id, []).append({"heard": pair.heard, "likely": pair.likely})
+        heard = [
+            r.model_copy(update={"likely": by_turn[r.turn_id]}) if r.turn_id in by_turn else r
+            for r in report.heard
+        ]
+        return report.model_copy(update={"heard": heard})
 
     async def report(self, language: Any = None):
         s = self.session
@@ -693,7 +745,9 @@ class PanelHooks:
             requests=self.director.requests,
             pressure_turns=pressure,
             form=s.form,
+            moves=s.state.moves,
         )
+        report = await self._with_repairs(report)
         weakest = report.weakest.question if report.weakest is not None else None
         return report.model_copy(
             update={

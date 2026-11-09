@@ -26,7 +26,7 @@ from mockboard.brain.director import (
     opening_memory,
 )
 from mockboard.brain.fake_responders import listener_responder, make_fake_llm
-from mockboard.brain.listener import to_analysis
+from mockboard.brain.listener import build_listener_user, to_analysis
 from mockboard.brain.prompts import PROMPT_DIR, load_prompt
 from mockboard.brain.requests import _WEAK_CHANGE, detect_request, word_count
 from mockboard.brain.schemas import Analysis, CompletedTurn, Segment
@@ -114,6 +114,26 @@ def test_the_upsc_listener_model_knows_nothing_of_requests():
     assert heard.candidate_request == "skip"
 
 
+def test_listener_v5_preserves_meaning_critical_words_and_v4_stays():
+    v5 = load_prompt("listener", 5)
+    assert v5.meta["version"] == 5
+    body = " ".join(v5.body.split())
+    for needle in ("Preserve negation", "final corrected position", "do not guess"):
+        assert needle in body
+    speech = "Kanpur achchhi jagah hai—actually, achchhi jagah nahi hai."
+    user = build_listener_user(
+        Segment(segment_id="s1", segment_index=0, text=speech), "Where would you begin?"
+    )
+    assert speech in user
+
+
+def test_listener_v6_accepts_tamil_script_and_tanglish_request_examples():
+    v6 = load_prompt("listener", 6)
+    body = " ".join(v6.body.split())
+    assert v6.meta["version"] == 6
+    assert "Tamil script" in body and "வேறு தலைப்புக்கு போகலாமா" in body
+
+
 def test_listener_v4_exists_names_the_field_and_v3_stays():
     v4 = load_prompt("listener", 4)
     assert v4.meta["tool"].startswith("record_panel_analysis") and v4.meta["version"] == 4
@@ -123,6 +143,7 @@ def test_listener_v4_exists_names_the_field_and_v3_stays():
         assert needle in body, needle
     assert (PROMPT_DIR / "listener.v3.md").exists()
     assert "candidate_request" not in load_prompt("listener", 3).body
+    assert (PROMPT_DIR / "listener.v4.md").exists()
     assert "| listener | 4 |" in (PROMPT_DIR / "CHANGELOG.md").read_text(encoding="utf-8")
 
 
@@ -134,7 +155,7 @@ def test_the_upsc_profile_wires_the_panel_listener_prompt_tool_and_model(setting
 
     deps = build_deps(settings, make_fake_llm(cards), cards=cards)
     assert get_profile(None).listener_tool == (PANEL_LISTENER_TOOL, PanelListenerOutput)
-    assert deps.kit.versions["listener"] == settings.prompt_listener_version == 4
+    assert deps.kit.versions["listener"] == settings.prompt_listener_version == 6
     assert "candidate_request" in deps.kit.system("listener")[1].text
 
 

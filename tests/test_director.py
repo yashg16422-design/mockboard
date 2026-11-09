@@ -299,11 +299,23 @@ async def test_a_request_in_a_declining_reply_leaves_no_avoid_terms():
     [
         ("haan", True), ("Haan ji.", True), ("yes please", True), ("ji sir", True),
         ("bilkul", True), ("theek hai", True), ("हां जी", True), ("ज़रूर", True),
+        ("ஆம்", True), ("சரி", True), ("இல்லை", False), ("வேண்டாம்", False),
         ("interview khatam karte hain", True), ("haan interview khatam karte hain", True),
         ("", False), ("nahi", False), ("na", False), ("no", False), ("hai", False),
         ("haan nahi", False), ("nahi interview khatam karte hain", False),
         ("interview khatam mat karo", False), ("haan lekin", False), ("शायद", False),
         ("don't end it", False), ("sir", False),
+        # a yes, then end or thanks words (real-user review): closes
+        ("Yes sir, please end it", True), ("Yes, end it", True), ("yes I want to end", True),
+        ("Ji haan, end kar dijiye", True), ("Yes, thank you", True), ("हाँ, धन्यवाद", True),
+        # Tamil and Devanagari "sir" (found writing the demo, Nov 7)
+        ("ஆமாம் சார்.", True), ("ஆமாம் சார், இங்கே முடிக்கலாம்.", True), ("சரி சார்", True),
+        ("जी सर", True), ("சார்", False), ("இல்லை சார்", False),
+        ("ஆமாம் சார், ஆனால் ஒரு கேள்வி", False),
+        # a yes, then anything else: resumes
+        ("yes, continue", False), ("haan lekin ek sawal", False),
+        ("yes, I want to continue", False),
+        ("thank you", False), ("end it", False), ("yes, don't end it", False),
     ],
 )  # fmt: skip
 def test_is_clear_yes(text: str, expected: bool):
@@ -483,7 +495,15 @@ async def test_a_plain_run_asks_the_situation_inside_the_budget(cap: int | None)
     ]  # fmt: skip
     assert len(must) == 1
     budget = sim.agenda.segment("current_affairs").budget
-    assert sim.log[-(1 + 1)][1] is must[0] or budget == 1
+    # Nov 7: a situation with a twist is asked one place early and its twist takes the last place
+    # (inside the budget); with room for only one question there is no twist.
+    last_asked = sim.log[-(1 + 1)][1]
+    if budget == 1:
+        return
+    if last_asked.move.rule_id == "D-TWIST":
+        assert sim.log[-(1 + 2)][1] is must[0]
+    else:
+        assert last_asked is must[0]
 
 
 def test_next_seed_at_budget_one_returns_the_must_ask_at_index_two():
@@ -498,7 +518,9 @@ def test_next_seed_goes_by_questions_left_not_index():
     segment = agenda.segment("current_affairs")
     memory = opening_memory(agenda)
     assert next_seed(segment, memory, 4)[0] == 0
-    assert next_seed(segment, memory, 2)[0] == 0
+    assert next_seed(segment, memory, 3)[0] == 0
+    # Nov 7: a situation with a twist waits for the last two places, not the last one.
+    assert next_seed(segment, memory, 2)[0] == 2
     assert next_seed(segment, memory, 1)[0] == 2
     assert next_seed(segment, memory, 0) is None
 
@@ -533,7 +555,11 @@ async def test_a_skipped_situation_counts_as_asked():
     while sim.log == [] or sim.log[-1][1].seed_index != 2:
         await sim.say()
     d = await sim.say(SKIP)
-    assert d.finished and d.close_reason == "agenda"
+    # Nov 7: the situation now takes the second-last place, so a skip may leave one plain
+    # question; the situation is never asked again and the sitting ends on the agenda.
+    rest = [d] if d.finished else [d, *await sim.plain_until_done()]
+    again = [x for x in rest if x.seed_segment == "current_affairs" and x.seed_index == 2]
+    assert again == [] and rest[-1].finished and rest[-1].close_reason == "agenda"
 
 
 async def test_change_topic_can_leave_the_situation_unasked():
@@ -591,6 +617,30 @@ async def test_a_prepared_subject_gets_one_follow_up_when_a_later_question_remai
     assert d.move.move == Move.probe and d.move.rule_id == "D-BRIEF"
     again = await sim.say("Gig workers ki income uncertain rehti hai, registration door hai.")
     assert again.move.rule_id != "D-BRIEF"
+
+
+async def test_a_substantive_answer_gets_one_probe_before_move_on_and_then_the_plan_resumes():
+    sim = Sim(agenda=custom_agenda(5))
+    turn, analysis = sim.build(
+        "I would protect small repair shops first because local jobs depend on them."
+    )
+    turn = turn.model_copy(update={
+        "base_move": turn.base_move.model_copy(update={"move": Move.move_on, "rule_id": "R5"})
+    })
+    decision = await sim.director.decide_turn(turn)
+    assert decision.move.move == Move.probe and decision.move.rule_id == "D-ANSWER"
+    sim.apply(decision, analysis, turn.raw_text)
+
+    next_turn, next_analysis = sim.build(
+        "The first step would be a short registration camp with the ward office."
+    )
+    next_turn = next_turn.model_copy(update={
+        "base_move": next_turn.base_move.model_copy(update={"move": Move.counter, "rule_id": "R6"})
+    })
+    next_move = await sim.director.decide_turn(next_turn)
+    sim.apply(next_move, next_analysis, next_turn.raw_text)
+    assert next_move.move.move == Move.next_question
+    assert next_move.move.rule_id == "D-SEED" and next_move.seed_index == 1
 
 
 async def test_an_ordinary_answer_is_not_a_briefing_follow_up():

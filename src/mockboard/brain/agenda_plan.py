@@ -156,8 +156,14 @@ def names_the_place(seed: str, form: CandidateForm) -> str | None:
     return None
 
 
+# Word limit of a planned question by plan prompt version: v4 asks for richer questions (a role
+# or situation from the form, and a trade-off), so they may run longer. Others keep 28.
+PLAN_MAX_WORDS: dict[int, int] = {4: 36}
+
+
 def planned_seed_violations(
-    text: str, segment_id: str, form: CandidateForm, avoid: Sequence[str] = ()
+    text: str, segment_id: str, form: CandidateForm, avoid: Sequence[str] = (),
+    max_words: int = MAX_SEED_WORDS,
 ) -> list[str]:
     """Why Nova's seed is not fit to ask (empty list = fit). Stricter than `seed_violations`,
     which the templates also pass. Pure."""
@@ -174,9 +180,9 @@ def planned_seed_violations(
     words = seed.split()
     if len(words) < MIN_PLANNED_WORDS:
         problems.append(f"under {MIN_PLANNED_WORDS} words")
-    if len(words) > MAX_SEED_WORDS:
-        problems.append(f"over {MAX_SEED_WORDS} words")
-    problems += seed_violations(seed, segment_id, form)
+    if len(words) > max_words:
+        problems.append(f"over {max_words} words")
+    problems += seed_violations(seed, segment_id, form, max_words)
     head = seed.rpartition(",")[0]
     if head and _COPULA.search(head) and not _QUESTION_WORD.search(head):
         problems.append("states something before it asks")
@@ -228,6 +234,7 @@ def validate_plan(
     fallback: Agenda,
     form: CandidateForm,
     avoid: Sequence[str] = (),
+    max_words: int = MAX_SEED_WORDS,
 ) -> tuple[Agenda, PlanReport]:
     """Merge Nova's seeds into the fallback agenda, one seed at a time. Never raises.
 
@@ -250,7 +257,7 @@ def validate_plan(
                 break
             template = seeds[i]
             text = " ".join(proposed[k].split())
-            problems = planned_seed_violations(text, segment.id, form, avoid)
+            problems = planned_seed_violations(text, segment.id, form, avoid, max_words)
             if not problems and text != template.text and text in taken:
                 problems = ["repeats another question"]
             if problems:
@@ -362,7 +369,9 @@ async def validate_node(state: PlanState) -> dict[str, Any]:
         report = PlanReport("failed", error=state.get("error", "no plan"), ms=ms)
         return {"agenda": state["fallback"], "report": report}
     try:
-        agenda, report = validate_plan(out, state["fallback"], state["form"], state["avoid"])
+        version = state["kit"].versions.get("agenda_plan", 0) if state.get("kit") else 0
+        agenda, report = validate_plan(out, state["fallback"], state["form"], state["avoid"],
+                                       PLAN_MAX_WORDS.get(version, MAX_SEED_WORDS))
     except Exception as exc:  # validation is pure, but a bug here must not stop an interview
         report = PlanReport("failed", error=f"validate: {type(exc).__name__}: {exc}"[:300], ms=ms)
         return {"agenda": state["fallback"], "report": report}
@@ -404,8 +413,10 @@ async def plan_agenda(
     """The planned agenda and what came of it. Never raises (a cancelled call does): any failure
     returns `fallback` itself. A Hindi interview is not planned: no call is made. `briefing` is
     attached only when a real sitting fetched usable headlines."""
-    if form.interview_language == "hindi":
-        return fallback, PlanReport("skipped", error="hindi interviews keep the template questions")
+    if form.interview_language in {"hindi", "tanglish"}:
+        return fallback, PlanReport(
+            "skipped", error=f"{form.interview_language} interviews keep the template questions"
+        )
     started = time.monotonic()
     try:
         state = await _compiled().ainvoke(

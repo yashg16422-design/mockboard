@@ -27,7 +27,6 @@ from typing import Any
 
 from mockboard.brain.actor import (
     _SENTENCE_BREAK,  # the sentence gate's own break: held text is released where it would pass
-    FILLER_TEMPLATES,
     PLACE_FACT_PATTERNS,
     ActorBudgetExceeded,
     LineResult,
@@ -37,6 +36,7 @@ from mockboard.brain.actor import (
     cap_words,
     challenge_facts,
     collect_line,
+    filler_for,
     guard_fact_challenge,
     language_mix,
     opener_violations,
@@ -395,7 +395,7 @@ async def compose_panel_line(
         fixed.append(PrefacePart(member=move.member, text=clarify))
         return fixed_line(fixed, guard="clarify_template")
     if move.move == Move.fact_challenge and (claim is None or card is None):
-        fixed.append(PrefacePart(member=move.member, text=FILLER_TEMPLATES[Move.probe]))
+        fixed.append(PrefacePart(member=move.member, text=filler_for(Move.probe, mix)))
         return fixed_line(fixed, guard="no_card")
 
     seeded = move.move in (Move.next_question, Move.move_on) and bool(panel.seed)
@@ -441,7 +441,7 @@ async def compose_panel_line(
         # Quoting the candidate is how a specific follow-up dies and becomes "please finish
         # your point". Keep a real question for that move, still without their words.
         if call.guard == "quotes_answer":
-            question = FILLER_TEMPLATES.get(move.move, FILLER_TEMPLATES[Move.probe])
+            question = filler_for(move.move, mix)
             return say(
                 question, is_fallback=True, guard="quotes_answer",
                 error="every sentence refused", fallback_kind="move_template",
@@ -458,7 +458,7 @@ async def compose_panel_line(
         if seeded and panel.seed and find_avoided(panel.seed, avoid) is None:
             question = panel.seed
         else:
-            question = FILLER_TEMPLATES.get(move.move, FILLER_TEMPLATES[Move.probe])
+            question = filler_for(move.move, mix)
         return say(f"{text} {question}".strip(), is_fallback=True, guard=gate.reason,
                    fallback_kind="move_template", retried=call.retried)
     return say(text, guard=gate.reason if gate and gate.stopped else "", retried=call.retried)

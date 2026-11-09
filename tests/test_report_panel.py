@@ -10,6 +10,7 @@ from mockboard.brain.report_panel import (
     TextReplay,
     decorate_report,
     outline_violations,
+    page_fields,
     pick_weakest,
     score_turn,
 )
@@ -17,6 +18,10 @@ from mockboard.brain.schemas import (
     Analysis,
     Balance,
     CandidateTurn,
+    Dimension,
+    DimensionScore,
+    Evidence,
+    MemberReport,
     PanelRequest,
     ReportLanguage,
     Segment,
@@ -102,6 +107,37 @@ def test_decorate_report_fills_members_plan_and_form(form):
     assert out.practice_plan
     assert out.form == form
     assert any(b.weakest_question for b in out.by_member)
+
+
+def test_page_fields_exposes_scores_and_the_evidence_behind_them():
+    report = fallback_report(
+        session_id="s", ledger=[], moves=[], language=ReportLanguage.en,
+        reason="test", feature_flags={}, prompt_versions={},
+    ).model_copy(update={
+        "scores": [DimensionScore(
+            dimension=Dimension.clear_logical_exposition,
+            score=4,
+            rationale="The answer gave a clear sequence.",
+            evidence=[Evidence(turn_id="t1", quote="I would first hear both sides.")],
+        )],
+        "by_member": [MemberReport(
+            name="Chairperson Sharma",
+            questions=["What would you do first?"],
+            evidence=["I would first hear both sides."],
+        )],
+    })
+
+    fields = page_fields(report)
+
+    assert fields["scores"] == [{
+        "dimension": "clear_logical_exposition",
+        "score": 4,
+        "rationale": "The answer gave a clear sequence.",
+        "practice_indicator": False,
+        "evidence": ["I would first hear both sides."],
+    }]
+    assert fields["members"][0]["questions"] == ["What would you do first?"]
+    assert fields["members"][0]["evidence"] == ["I would first hear both sides."]
 
 
 def test_text_replay_compares_word_counts(tmp_path, form):

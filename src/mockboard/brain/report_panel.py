@@ -19,9 +19,11 @@ from mockboard.brain.panel_actor import question_part
 from mockboard.brain.schemas import (
     UPSC_QUALITIES,
     Analysis,
+    BoardMove,
     CandidateForm,
     CandidateTurn,
     Dimension,
+    HeardTurn,
     MemberReport,
     Move,
     PanelRequest,
@@ -35,6 +37,7 @@ __all__ = [
     "ReplaySource",
     "TextReplay",
     "decorate_report",
+    "heard_turns",
     "outline_violations",
     "page_fields",
     "pick_weakest",
@@ -42,7 +45,7 @@ __all__ = [
     "score_turn",
 ]
 
-REQUEST_KINDS = frozenset({"change_topic", "skip", "repeat", "clarify_question", "end"})
+REQUEST_KINDS = frozenset({"change_topic", "skip", "repeat", "clarify_question", "end", "think"})
 PRESSURE_MOVES = frozenset({
     Move.pressure, Move.counter, Move.steelman, Move.fact_challenge, Move.interrupt,
 })
@@ -117,8 +120,8 @@ def score_turn(turn: CandidateTurn, *, request_ids: set[str], pressure: bool) ->
     if kind in REQUEST_KINDS or turn.turn_id in request_ids:
         return None
     score = 0
-    if analysis is not None and analysis.honest_unknown:
-        score += 4
+    # An honest "I do not know" is not ranked as weak by itself: the board values it, and the plan
+    # tells candidates to practise saying it (real-user review). Length and balance still count.
     words = analysis.word_count if analysis is not None else count_words(text)
     if words < 12:
         score += 3
@@ -129,6 +132,41 @@ def score_turn(turn: CandidateTurn, *, request_ids: set[str], pressure: bool) ->
     if pressure:
         score += 1
     return score
+
+
+def _fixed_openings() -> tuple[str, ...]:
+    from mockboard.brain.panel_lines import ALL_LINE_TABLES  # lazy: keep import order simple
+
+    found = {
+        text.strip()
+        for table in ALL_LINE_TABLES
+        for options in table.variants.values()
+        for text in options
+        if "{" not in text and not text.rstrip().endswith("?")
+    }
+    return tuple(sorted(found, key=len, reverse=True))
+
+
+def strip_fixed_lines(text: str) -> str:
+    """The question without a fixed line in front of it ("Zaroor, sawal phir se suniye. ...").
+
+    `question_part` drops only acknowledgements of a few words; the repeat, skip and topic lines are
+    longer, and a practice question must start with the question itself."""
+    text = text.strip()
+    openings = _fixed_openings()
+    changed = True
+    while changed:
+        changed = False
+        for opening in openings:
+            if text.startswith(opening) and len(text) > len(opening):
+                text = text[len(opening):].strip()
+                changed = True
+    return text
+
+
+def _asked(question: str) -> str:
+    stripped = strip_fixed_lines(question)
+    return question_part(stripped) or stripped
 
 
 def pick_weakest(
@@ -154,7 +192,7 @@ def pick_weakest(
     member = ""
     if names:
         member = names.get(turn.topic, turn.topic)
-    asked = question_part(turn.question) or turn.question
+    asked = _asked(turn.question)
     return WeakestMoment(
         turn_id=turn.turn_id,
         segment=turn.topic,
@@ -164,6 +202,121 @@ def pick_weakest(
         outline=list(outline),
         score=scored,
     )
+
+
+REQUEST_WORDS: dict[str, str] = {
+    "change_topic": "change the topic",
+    "skip": "skip the question",
+    "repeat": "hear the question again",
+    "clarify_question": "have the question explained",
+    "end": "end the interview",
+    "think": "take a moment to think",
+}
+REQUEST_SOURCE_WORDS: dict[str, str] = {
+    "rules": "the board's phrase rules",
+    "rules+llm": "the board's phrase rules, and the listener agreed",
+    "llm": "the listener (a language model), not the phrase rules",
+}
+NEXT_STEP_WORDS: dict[Move, str] = {
+    Move.probe: "asked a follow-up on this answer",
+    Move.counter: "asked you to weigh another side",
+    Move.steelman: "asked you to make the other side's best case",
+    Move.pressure: "asked for a reason or an example",
+    Move.reassure: "gave you time and an easier place to start",
+    Move.clarify: "asked you to say it again",
+    Move.interrupt: "asked you to come to the main point",
+    Move.fact_challenge: "asked where your figure came from",
+    Move.repeat_question: "repeated the question",
+    Move.rephrase_question: "put the question another way",
+    Move.next_question: "asked the next prepared question",
+    Move.move_on: "moved on",
+}
+HEARD_SAID_WORDS = 60
+HEARD_NOTE_WORDS = 40
+HEARD_NOTE = (
+    "What the speech recogniser wrote, and the listener's short note on it. If either is not what "
+    "you meant, the board misheard you: that is a limit of this tool, not a mark against you."
+)
+
+
+def _trim(text: str, limit: int) -> str:
+    words = text.split()
+    return " ".join(words[:limit]) + (" …" if len(words) > limit else "")
+
+
+def _next_step(move: BoardMove | None, this: CandidateTurn, following: CandidateTurn | None,
+               member_of: dict[str, str]) -> str:
+    if move is None:
+        return ""
+    if move.rule_id == "D-END-CONFIRM":
+        return "asked you to confirm ending the interview"
+    if move.rule_id == "D-THINK":
+        return "gave you time to think; the same question stood"
+    if following is None and move.move == Move.move_on:
+        return "closed the interview"
+    if following is not None and following.topic != this.topic:
+        return f"handed over to {member_of.get(following.topic, following.topic)}"
+    return NEXT_STEP_WORDS.get(move.move, move.move.value.replace("_", " "))
+
+
+def heard_turns(
+    turns: Sequence[CandidateTurn],
+    *,
+    moves: Sequence[BoardMove] = (),
+    requests: Sequence[PanelRequest] = (),
+    member_of: dict[str, str] | None = None,
+) -> list[HeardTurn]:
+    """Each turn as the board heard it, in order. Pure; built from session state only.
+
+    The transcript is shown as recognised, because the candidate is the only one who knows
+    what they said. The note is the listener's paraphrase, never the judge's."""
+    from mockboard.brain.director import copies_speech  # lazy: director imports much
+
+    member_of = member_of or {}
+    move_for: dict[str, BoardMove] = {}
+    for move in moves:
+        if move.for_turn:
+            move_for[move.for_turn] = move  # the last move computed for a turn is the one used
+    request_for = {r.turn_id: r for r in requests if r.kind in REQUEST_KINDS}
+    rows: list[HeardTurn] = []
+    for index, turn in enumerate(turns):
+        analysis = turn.analysis
+        said = turn.transcript
+        request = request_for.get(turn.turn_id)
+        understood = ""
+        if not said:
+            status = "silence"
+        elif request is not None:
+            status = "request"
+        elif analysis is None or analysis.is_fallback or analysis.any_fallback:
+            status = "not_analysed"
+        elif analysis.garbled:
+            status = "unclear"
+        else:
+            status = "honest_unknown" if analysis.honest_unknown else "answer"
+            # Only the listener's own words: a piece that copies the transcript adds nothing,
+            # and the director drops the same pieces from its memory (`copies_speech`).
+            pieces = [
+                p.strip() for p in [analysis.stance, *analysis.reasons[:2]]
+                if p.strip() and not copies_speech(p, said)
+            ]
+            understood = _trim("; ".join(dict.fromkeys(pieces)), HEARD_NOTE_WORDS)
+        following = turns[index + 1] if index + 1 < len(turns) else None
+        rows.append(HeardTurn(
+            turn_id=turn.turn_id,
+            member=member_of.get(turn.topic, turn.topic),
+            question=_asked(turn.question),
+            said=_trim(said, HEARD_SAID_WORDS),
+            understood=understood,
+            status=status,
+            request=REQUEST_WORDS.get(request.kind, "") if request is not None else "",
+            request_source=(
+                REQUEST_SOURCE_WORDS.get(request.source, request.source)
+                if request is not None else ""
+            ),
+            next_step=_next_step(move_for.get(turn.turn_id), turn, following, member_of),
+        ))
+    return rows
 
 
 def _member_name(segment_id: str, names: dict[str, str], segment_members: dict[str, str]) -> str:
@@ -194,12 +347,15 @@ def by_member(
         asked = [t.question for t in group if t.question]
         notes = []
         for t in group:
+            if t.turn_id in req_by_turn:
+                continue  # a request is not what the candidate thinks
             gist = (t.analysis.stance if t.analysis and t.analysis.stance else "")
             if gist:
                 notes.append(gist)
         kind = req_by_turn.get(group[-1].turn_id, "")
         if kind:
-            notes.append(f"The candidate asked to {kind.replace('_', ' ')}.")
+            wanted = REQUEST_WORDS.get(kind, kind.replace("_", " "))
+            notes.append(f"The candidate asked to {wanted}.")
         quotes = []
         for t in group:
             quotes.extend(evidence.get(t.turn_id, [])[:1])
@@ -221,6 +377,10 @@ def practice_plan(
     report: SessionReport, weakest: WeakestMoment | None, *, limit: int = 3
 ) -> list[str]:
     items: list[str] = []
+    # The weakest moment's segment keeps one place, so the plan names the part of the interview
+    # this candidate found hardest, not only the same dimension lines for everyone.
+    segment_line = PLAN_BY_SEGMENT.get(weakest.segment, "") if weakest is not None else ""
+    room = limit - 1 if segment_line else limit
     numeric = [
         s for s in report.scores
         if s.dimension in UPSC_QUALITIES and isinstance(s.score, int)
@@ -228,14 +388,10 @@ def practice_plan(
     numeric.sort(key=lambda s: int(s.score))
     for score in numeric:
         line = PLAN_BY_DIMENSION.get(score.dimension)
-        if line and line not in items:
+        if line and line not in items and len(items) < room:
             items.append(line)
-        if len(items) >= limit:
-            return items[:limit]
-    if weakest is not None:
-        extra = PLAN_BY_SEGMENT.get(weakest.segment)
-        if extra and extra not in items:
-            items.append(extra)
+    if segment_line and segment_line not in items:
+        items.append(segment_line)
     return items[:limit]
 
 
@@ -249,6 +405,7 @@ def decorate_report(
     pressure_turns: set[str] | None = None,
     form: CandidateForm | None = None,
     outline: Sequence[str] = DEFAULT_OUTLINE,
+    moves: Sequence[BoardMove] | None = None,
 ) -> SessionReport:
     """Attach by_member, weakest and practice_plan. Safe on a fallback report."""
     if outline_violations(list(outline)):
@@ -267,7 +424,13 @@ def decorate_report(
         weakest=weakest, evidence=evidence,
     )
     plan = practice_plan(report, weakest)
+    member_of = {sid: names.get(mid, mid) for sid, mid in segment_members.items()}
+    heard = heard_turns(
+        turns, moves=report.moves if moves is None else moves, requests=requests,
+        member_of=member_of,
+    )
     return report.model_copy(update={
+        "heard": heard,
         "by_member": members,
         "weakest": weakest,
         "practice_plan": plan,
@@ -282,18 +445,34 @@ def page_fields(report: SessionReport) -> dict[str, Any]:
             {
                 "name": m.name,
                 "notes": m.notes,
+                "questions": list(m.questions),
                 "weakest_question": m.weakest_question,
                 "outline": list(m.outline),
+                "evidence": list(m.evidence),
             }
             for m in report.by_member
         ],
+        "scores": [
+            {
+                "dimension": score.dimension.value,
+                "score": score.score,
+                "rationale": score.rationale,
+                "practice_indicator": score.is_practice_indicator,
+                "evidence": [item.quote for item in score.evidence],
+            }
+            for score in report.scores
+        ],
         "practice_plan": list(report.practice_plan),
+        "heard": [h.model_dump() for h in report.heard],
+        "heard_note": HEARD_NOTE if report.heard else "",
         "weakest": None if report.weakest is None else {
             "question": report.weakest.question,
             "segment": report.weakest.segment,
             "member": report.weakest.member,
             "outline": list(report.weakest.outline),
             "turn_id": report.weakest.turn_id,
+            # the first answer, so a second attempt can be compared with it (upgrade #3)
+            "answer": report.weakest.answer,
         },
     }
 

@@ -169,6 +169,19 @@ def test_real_speech_services_get_session_ids_and_context(settings):
     assert tts.ledger is not None and tts._settings.voice == "Poorvi"
 
 
+def test_tanglish_session_pins_prisma_to_tamil(settings):
+    from mockboard.config import Settings
+
+    s2 = Settings(_env_file=None, gnani_api_key="k-test", stt_model="prisma-v3.0",
+                  trace_dir=settings.trace_dir)
+    cfg = cfg_for(s2, ["--mode", "upsc", "--fake-llm"])
+    form = server.parse_form({"home_state": "Tamil Nadu", "degree_subject": "Physics",
+                              "interview_language": "tanglish"}, allow_default=False)
+    session = server.make_session(cfg, form)
+    stt, _tts = server.make_speech(cfg, session, PlaybackLedger())
+    assert stt.config.lang_code == "ta-IN"
+
+
 def test_speech_context_per_topic_and_for_a_motion(settings, cards, fake_llm, form, tmp_path):
     s = upsc_session(settings, cards, fake_llm, form, tmp_path)
     terms, topic = speech_context(s)

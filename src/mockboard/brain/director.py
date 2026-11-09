@@ -45,6 +45,7 @@ from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import END, START, StateGraph
 
 from mockboard.brain.affairs import AffairsNote, words_heard
+from mockboard.brain.agenda import twist_for
 from mockboard.brain.graphs import make_serde
 from mockboard.brain.panel_lines import (
     CAP_CLOSE_LINES,
@@ -58,6 +59,7 @@ from mockboard.brain.panel_lines import (
     REGISTER_LINES,
     REPEAT_PREFIX_LINES,
     SKIP_ACK_LINES,
+    THINK_LINES,
     WRAP_UP_CLOSE_LINES,
     LineSet,
     handoff_line,
@@ -65,6 +67,7 @@ from mockboard.brain.panel_lines import (
 )
 from mockboard.brain.register import register_hit
 from mockboard.brain.requests import ChangeStrength, RequestKind, detect_request, word_count
+from mockboard.brain.requests_ta import detect_tamil_request
 from mockboard.brain.schemas import (
     PANEL_FREE_TURNS,
     Agenda,
@@ -87,6 +90,8 @@ from mockboard.brain.schemas import (
     TurnUnderstanding,
 )
 from mockboard.brain.strategist import CLOSE_TARGET, PRESSURE
+from mockboard.brain.think_time import is_think_request
+from mockboard.brain.unknown_markers import says_dont_know
 
 logger = logging.getLogger("mockboard.brain.director")
 
@@ -134,22 +139,48 @@ _YES_WORDS = frozenset(
         "haan", "han", "haa", "haanji", "hanji", "ji", "jee", "yes", "yeah", "yep", "bilkul",
         "zaroor", "sure", "ok", "okay", "theek", "thik",
         "हाँ", "हां", "जी", "बिल्कुल", "ज़रूर", "ठीक",
+        "ஆம்", "ஆமாம்", "ஆமா", "ஆமாங்க", "சரி", "சரிங்க", "கண்டிப்பாக", "aama", "aamam", "sari",
+        # "let's end", said as the answer to "end here?" (Tamil script and romanised)
+        "முடிக்கலாம்", "முடிச்சுக்கலாம்", "முடித்துக்கொள்ளலாம்", "mudikkalam", "mudichukalam",
     )
 )  # fmt: skip
+# Honorifics and softeners that never change a yes. Tamil and Devanagari "sir" / "madam" added
+# Nov 7: "ஆமாம் சார்" ("yes sir") did not close, though "haan sir" did (found writing the demo).
 _YES_FILLERS = frozenset(
-    _norm(w) for w in ("please", "sir", "madam", "mam", "hai", "kijiye", "है", "कृपया")
-)
+    _norm(w)
+    for w in (
+        "please", "sir", "madam", "mam", "hai", "kijiye", "है", "कृपया", "सर", "मैडम",
+        "சார்", "மேடம்", "மேம்", "saar",
+    )
+)  # fmt: skip
 _NEGATIONS = frozenset(
     _norm(w)
-    for w in ("no", "not", "nope", "nahi", "nahin", "na", "mat", "dont", "नहीं", "नही", "मत", "ना")
+    for w in (
+        "no", "not", "nope", "nahi", "nahin", "na", "mat", "dont", "नहीं", "नही", "मत",
+        "ना", "இல்லை", "இல்ல", "வேண்டாம்", "வேணாம்", "illai", "illa", "vendam", "venam",
+    )
 )
 _PUNCTUATION = ".,!?;:'\"-…।"
+# Words that may follow a leading yes and keep it a yes: the end itself, or thanks. A reply that
+# opens with a yes word and holds only these ("Yes sir, please end it", "Ji haan, end kar dijiye",
+# "Yes, thank you") closes; any other word ("haan lekin", "yes, continue") resumes. Unmeasured.
+_YES_TAIL = frozenset(
+    _norm(w)
+    for w in (
+        "end", "it", "here", "now", "stop", "finish", "the", "interview", "i", "want", "to",
+        "we", "can", "lets", "let", "us", "khatam", "kar", "karo", "kariye", "kijiye", "dijiye",
+        "band", "samapt", "yahin", "abhi", "thank", "thanks", "you", "dhanyavaad", "shukriya",
+        "समाप्त", "खत्म", "ख़त्म", "कर", "दीजिए", "यहीं", "धन्यवाद", "शुक्रिया", "நன்றி", "nandri",
+        "இங்கே", "இங்கேயே",  # "here": "ஆமாம் சார், இங்கே முடிக்கலாம்" (yes sir, let's end here)
+    )
+)  # fmt: skip
 
 
 def is_clear_yes(text: str) -> bool:
     """True only for a plain yes to "end here?". Anything doubtful resumes, as Ruling 52 asks.
 
-    Either the whole reply is yes-words, or it repeats the `end` request without a negation
+    Either the whole reply is yes-words, or it opens with a yes and adds only end or thanks words
+    ("Yes sir, please end it"), or it repeats the `end` request without a negation
     ("haan interview khatam karte hain"). Word lists are ours, unmeasured on real transcripts.
     """
     if text.rstrip().endswith(("?", "？")):  # "ji?" is "pardon?", and a close cannot be undone
@@ -159,7 +190,11 @@ def is_clear_yes(text: str) -> bool:
         return False
     if all(w in _YES_WORDS or w in _YES_FILLERS for w in words):
         return any(w in _YES_WORDS for w in words)
-    hit = detect_request(text)
+    if words[0] in _YES_WORDS and all(
+        w in _YES_WORDS or w in _YES_FILLERS or w.replace("'", "") in _YES_TAIL for w in words
+    ):
+        return True
+    hit = detect_request(text) or detect_tamil_request(text)
     return hit is not None and hit.kind is RequestKind.END
 
 
@@ -193,14 +228,16 @@ def next_seed(
 ) -> tuple[int, AgendaSeed] | None:
     """The one place a seed is chosen: by questions left, never by index (CTO_NOTES_14 §7.3).
 
-    `must_ask` waits for the segment's last question, so it stays inside the budget.
+    `must_ask` waits for the segment's last question, so it stays inside the budget; a situation
+    with a twist waits for the last two, so the twist takes the last place (Nov 7).
     """
     if questions_left < 1:
         return None
     unasked = _unasked(segment, memory)
     must = next((pair for pair in unasked if pair[1].must_ask), None)
     plain = next((pair for pair in unasked if not pair[1].must_ask), None)
-    if must is not None and (questions_left == 1 or plain is None):
+    room = 2 if must is not None and twist_for(must[1].text) else 1
+    if must is not None and (questions_left <= room or plain is None):
         return must
     return plain
 
@@ -225,6 +262,22 @@ def _briefing_probe_due(
     return bool(words_heard(turn.raw_text, _SITTING_BRIEFING.get()))
 
 
+def _answer_probe_due(
+    turn: DirectorTurn, segment: AgendaSegment, memory: PanelMemory, cfg: PanelSettings
+) -> bool:
+    """Keep one follow-up on a substantive answer before moving on, when the budget permits."""
+    analysis = turn.analysis
+    return (
+        memory.probes_on_seed == 0
+        and _questions_left(segment, turn, cfg) > 1
+        and turn.base_move.move == Move.move_on
+        and not analysis.is_fallback
+        and not analysis.garbled
+        and not analysis.honest_unknown
+        and word_count(turn.raw_text) >= 4
+    )
+
+
 def _questions_left(segment: AgendaSegment, turn: DirectorTurn, cfg: PanelSettings) -> int:
     """Questions this segment can still put after a counted turn."""
     left = segment.budget - turn.ctx.turns_in_topic - 1
@@ -237,8 +290,38 @@ def _cap_hit(turn: DirectorTurn, cfg: PanelSettings) -> bool:
     return cap_left is not None and cap_left <= 0
 
 
+# A situation's twist (owner, Nov 7) follows only a real answer of at least this many words.
+TWIST_MIN_WORDS = 8
+
+
+def _twist_due(turn: DirectorTurn, memory: PanelMemory, cfg: PanelSettings) -> str | None:
+    """The twist to put now, or None: the last question was a DM/SP situation, this turn answered
+    it (no request, not an honest "I don't know", enough words), and nothing says stop (a pending
+    end, the wrap-up, the answer cap). Asked once: after it, the last question is the twist."""
+    if memory.pending_end or turn.wrap_up_due or memory.probes_on_seed or _cap_hit(turn, cfg):
+        return None
+    if turn.analysis.honest_unknown or word_count(turn.raw_text) < TWIST_MIN_WORDS:
+        return None
+    return twist_for(memory.last_question)
+
+
 VETO_OVER_WORDS = 8  # Ruling 53: a weak hit on a turn longer than this can be vetoed
 LLM_REQUEST_MAX_WORDS = 30  # CTO_NOTES_06 §3: a longer turn takes no request from the listener
+# A listener-only repeat, clarify or skip is not acted on when the turn reads as an answer: this
+# many words or more, with an honest "I don't know" in the raw text, so an answer follows it.
+# Found on a real Nova sitting (Nov 6, generated Tanglish speech): "I am not sure, sir,
+# but first I would talk to the people affected..." was voted `repeat`, and the board asked the same
+# question again instead of taking the answer. A missed repeat can be asked again; a discarded
+# answer cannot.
+ANSWER_NOT_REQUEST_WORDS = 7
+_ANSWER_VETOED_KINDS = frozenset({"repeat", "clarify_question", "skip"})
+
+
+def _reads_as_answer(turn: DirectorTurn) -> bool:
+    text = turn.raw_text
+    if word_count(text) < ANSWER_NOT_REQUEST_WORDS:
+        return False
+    return says_dont_know(text)
 
 
 @dataclass(frozen=True)
@@ -277,13 +360,17 @@ def _resolve_request(turn: DirectorTurn) -> ResolvedRequest:
     | X           | failed or absent    | X, "rules"                                               |
     | none        | Y, 30 words or less | Y, "llm"; except `end`, which needs a rule hit           |
     | none        | Y, over 30 words    | none, "llm_ignored"                                      |
+    | none        | repeat, clarify or  | none, "llm_ignored", when the turn reads as an answer    |
+    |             | skip                | (`_reads_as_answer`)                                     |
     | none        | none or failed      | none                                                     |
 
     Strong patterns and a failed listener never change a rule hit. The detector itself is frozen
-    (Ruling 57): everything wider than its patterns is the listener's to find.
+    (Ruling 57): everything wider than its patterns is the listener's to find, except Tamil-script
+    and romanised Tanglish phrases, which `requests_ta` adds without touching the frozen file.
     """
     text = turn.raw_text
-    hit = detect_request(text)
+    # Tamil script and romanised Tanglish are an additive layer; the frozen detector goes first.
+    hit = detect_request(text) or detect_tamil_request(text)
     vote = _listener_vote(turn.analysis)
     words = word_count(text)
     if hit is not None:
@@ -297,6 +384,8 @@ def _resolve_request(turn: DirectorTurn) -> ResolvedRequest:
     if vote in (None, "none"):
         return ResolvedRequest()
     if vote == RequestKind.END.value or words > LLM_REQUEST_MAX_WORDS:
+        return ResolvedRequest(source="llm_ignored")
+    if vote in _ANSWER_VETOED_KINDS and _reads_as_answer(turn):
         return ResolvedRequest(source="llm_ignored")
     try:
         return ResolvedRequest(RequestKind(vote), "llm")
@@ -321,9 +410,18 @@ def understand(
     last_segment = _following(agenda, segment.id) is None
 
     hit = _resolve_request(turn)
+    # A moment to think ("ek minute sochne dijiye"): only when no phrase rule fired. A listener's
+    # vote on so short a turn yields to it; the same question stands (owner's request, Nov 7).
+    think = (
+        not memory.pending_end
+        and hit.source in ("none", "llm", "llm_ignored")
+        and is_think_request(turn.raw_text)
+    )
+    if think:
+        hit = ResolvedRequest(source="rules", pattern="think_time")
     kind = hit.kind
     known: dict[str, Any] = {
-        "request_kind": kind.value if kind else None,
+        "request_kind": "think" if think else (kind.value if kind else None),
         "request_source": hit.source,
         "request_pattern": hit.pattern,
         "avoid_terms": hit.avoid_terms,
@@ -341,6 +439,8 @@ def understand(
         known = {}
     elif kind in (RequestKind.END, RequestKind.REPEAT, RequestKind.CLARIFY_QUESTION):
         free_kind = kind.value
+    elif think:
+        free_kind = "think"
     elif kind is None and (turn.base_move.rule_id == "R1" or turn.analysis.garbled):
         # `analysis` too: on the last allowed turn the session's cap has replaced R1's move.
         # A second unclear hearing is not another free "please repeat": it counts, and the
@@ -382,14 +482,23 @@ def understand(
         return _handle(priced)
     if spent:  # step 5: overrides R2, R3 latency and R4, which sit before R5 in the rule table
         return spend_out(spent_reason)
+    if not free_kind and kind is None and _twist_due(turn, memory, cfg):
+        # The situation's one twist, inside the budget: the situation is asked a question early
+        # when it has a twist, so the twist takes the segment's last place (owner, Nov 7).
+        return TurnUnderstanding(node="next_question", **priced)
     if free_kind:  # free turns have run out: an answer now, with the same response
         return _handle(priced)
+    if memory.probes_on_seed >= 1 and turn.base_move.move != Move.reassure:
+        # A substantive answer to a follow-up returns to the plan even if the strategist would
+        # otherwise counter or press again. Explicit requests above still take precedence.
+        return TurnUnderstanding(node="next_question", **priced)
     # Step 6. A `move_on` with budget left still lets the situation be asked (§9.4).
     # One briefing follow-up stays, when the candidate has named a prepared subject and
     # this segment still has a later question. It does not replace the last question.
     briefing = _briefing_probe_due(turn, segment, memory, cfg)
+    answer_probe = _answer_probe_due(turn, segment, memory, cfg)
     leaving = turn.base_move.move == Move.move_on and not _must_ask_unasked(segment, memory)
-    if leaving and not briefing:
+    if leaving and not briefing and not answer_probe:
         return spend_out()
     return TurnUnderstanding(node="next_question", **priced)
 
@@ -540,8 +649,11 @@ class _Plan:
         if not self.u.counted or not _must_ask_unasked(self.segment, self.memory):
             return None
         left = _questions_left(self.segment, self.turn, self.cfg)
-        if left == 1 or self.turn.base_move.move == Move.move_on:
-            return next_seed(self.segment, self.memory, 1)
+        seed = next_seed(self.segment, self.memory, 1)
+        # A situation with a twist needs two places: it is asked when two are left.
+        room = 2 if seed is not None and twist_for(seed[1].text) else 1
+        if left <= room or self.turn.base_move.move == Move.move_on:
+            return seed
         return None
 
     def repeat(self, before: Sequence[PrefacePart], rule: str, why: str) -> PanelDecision:
@@ -584,6 +696,12 @@ def plan_handle_request(p: _Plan) -> PanelDecision:
         if seed is None:  # budget spent or no seed left; what is left is forfeited
             return p.advance(ack, "agenda")
         return p.ask_seed(seed, "candidate skipped the question", ack)
+    if kind == "think":  # before any forced question: the same question stands
+        move = p.board_move(Move.reassure, p.segment.member, "D-THINK", "asked for time to think")
+        return p.decision(
+            move, "handle_request", preface=(p.own(THINK_LINES),), line_complete=True,
+            thinking=True,
+        )
     forced = p.forced_seed()
     if forced is not None:
         return p.ask_seed(forced, "the situation must be asked within the budget")
@@ -601,6 +719,10 @@ def plan_handoff(p: _Plan) -> PanelDecision:
 
 
 def plan_next_question(p: _Plan) -> PanelDecision:
+    twist = None if p.u.free_kind or p.u.request_kind else _twist_due(p.turn, p.memory, p.cfg)
+    if twist is not None:
+        move = p.board_move(Move.probe, p.segment.member, "D-TWIST", "the situation's twist")
+        return p.decision(move, "next_question", repeat_text=twist, line_complete=True)
     if p.turn.base_move.rule_id == "R1" and p.memory.unclear_hearings >= 1:
         seed = next_seed(
             p.segment, p.memory, _questions_left(p.segment, p.turn, p.cfg)
@@ -608,20 +730,29 @@ def plan_next_question(p: _Plan) -> PanelDecision:
         if seed is not None:
             return p.ask_seed(seed, "heard once and still unclear; ask the next question")
         return p.advance((), "agenda")
+    if p.turn.base_move.move == Move.reassure:
+        return p.keep_base("next_question")
+    if p.memory.probes_on_seed >= 1:
+        seed = next_seed(p.segment, p.memory, _questions_left(p.segment, p.turn, p.cfg))
+        if seed is not None:
+            return p.ask_seed(seed, "one follow-up completed; return to the plan")
+        return p.advance((), "agenda")
     if _briefing_probe_due(p.turn, p.segment, p.memory, p.cfg):
         move = p.board_move(
             Move.probe, p.segment.member, "D-BRIEF",
             "the answer touches the briefing; one follow-up, then the plan",
         )
         return p.decision(move, "next_question")
+    if _answer_probe_due(p.turn, p.segment, p.memory, p.cfg):
+        move = p.board_move(
+            Move.probe, p.segment.member, "D-ANSWER",
+            "one substantive answer follow-up before moving on",
+        )
+        return p.decision(move, "next_question")
     forced = p.forced_seed()
     if forced is not None:
         return p.ask_seed(forced, "the situation must be asked within the budget")
     base = p.turn.base_move
-    if base.rule_id == "R8" and base.move == Move.probe and p.memory.probes_on_seed >= 1:
-        seed = next_seed(p.segment, p.memory, _questions_left(p.segment, p.turn, p.cfg))
-        if seed is not None:
-            return p.ask_seed(seed, "second R8 probe on one seed")
     if base.move == Move.fact_challenge:  # no persona owns a card's topic on the panel
         move = base.model_copy(
             update={"member": p.segment.member, "for_turn": p.turn.ctx.turn_id}
@@ -756,7 +887,10 @@ def _fold_one(memory: PanelMemory, done: CompletedTurn) -> PanelMemory:
         update["last_question"] = done.asked or d.seed
     elif done.asked and not _keeps_last_question(done):
         update["last_question"] = done.asked
-    if d.move.move == Move.probe and d.move.rule_id in {"R8", "D-BRIEF"}:
+    if d.move.rule_id == "D-TWIST" and d.repeat_text:  # spoken whole, so `asked` is None
+        update["last_question"] = d.repeat_text
+        update["probes_on_seed"] = memory.probes_on_seed + 1
+    if d.move.move == Move.probe and d.move.rule_id in {"R8", "D-BRIEF", "D-ANSWER"}:
         update["probes_on_seed"] = memory.probes_on_seed + 1
     if d.move.rule_id == "R1" and d.move.move == Move.clarify:
         update["unclear_hearings"] = memory.unclear_hearings + 1

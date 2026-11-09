@@ -7,7 +7,7 @@ A unit test checks that every schema and its model agree on field names.
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -556,6 +556,51 @@ HINTS_TOOL = ToolSpec(
     },
 )
 
+class RepairPair(_ToolModel):
+    answer: int = 0
+    heard: str = ""
+    likely: str = ""
+    why: str = ""
+
+
+class RepairsOutput(_ToolModel):
+    """Likely mis-hearings (repair.v1). Anything malformed is dropped; code checks each pair."""
+
+    repairs: list[RepairPair] = Field(default_factory=list)
+
+    @field_validator("repairs", mode="before")
+    @classmethod
+    def _list_only(cls, v: Any) -> Any:
+        return v if isinstance(v, list) else []
+
+
+REPAIR_TOOL = ToolSpec(
+    name="record_repairs",
+    description=(
+        "Record words the speech recogniser most likely misheard, each with the word the "
+        "candidate most likely said. An empty list when nothing is clearly misheard."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "repairs": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "answer": {"type": "integer", "description": "The answer's number."},
+                        "heard": {"type": "string", "description": "Copied exactly from it."},
+                        "likely": {"type": "string", "description": "What was most likely said."},
+                        "why": {"type": "string", "description": "Twelve words at most."},
+                    },
+                    "required": ["answer", "heard", "likely"],
+                },
+            },
+        },
+        "required": ["repairs"],
+    },
+)
+
 # ---------------------------------------------------------------------------
 # Debate mode: motion screen and custom case file (CTO_NOTES_04 §5, §2)
 # ---------------------------------------------------------------------------
@@ -631,6 +676,87 @@ CASE_FILE_TOOL = ToolSpec(
     },
 )
 
+# ---------------------------------------------------------------------------
+# Study partner: the notes at the end ("Your points, made stronger", partner_summary.v1)
+# ---------------------------------------------------------------------------
+
+
+class PartnerSummaryPoint(_ToolModel):
+    point: str = ""
+    reason: str = ""
+    example: str = ""
+    counterpoint: str = ""
+    answer: str = ""
+    open: str = ""
+
+    @field_validator("*", mode="before")
+    @classmethod
+    def _text(cls, v: object) -> str:
+        return v.strip() if isinstance(v, str) else ""
+
+
+class PartnerSummaryOutput(_ToolModel):
+    """The speaker's points in their own words. Anything malformed becomes empty; code checks
+    every quote against the transcript (`modes/partner/report.py`)."""
+
+    points: list[PartnerSummaryPoint] = Field(default_factory=list)
+    next_steps: list[str] = Field(default_factory=list)
+
+    @field_validator("points", mode="before")
+    @classmethod
+    def _points(cls, v: object) -> list:
+        if not isinstance(v, list):
+            return []
+        return [x for x in v if isinstance(x, dict | PartnerSummaryPoint)]
+
+    @field_validator("next_steps", mode="before")
+    @classmethod
+    def _steps(cls, v: object) -> list[str]:
+        return [x for x in v if isinstance(x, str)] if isinstance(v, list) else []
+
+
+_QUOTE = "Copied exactly from the speaker's own words in <session_turns>, or empty."
+PARTNER_SUMMARY_TOOL = ToolSpec(
+    name="record_partner_notes",
+    description=(
+        "Record the speaker's points from a study conversation, each in their own words, and up "
+        "to three practice suggestions. No scores or grades."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "points": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "point": {"type": "string", "description": _QUOTE},
+                        "reason": {"type": "string", "description": _QUOTE},
+                        "example": {"type": "string", "description": _QUOTE},
+                        "counterpoint": {
+                            "type": "string",
+                            "description": "Copied exactly from Mitra's line in <partner_lines>, "
+                            "or empty.",
+                        },
+                        "answer": {"type": "string", "description": _QUOTE},
+                        "open": {
+                            "type": "string",
+                            "description": "What is still open on this point, one short line.",
+                        },
+                    },
+                    "required": ["point", "reason", "example", "counterpoint", "answer", "open"],
+                },
+            },
+            "next_steps": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "At most three practice suggestions, one sentence each.",
+            },
+        },
+        "required": ["points", "next_steps"],
+    },
+)
+
 ALL_TOOLS: dict[str, tuple[ToolSpec, type[BaseModel]]] = {
     "listener": (LISTENER_TOOL, ListenerOutput),
     "listener_panel": (PANEL_LISTENER_TOOL, PanelListenerOutput),
@@ -642,4 +768,5 @@ ALL_TOOLS: dict[str, tuple[ToolSpec, type[BaseModel]]] = {
     "judge_debate": (DEBATE_JUDGE_TOOL, DebateJudgeOutput),
     "motion_screen": (MOTION_SCREEN_TOOL, MotionScreenOutput),
     "case_file": (CASE_FILE_TOOL, CaseFileOutput),
+    "partner_summary": (PARTNER_SUMMARY_TOOL, PartnerSummaryOutput),
 }

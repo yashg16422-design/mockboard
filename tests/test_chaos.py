@@ -42,7 +42,9 @@ from test_board_invariants import ANSWERS, random_answers
 
 SEEDS = range(24)
 # Rules whose line is fixed text said by code, with no actor call (CTO_NOTES_12 §9.4).
-FIXED_LINE_RULES = {"D-CLOSE", "D-REPEAT", "D-RESUME", "D-END-CONFIRM"}
+# Lines the panel says from code alone. D-TWIST (a situation's twist) and D-THINK ("take your
+# time") were added on Nov 7.
+FIXED_LINE_RULES = {"D-CLOSE", "D-REPEAT", "D-RESUME", "D-END-CONFIRM", "D-TWIST", "D-THINK"}
 # Share of Bedrock calls that fail, per lane. The background lane is hit harder because the
 # shared vote cache makes its calls rare, and a librarian or judge fallback needs every one
 # of its graph retries to fail.

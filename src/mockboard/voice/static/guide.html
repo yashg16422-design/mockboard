@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mock Board guide</title>
+<meta name="description" content="How Mock Board works: where everything is, how to use each mode, what you can say, and what the report shows.">
+<link rel="icon" href="data:,">
+<link rel="preload" href="/static/fonts/geist-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/static/fonts.css">
+<link rel="stylesheet" href="/static/tokens.css">
+<link rel="stylesheet" href="/static/site.css">
+<link rel="stylesheet" href="/static/guide.css">
+</head>
+<body data-view="form" class="guide-page">
+<canvas id="field" aria-hidden="true"></canvas>
+<div class="aurora" aria-hidden="true"></div>
+<div class="vignette" aria-hidden="true"></div>
+<div class="grain" aria-hidden="true"></div>
+
+<a class="skip" href="#content">Skip to content</a>
+<header class="top">
+  <a class="mark" href="/" aria-label="Mock Board, home">
+    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <circle cx="12" cy="12" r="10.5" stroke="rgba(255,255,255,.28)" stroke-width="1"/>
+      <circle cx="4.6" cy="13.6" r="1.3" fill="currentColor"/><circle cx="8" cy="9.2" r="1.3" fill="currentColor"/>
+      <circle cx="12" cy="7.6" r="1.7" fill="#5ef2c2"/><circle cx="16" cy="9.2" r="1.3" fill="currentColor"/><circle cx="19.4" cy="13.6" r="1.3" fill="currentColor"/>
+      <path d="M8.5 17.2h7" stroke="currentColor" stroke-width="1" stroke-linecap="round"/>
+    </svg>
+    <span>Mock Board</span>
+  </a>
+  <p class="kicker">Guide</p>
+  <p class="badges"><a class="badge link-badge" href="/">Start practising ↗</a></p>
+</header>
+
+<main id="content" class="guide">
+  <section class="guide-hero">
+    <p class="tag">[ Guide ]</p>
+    <h1>How Mock Board works.</h1>
+    <p class="lede">A practice room you talk to. You speak, it listens to what you actually said, and it answers: a five-member UPSC board, a debate opponent, or a study partner. This page shows where everything is and how to get the most out of it.</p>
+    <nav class="toc" aria-label="On this page">
+      <a href="#map">01 What is where</a>
+      <a href="#modes">02 The three modes</a>
+      <a href="#say">03 Things you can say</a>
+      <a href="#report">04 The report</a>
+      <a href="#different">05 Why not a general voice assistant</a>
+      <a href="#privacy">06 Privacy and honesty</a>
+    </nav>
+  </section>
+
+  <!-- 01 MAP -->
+  <section class="guide-section" id="map">
+    <p class="tag">[ 01 / What is where ]</p>
+    <h2>Four screens, in order.</h2>
+    <ol class="flow">
+      <li><span class="idx">01</span><b>Home</b><span>What it is and the models it uses.</span></li>
+      <li><span class="idx">02</span><b>Choose and set up</b><span>Pick a mode, then a short form, a motion or a topic.</span></li>
+      <li><span class="idx">03</span><b>The room</b><span>You speak; the board answers out loud, with live captions.</span></li>
+      <li><span class="idx">04</span><b>The report</b><span>How you were heard, what to practise, and a second attempt.</span></li>
+    </ol>
+
+    <div class="screen-map">
+      <figure class="mock" aria-label="Diagram of the room screen">
+        <div class="mock-top"><span class="mock-brand">Mock Board</span><span class="mock-pill">03 / The panel<span class="pin" data-n="5">5</span></span><span class="mock-clock">03:12 / 17:00<span class="pin" data-n="4">4</span></span></div>
+        <div class="mock-body">
+          <div class="mock-left">
+            <span class="mock-tag">Now</span>
+            <span class="mock-status">Your turn. Speak, then pause.</span><span class="pin" data-n="1">1</span>
+            <span class="mock-meta">● Speaking: Chairperson · ● Microphone open</span>
+            <span class="mock-btn">End interview</span><span class="pin" data-n="6">6</span>
+          </div>
+          <div class="mock-brain" aria-hidden="true"></div>
+          <div class="mock-caps">
+            <span class="mock-tag">Live captions</span><span class="pin" data-n="2">2</span>
+            <span class="mock-cap"><i>Chairperson</i>Is safar ne aapko civil services ki taraf kaise modha?</span>
+            <span class="mock-cap you"><i>You</i>Almora mein maine dekha ki kisaan…</span>
+          </div>
+        </div>
+        <div class="mock-seats"><span class="on">Chairperson</span><span>Administrator</span><span>Economist</span><span>Humanities</span><span>IPS officer</span><span class="pin" data-n="3">3</span></div>
+      </figure>
+      <ol class="legend">
+        <li><span class="pin">1</span><div><b>The status line.</b> Tells you whose turn it is: the board is speaking, thinking, or it is your turn. Start talking when it says <em>Your turn</em>. You can also speak over the board to interrupt it.</div></li>
+        <li><span class="pin">2</span><div><b>Live captions.</b> Every line the board says, and what the speech service heard from you, as it happens. If your words come out wrong here, the board will see them that way too.</div></li>
+        <li><span class="pin">3</span><div><b>The seats.</b> The member who is speaking lights up. Each member has a different voice and a different area: your form, your district, your degree, your interests, and the situation question.</div></li>
+        <li><span class="pin">4</span><div><b>The clock.</b> Time used and the limit. The UPSC board starts to wrap up at 16 minutes and stops at 17. A debate stops at 10. The study partner has no wrap-up pressure.</div></li>
+        <li><span class="pin">5</span><div><b>Where you are.</b> The top line names the screen. The badge on the right shows the mode, and <em>Demo mode</em> when the server runs on stand-ins instead of the real models.</div></li>
+        <li><span class="pin">6</span><div><b>End interview.</b> Asks once, then ends and prepares the report. You can also end by voice (see section 03).</div></li>
+      </ol>
+    </div>
+  </section>
+
+  <!-- 02 MODES -->
+  <section class="guide-section" id="modes">
+    <p class="tag">[ 02 / The three modes ]</p>
+    <h2>Pick the practice you need today.</h2>
+    <div class="mode-grid">
+      <article class="mode-detail">
+        <span class="mode-no">01</span>
+        <h3>UPSC interview</h3>
+        <p>A five-member board plans the sitting from your form (home state, degree, hobbies, optional, work) and asks one area each. It follows up on what you actually said, asks for a reason or an example when an answer is thin, and puts one real administrative situation to you, then raises the stakes once: “Now a local politician calls and asks you to send relief to their supporters first. What do you do?”</p>
+        <ul class="ticks">
+          <li>Four languages: Hinglish, English, Hindi, Tamil + English.</li>
+          <li>Take your time on big questions: pauses do not end your turn.</li>
+          <li>A microphone check before you start, in your language.</li>
+        </ul>
+      </article>
+      <article class="mode-detail">
+        <span class="mode-no">02</span>
+        <h3>Debate</h3>
+        <p>Choose a motion and your side. The board argues the other side: it opens, rebuts the points you actually made, cross-questions you, and closes. A judge gives a verdict with the exchanges it relied on.</p>
+        <ul class="ticks">
+          <li>Thirteen curated motions.</li>
+          <li>Two opponents: the Logician (calm, exact) or the Wit (quick, sharp).</li>
+          <li>Long turns for your opening and closing statements.</li>
+        </ul>
+      </article>
+      <article class="mode-detail">
+        <span class="mode-no">03</span>
+        <h3>Study partner</h3>
+        <p>Name a topic you are studying and explain it out loud, the way you would to a sharp friend. The partner restates your point so you know it was understood, then asks one good question: why, an example, or the strongest counterpoint. No scores, no timer pressure. You leave with your own points, made stronger.</p>
+        <ul class="ticks">
+          <li>Good for revision, and for a calmer session after a hard day.</li>
+          <li>Counterpoints are offered as “some would argue”, never as facts.</li>
+          <li>The summary keeps your own words.</li>
+        </ul>
+      </article>
+    </div>
+  </section>
+
+  <!-- 03 SAY -->
+  <section class="guide-section" id="say">
+    <p class="tag">[ 03 / Things you can say ]</p>
+    <h2>Talk to the board like a person.</h2>
+    <p class="section-lede">These phrases are caught by fixed rules, not by a model guessing. Every phrase below is checked by an automated test, and every Hinglish and English phrase, three Hindi phrases and one Tamil phrase were also recognised from real Gnani Prisma transcripts of generated (not human) speech. Rephrased requests are caught less often, and accuracy on real voices has not been measured yet.</p>
+    <div class="say-table" role="table" aria-label="Phrases the board recognises">
+      <div class="say-row head" role="row"><span role="columnheader">You want to</span><span role="columnheader">Hinglish</span><span role="columnheader">English</span><span role="columnheader">Hindi</span><span role="columnheader">Tamil</span></div>
+      <div class="say-row" role="row"><span role="cell">Hear the question again</span><span role="cell" class="say">“Phir se boliye.”</span><span role="cell" class="say">“Could you repeat the question?”</span><span role="cell" class="say" lang="hi">“फिर से बोलिए।”</span><span role="cell" class="say" lang="ta">“மீண்டும் சொல்லுங்கள்.”</span></div>
+      <div class="say-row" role="row"><span role="cell">Think before answering</span><span role="cell" class="say">“Ek minute sochne dijiye.”</span><span role="cell" class="say">“May I take a moment?”</span><span role="cell" class="say" lang="hi">“एक मिनट सोचने दीजिए।”</span><span role="cell" class="say" lang="ta">“ஒரு நிமிடம் யோசிக்கிறேன்.”</span></div>
+      <div class="say-row" role="row"><span role="cell">Move to another topic</span><span role="cell" class="say">“Kisi aur topic pe baat karte hain.”</span><span role="cell" class="say">“Could we move to another topic?”</span><span role="cell" class="say" lang="hi">“कृपया विषय बदलिए।”</span><span role="cell" class="say" lang="ta">“வேறு தலைப்புக்கு போகலாமா?”</span></div>
+      <div class="say-row" role="row"><span role="cell">End the session</span><span role="cell" class="say">“Interview yahin khatam karte hain.”</span><span role="cell" class="say">“Can we end the interview here?”</span><span role="cell" class="say" lang="hi">“इंटरव्यू यहीं खत्म करते हैं।”</span><span role="cell" class="say" lang="ta">“நேர்காணலை இங்கே முடித்துக்கொள்ளலாமா?”</span></div>
+    </div>
+    <p class="fine">These work with the UPSC board and the study partner; with the partner, “another topic” means leaving this point for your next one. A debate keeps its own clock and does not take spoken requests: use the End button. Ending by voice asks you to confirm once, out loud: say “Haan” or “Yes”. Saying anything else carries on. Asking for a moment to think costs no answer, and the same question stays.</p>
+  </section>
+
+  <!-- 04 REPORT -->
+  <section class="guide-section" id="report">
+    <p class="tag">[ 04 / The report ]</p>
+    <h2>Feedback you can check.</h2>
+    <div class="report-grid">
+      <div class="report-card"><span class="tag">How the board heard you</span><p>Every answer as the speech service wrote it, what the board understood, and what it did next. If a word was probably misheard, it says so beside your words: <em>“क्राउड” was probably “Claude”</em>. Your transcript is never edited.</p></div>
+      <div class="report-card"><span class="tag">Scores with quotes</span><p>Each score in the UPSC report quotes your own words as evidence, and the quote is checked against the transcript. No quote, no claim.</p></div>
+      <div class="report-card"><span class="tag">Practise this moment</span><p>Hear your weakest question again and answer it aloud. The page compares the two answers on simple, visible parts (a reason, who is affected, a first step, another side, a cost) without giving a mark.</p></div>
+    </div>
+  </section>
+
+  <!-- 05 DIFFERENT -->
+  <section class="guide-section" id="different">
+    <p class="tag">[ 05 / Why not a general voice assistant ]</p>
+    <h2>Narrow on purpose.</h2>
+    <p class="section-lede">General voice assistants are excellent at open conversation. Mock Board does one job, practising for a spoken board, and is built around it.</p>
+    <div class="compare" role="table" aria-label="Mock Board compared with a general voice assistant">
+      <div class="compare-row head" role="row"><span role="columnheader"></span><span role="columnheader">Mock Board</span><span role="columnheader">A general voice assistant</span></div>
+      <div class="compare-row" role="row"><span role="rowheader">Structure</span><span role="cell">A five-member board with a plan built from your form, one area per member, a situation question and a time limit.</span><span role="cell">Whatever structure you describe in your prompt, kept for as long as it remembers to.</span></div>
+      <div class="compare-row" role="row"><span role="rowheader">Your requests</span><span role="cell">Repeat, think, change topic and end are fixed rules in four languages, tested, so they always work.</span><span role="cell">Understood when the model interprets them that way.</span></div>
+      <div class="compare-row" role="row"><span role="rowheader">Indian languages</span><span role="cell">Hinglish, Hindi and Tamil heard by Gnani Prisma and spoken by Gnani Timbre, both built for Indian languages.</span><span role="cell">Varies by product and language.</span></div>
+      <div class="compare-row" role="row"><span role="rowheader">Seeing how you were heard</span><span role="cell">Every answer shown as recognised, what was understood, and likely misheard words, side by side.</span><span role="cell">Usually not shown.</span></div>
+      <div class="compare-row" role="row"><span role="rowheader">Feedback</span><span role="cell">Scores only with a quote of your words, checked against the transcript; no invented facts or figures.</span><span role="cell">Free-form; worth checking against what you said.</span></div>
+      <div class="compare-row" role="row"><span role="rowheader">Your details</span><span role="cell">No name, roll number, phone, email or college is ever asked.</span><span role="cell">Tied to your account.</span></div>
+    </div>
+  </section>
+
+  <!-- 06 PRIVACY -->
+  <section class="guide-section" id="privacy">
+    <p class="tag">[ 06 / Privacy and honesty ]</p>
+    <h2>What happens to your words.</h2>
+    <div class="models">
+      <div class="model"><span class="tag">Hearing</span><b>Gnani Prisma</b><p>Speech to text: writes down what you say.</p></div>
+      <div class="model"><span class="tag">Voice</span><b>Gnani Timbre</b><p>Text to speech: each member's lines, spoken.</p></div>
+      <div class="model"><span class="tag">Reasoning</span><b>Amazon Nova Pro</b><p>Chooses each next line, and writes the report.</p></div>
+    </div>
+    <ul class="ticks wide">
+      <li>Your speech goes to Gnani Prisma to be written down; the text goes to Amazon Bedrock (Nova Pro, Sydney region) so the board can answer.</li>
+      <li>The server keeps a text record of the sitting so faults can be found. Audio is not saved unless the room shows a recording notice.</li>
+      <li>The board members are fictional. Mock Board is a student project for Gnani.ai's Great Indian AI Internship Challenge. It is not run by or affiliated with the Union Public Service Commission, and a report from it is not a UPSC mark.</li>
+      <li>Known limits: Tamil wording has not yet been reviewed by a fluent speaker, and accuracy on real accents has not been measured at scale.</li>
+    </ul>
+    <p class="cta"><a class="cta-link" href="/">Start practising <span class="arr" aria-hidden="true">↗</span></a></p>
+  </section>
+</main>
+
+<footer class="site-foot">
+  <p>A practice tool for the UPSC Personality Test. Not affiliated with the Union Public Service Commission.</p>
+  <p class="models-line">Speech to text, Gnani Prisma. Text to speech, Gnani Timbre. The board, Amazon Nova Pro.</p>
+</footer>
+<script src="/static/presence.js"></script>
+<script>if (window.Presence) Presence.show("form");</script>
+</body>
+</html>

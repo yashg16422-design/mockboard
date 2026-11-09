@@ -36,7 +36,7 @@ import functools
 import json
 import time
 from collections import deque
-from collections.abc import AsyncIterator, Callable, Mapping, Sequence
+from collections.abc import AsyncIterator, Awaitable, Callable, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from enum import StrEnum
@@ -245,9 +245,35 @@ class LLMConfigError(LLMError):
     """Non-retryable request problems: access denied, bad model id, validation errors."""
 
 
+class LLMToolSequenceError(LLMConfigError):
+    """Bedrock's `ModelErrorException` "Model produced invalid sequence as part of ToolUse": the
+    model's tool call could not be parsed. Seen live on `repair` (Nov 8-9, 2 of 3 real calls).
+    Greedy decoding is deterministic, so an identical retry fails the same way; `structured`
+    retries once with a corrected prompt instead. Still an `LLMConfigError` for every caller
+    that already catches that."""
+
+
 def is_transient(exc: BaseException) -> bool:
     """Retry predicate for LangGraph `RetryPolicy(retry_on=...)`."""
     return isinstance(exc, LLMTransientError)
+
+
+# Background calls made outside a graph (the partner's notes, the repair step) have no
+# RetryPolicy; a throttle there used to drop the call at once (seen live, Nov 9).
+OUTSIDE_GRAPH_BACKOFF_S: tuple[float, ...] = (1.5, 4.0)
+
+
+async def with_backoff(
+    call: Callable[[], Awaitable[Any]], delays: Sequence[float] | None = None
+) -> Any:
+    """`await call()`, retried after each delay while it raises a transient error (a throttle,
+    a timeout, a 5xx). Anything else, and the last failure, is raised."""
+    for delay in OUTSIDE_GRAPH_BACKOFF_S if delays is None else delays:
+        try:
+            return await call()
+        except LLMTransientError:
+            await asyncio.sleep(delay)
+    return await call()
 
 
 # ---------------------------------------------------------------------------
@@ -404,7 +430,18 @@ class _BaseClient:
         try:
             for attempt in (1, 2):
                 stats.attempts = attempt
-                raw = await self._tool_call(system, prompt, tool, limit, stats)
+                try:
+                    raw = await self._tool_call(system, prompt, tool, limit, stats)
+                except LLMToolSequenceError:
+                    if attempt == 2:
+                        raise
+                    # The same prompt at temperature 0 gives the same broken call; a short
+                    # correction changes the greedy path (the same idea as the retry below).
+                    prompt = (
+                        f"{user}\n\nCall `{tool.name}` exactly once. Its input is one JSON "
+                        f"object that matches the schema, with plain text values only."
+                    )
+                    continue
                 if stats.stop_reason == "max_tokens":
                     # Truncated JSON is not a validation problem the model can fix by
                     # being told; only a larger limit helps. Retry once with one.
@@ -486,6 +523,8 @@ def _map_boto_error(exc: Exception) -> LLMError:
             return LLMThrottledError(f"{code}: {exc}")
         if code in _TRANSIENT_CODES:
             return LLMTransientError(f"{code}: {exc}")
+        if code == "ModelErrorException" and "ToolUse" in str(exc):
+            return LLMToolSequenceError(f"{code}: {exc}")
         return LLMConfigError(f"{code}: {exc}")
     return LLMError(f"{type(exc).__name__}: {exc}")
 

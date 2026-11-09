@@ -24,6 +24,7 @@ summing to the cap, so the agenda and the cap finish together (Ruling 49, CTO_NO
 from __future__ import annotations
 
 import re
+import unicodedata
 import zlib
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -75,7 +76,8 @@ _MAX_TERM_WORD_LETTERS = 24
 _OPEN_ENDED_DEVANAGARI = (
     "क्यों", "कैसे", "कैसा", "कैसी", "किस तरह", "कौन", "क्या लगता", "क्या सोचते", "बताइए", "समझाइए",
 )  # fmt: skip
-_OPEN_ENDED = (*OPEN_ENDED_MARKERS, *_OPEN_ENDED_DEVANAGARI)
+_OPEN_ENDED_TAMIL = ("ஏன்", "எப்படி", "என்ன", "எந்த", "யார்", "எதை", "எவ்வாறு")
+_OPEN_ENDED = (*OPEN_ENDED_MARKERS, *_OPEN_ENDED_DEVANAGARI, *_OPEN_ENDED_TAMIL)
 
 # Capitals a current-affairs seed may use without the form backing them.
 _CAPITALS_ALLOWED = frozenset({"dm", "sp", "ias", "ips"})
@@ -87,7 +89,7 @@ _DIGIT = re.compile(r"\d")  # any script's digits
 # ("B.Tech" -> "BTech"), "&" reads as "and", and brackets and slashes read as spaces ("B.Tech
 # (CSE)", "Computer Science/IT"). Anything else, a comma included, drops the whole value, because
 # cutting pieces out of a value could leave text its author did not write.
-_TERM = re.compile(r"^[A-Za-zऀ-ॣ॰-ॿ][A-Za-zऀ-ॣ॰-ॿ' -]*$")
+_TERM = re.compile(r"^[A-Za-zऀ-ॣ॰-ॿ\u0b80-\u0bff][A-Za-zऀ-ॣ॰-ॿ\u0b80-\u0bff' -]*$")
 _TERM_SPACES = str.maketrans("()/", "   ")
 # Instruction-shaped words. A backstop: `_term` is what makes form text inert, and this list only
 # stops a seed reading like an order. Word list is ours, not exhaustive.
@@ -98,17 +100,35 @@ _INSTRUCTION = re.compile(
 )
 
 
+# The form asks for no college, yet a degree like "B.Tech from IIT Kanpur" names one. The board
+# must never say an institution aloud (it identifies the candidate and invites prestige bias), so a
+# value with one is not spoken, and a planned seed that names one is refused. Word list is ours.
+_INSTITUTION = re.compile(
+    r"\b(?:iit|iits|nit|nits|iiit|iim|iims|aiims|bits|iisc|jnu|du|college|colleges|university|"
+    r"universities|univ|institute|institution|vidyalaya|vishwavidyalaya|mahavidyalaya|school|"
+    r"academy|campus)\b",
+    re.IGNORECASE,
+)
+
+
+def names_an_institution(text: str) -> bool:
+    """True when the text names a college, university or institute."""
+    return bool(_INSTITUTION.search(text.replace(".", "")))
+
+
 def seed_violations(
-    text: str, segment_id: str = "", form: CandidateForm | None = None
+    text: str, segment_id: str = "", form: CandidateForm | None = None,
+    max_words: int = MAX_SEED_WORDS,
 ) -> list[str]:
-    """Why a seed question is not acceptable (empty list = acceptable)."""
+    """Why a seed question is not acceptable (empty list = acceptable). `max_words` is longer
+    only for a plan prompt that asks for richer questions (agenda_plan v4)."""
     problems: list[str] = []
     stripped = text.strip()
     low = stripped.lower()
     if not stripped.endswith("?"):
         problems.append("does not end with a question")
-    if count_words(stripped) > MAX_SEED_WORDS:
-        problems.append(f"over {MAX_SEED_WORDS} words")
+    if count_words(stripped) > max_words:
+        problems.append(f"over {max_words} words")
     if _DIGIT.search(stripped):
         problems.append("contains a digit")
     if any(re.search(p, low) for p in PLACE_FACT_PATTERNS):
@@ -120,6 +140,8 @@ def seed_violations(
         problems.append("question is not open-ended")
     if _INSTRUCTION.search(stripped):
         problems.append("reads like an instruction")
+    if names_an_institution(stripped):
+        problems.append("names a college or institute")
     if segment_id == CURRENT_AFFAIRS:
         names = _unbacked_capitals(stripped, form)
         if names:
@@ -414,6 +436,75 @@ _SEEDS: dict[str, dict[str, tuple[_Seed, ...]]] = {
     },
 }
 
+# Tamil + English (Tanglish), kept separate from Hindi/Hinglish so speech and board lines use
+# the Tamil locale and script. These templates are deliberately short and open-ended.
+_SEEDS[FORM_HR]["ta-en"] = (
+    _Seed(
+        "நீங்கள் {place} பகுதியைச் சேர்ந்தவர்; {degree} படித்திருக்கிறீர்கள். இந்தப் பயணம் உங்களை "
+        "civil services நோக்கி எப்படி அழைத்துச் சென்றது?",
+        "உங்கள் application-ஐப் பார்த்தால், civil services-ஐத் தேர்ந்தெடுக்க உங்களைத் "
+        "தூண்டியது என்ன, எப்படி?",
+    ),
+    _Seed(
+        "civil services வாய்ப்பு அமையாவிட்டால், சமூகத்திற்காக என்ன செய்ய விரும்புவீர்கள், ஏன்?",
+        "civil services வாய்ப்பு அமையாவிட்டால், சமூகத்திற்காக என்ன செய்ய விரும்புவீர்கள், ஏன்?",
+    ),
+)
+_SEEDS[HOME_DISTRICT]["ta-en"] = (
+    _Seed(
+        "{place} பகுதியில் நீங்கள் நேரில் பார்த்த ஒரு முக்கியமான பிரச்சினை என்ன, அதை எப்படி தீர்ப்பீர்கள்?",
+        "உங்கள் பகுதியில் நேரில் பார்த்த ஒரு முக்கியமான பிரச்சினை என்ன, அதை எப்படி தீர்ப்பீர்கள்?",
+    ),
+    _Seed(
+        "{place} பகுதிக்கு ஒரு மாற்றம் கொண்டுவர முடிந்தால் அது என்ன, ஏன்?",
+        "உங்கள் பகுதிக்கு ஒரு மாற்றம் கொண்டுவர முடிந்தால் அது என்ன, ஏன்?",
+    ),
+    _Seed(
+        "{place} மக்களுக்கும் அரசு அலுவலகங்களுக்கும் இடையிலான நம்பிக்கையை எப்படி வளர்ப்பீர்கள்?",
+        "உங்கள் பகுதி மக்களுக்கும் அரசு அலுவலகங்களுக்கும் இடையிலான நம்பிக்கையை எப்படி வளர்ப்பீர்கள்?",
+    ),
+)
+_SEEDS[DEGREE]["ta-en"] = (
+    _Seed(
+        "{degree} படிப்பு உங்கள் சிந்தனையை எப்படி மாற்றியது?",
+        "உங்கள் படிப்பு உங்கள் சிந்தனையை எப்படி மாற்றியது?",
+    ),
+    _Seed(
+        "{degree} பாடத்தில் உள்ள ஒரு கருத்து சாதாரண மக்களின் வாழ்க்கையுடன் எப்படி தொடர்பு கொள்கிறது?",
+        "உங்கள் பாடத்தில் உள்ள ஒரு கருத்து சாதாரண மக்களின் வாழ்க்கையுடன் எப்படி தொடர்பு கொள்கிறது?",
+    ),
+    _Seed(
+        "நிர்வாகத்தில் {degree} பற்றிய உங்கள் புரிதலை எப்படிப் பயன்படுத்துவீர்கள்?",
+        "நிர்வாகத்தில் உங்கள் பாடம் பற்றிய புரிதலை எப்படிப் பயன்படுத்துவீர்கள்?",
+    ),
+)
+_SEEDS[INTERESTS]["ta-en"] = (
+    _Seed(
+        "{hobby} உங்களுக்கு என்ன கற்றுத் தந்தது, அது உங்கள் பணியில் எப்படி உதவும்?",
+        "படிப்புக்கு வெளியே உங்களுக்கு உண்மையான மகிழ்ச்சி தரும் செயல் எது, ஏன்?",
+    ),
+    _Seed(
+        "{hobby2} மூலம் உங்களைப் பற்றி என்ன அறிந்தீர்கள், எப்படி?",
+        "ஓய்வு நேரத்தில் என்ன செய்ய விரும்புகிறீர்கள், ஏன்?",
+    ),
+    _Seed(
+        "{optional} பாடத்தை optional subject ஆக ஏன் தேர்ந்தெடுத்தீர்கள், அது உங்கள் சிந்தனையை எப்படி மாற்றியது?",
+        "உங்கள் degree-க்கு வெளியே எந்தப் பாடம் உங்கள் சிந்தனையை மாற்றியது, எப்படி?",
+    ),
+)
+_SEEDS[CURRENT_AFFAIRS]["ta-en"] = (
+    _Seed(
+        "சமீபத்தில் எந்த தேசியப் பிரச்சினையை கவனமாகப் பின்தொடர்ந்தீர்கள், ஏன்?",
+        "சமீபத்தில் எந்த தேசியப் பிரச்சினையை கவனமாகப் பின்தொடர்ந்தீர்கள், ஏன்?",
+    ),
+    _Seed(
+        "நீங்கள் தேர்ந்தெடுக்கும் ஒரு தேசியப் பிரச்சினையில், உங்களுடன் ஒத்துப்போகாத தரப்பின் "
+        "கருத்தை எப்படி மதிப்பீடு செய்கிறீர்கள்?",
+        "நீங்கள் தேர்ந்தெடுக்கும் ஒரு தேசியப் பிரச்சினையில், உங்களுடன் ஒத்துப்போகாத தரப்பின் "
+        "கருத்தை எப்படி மதிப்பீடு செய்கிறீர்கள்?",
+    ),
+)
+
 # Asked only when the form lists work experience. The text itself never enters a seed.
 _WORK_SEEDS: dict[str, str] = {
     "hi-en": "Aapke kaam ke anubhav ne aapko janseva ke baare mein kya sikhaya, aur use aap "
@@ -422,9 +513,14 @@ _WORK_SEEDS: dict[str, str] = {
     "use it?",
     "hi": "आपके काम के अनुभव ने आपको जनसेवा के बारे में क्या सिखाया, और उसे आप कैसे काम में लाएँगे?",
 }
+_WORK_SEEDS["ta-en"] = (
+    "உங்கள் work experience பொதுச் சேவையைப் பற்றி என்ன கற்றுத் தந்தது, அதை எப்படி பயன்படுத்துவீர்கள்?"
+)
 
 # Hypothetical DM/SP situations, with no communal, party or caste framing, and no real place.
-# Chosen by stable hash of the form, so one form always gets the same situation.
+# Chosen by stable hash of the form, so one form always gets the same situation. The last three
+# and every twist were added on Nov 7 (owner: "board proposing better scenarios"): each is a real
+# dilemma with a constraint, and each has one twist that raises the stakes (`twist_for`).
 SITUATIONS: tuple[dict[str, str], ...] = (
     {  # flood relief
         "hi-en": "Maan lijiye aap ek zile ke DM hain aur baadh ke baad rahat samagri kam pad "
@@ -450,7 +546,147 @@ SITUATIONS: tuple[dict[str, str], ...] = (
         "hi": "मान लीजिए आप SP हैं और दो गाँवों के बीच पानी के बँटवारे पर तनाव बढ़ रहा है। "
         "आप स्थिति को कैसे संभालेंगे?",
     },
+    {  # hospital power in a heatwave
+        "hi-en": "Maan lijiye aap DM hain aur bheeshan garmi mein zila aspataal ki bijli baar "
+        "baar ja rahi hai, diesel bhi kam hai. Aap sthiti kaise sambhalenge?",
+        "en": "Suppose you are a DM in a severe heatwave, the district hospital keeps losing "
+        "power, and diesel is short. How would you handle it?",
+        "hi": "मान लीजिए आप DM हैं और भीषण गर्मी में ज़िला अस्पताल की बिजली बार-बार जा रही है, डीज़ल "
+        "भी कम है। आप स्थिति कैसे संभालेंगे?",
+    },
+    {  # mid-day meal illness
+        "hi-en": "Maan lijiye aap DM hain aur ek gaon mein mid-day meal ke baad kai bachche "
+        "beemar pad gaye hain. Pehle ghante mein aap kaise kaam karenge?",
+        "en": "Suppose you are a DM and several children in a village fall ill after the "
+        "mid-day meal. How would you act in the first hour?",
+        "hi": "मान लीजिए आप DM हैं और एक गाँव में मिड-डे मील के बाद कई बच्चे बीमार पड़ गए हैं। "
+        "पहले घंटे में आप कैसे काम करेंगे?",
+    },
+    {  # court order on forest land
+        "hi-en": "Maan lijiye aap DM hain aur adalat ne van bhoomi khaali karane ko kaha hai, "
+        "par wahan garib parivar barson se rehte hain. Aap kaise aage badhenge?",
+        "en": "Suppose you are a DM and a court orders forest land cleared, but poor families "
+        "have lived there for years. How would you proceed?",
+        "hi": "मान लीजिए आप DM हैं और अदालत ने वन भूमि खाली कराने को कहा है, पर वहाँ गरीब परिवार "
+        "बरसों से रहते हैं। आप कैसे आगे बढ़ेंगे?",
+    },
 )
+
+SITUATIONS[0]["ta-en"] = (
+    "நீங்கள் மாவட்ட ஆட்சியர் என்று வைத்துக்கொள்ளுங்கள். வெள்ளத்துக்குப் பிறகு relief supplies "
+    "குறைவாக உள்ளன; முதலில் யாருக்கு வழங்குவது என்று எப்படி முடிவு செய்வீர்கள்?"
+)
+SITUATIONS[1]["ta-en"] = (
+    "ஒரு factory-யில் contract workers வேலைநிறுத்தம் செய்கிறார்கள் என்று வைத்துக்கொள்ளுங்கள். "
+    "இரு தரப்பினரிடமும் பேசி எப்படி முன்னேறுவீர்கள்?"
+)
+SITUATIONS[2]["ta-en"] = (
+    "இரு கிராமங்களுக்கிடையே தண்ணீர் பகிர்வால் பதற்றம் அதிகரிக்கிறது என்று வைத்துக்கொள்ளுங்கள். "
+    "காவல் கண்காணிப்பாளராக நிலைமையை எப்படி கையாள்வீர்கள்?"
+)
+# UNVERIFIED: Tamil wording below (fluent review).
+SITUATIONS[3]["ta-en"] = (
+    "நீங்கள் மாவட்ட ஆட்சியர் என்று வைத்துக்கொள்ளுங்கள். கடும் வெப்பத்தில் மாவட்ட மருத்துவமனையில் "
+    "மின்சாரம் அடிக்கடி போகிறது, டீசலும் குறைவு. நிலைமையை எப்படி கையாள்வீர்கள்?"
+)
+SITUATIONS[4]["ta-en"] = (
+    "நீங்கள் மாவட்ட ஆட்சியர் என்று வைத்துக்கொள்ளுங்கள். ஒரு கிராமத்தில் மதிய உணவுக்குப் பிறகு பல "
+    "குழந்தைகள் நோய்வாய்ப்பட்டுள்ளனர். முதல் ஒரு மணி நேரத்தில் எப்படி செயல்படுவீர்கள்?"
+)
+SITUATIONS[5]["ta-en"] = (
+    "நீங்கள் மாவட்ட ஆட்சியர் என்று வைத்துக்கொள்ளுங்கள். வன நிலத்திலிருந்து ஆக்கிரமிப்பை அகற்ற "
+    "நீதிமன்றம் உத்தரவிட்டுள்ளது, ஆனால் அங்கே பல ஏழைக் குடும்பங்கள் பல ஆண்டுகளாக வசிக்கின்றன. "
+    "எப்படி முன்னேறுவீர்கள்?"
+)
+
+# One twist per situation, same order: asked once, after a real answer to the situation, to see
+# how the candidate holds a position when the stakes rise. UNVERIFIED: Tamil wording.
+TWISTS: tuple[dict[str, str], ...] = (
+    {
+        "hi-en": "Ab ek sthaniya neta phone karke kehte hain ki pehle unke samarthakon ke gaon "
+        "mein samagri bhejiye. Aap ise kaise sambhalenge?",
+        "en": "Now a local politician calls and asks you to send supplies first to the villages "
+        "of their supporters. What do you do?",
+        "hi": "अब एक स्थानीय नेता फ़ोन करके कहते हैं कि पहले उनके समर्थकों के गाँव में सामग्री भेजिए। "
+        "आप इसे कैसे संभालेंगे?",
+        "ta-en": "இப்போது ஒரு உள்ளூர் அரசியல்வாதி போன் செய்து, முதலில் தன் ஆதரவாளர்களின் கிராமங்களுக்கு "
+        "அனுப்பச் சொல்கிறார். என்ன செய்வீர்கள்?",
+    },
+    {
+        "hi-en": "Ab factory maalik kehte hain ki agar hadtaal kal tak khatam nahi hui, to woh "
+        "factory band kar denge aur saikdon log berozgaar ho jayenge. Aap kaise aage badhenge?",
+        "en": "Now the owner says that if the strike does not end by tomorrow, the factory will "
+        "close and hundreds will lose their jobs. What is your next step?",
+        "hi": "अब कारख़ाने के मालिक कहते हैं कि अगर हड़ताल कल तक ख़त्म नहीं हुई, तो वे कारख़ाना बंद "
+        "कर देंगे और सैकड़ों लोग बेरोज़गार हो जाएँगे। आप कैसे आगे बढ़ेंगे?",
+        "ta-en": "இப்போது நாளைக்குள் வேலைநிறுத்தம் முடியாவிட்டால் factory-ஐ மூடிவிடுவதாக உரிமையாளர் "
+        "சொல்கிறார்; நூற்றுக்கணக்கானோர் வேலை இழப்பார்கள். எப்படி முன்னேறுவீர்கள்?",
+    },
+    {
+        "hi-en": "Ab social media par ek bhadkaau video viral ho raha hai aur dono gaon mein "
+        "bheed jama ho rahi hai. Aap pehla kadam kaise uthayenge?",
+        "en": "Now an inflammatory video is spreading on social media and crowds are gathering "
+        "in both villages. What is your first step?",
+        "hi": "अब सोशल मीडिया पर एक भड़काऊ वीडियो वायरल हो रहा है और दोनों गाँवों में भीड़ जमा हो रही है। "
+        "आप पहला क़दम कैसे उठाएँगे?",
+        "ta-en": "இப்போது social media-வில் ஒரு தூண்டும் வீடியோ பரவுகிறது, இரு கிராமங்களிலும் கூட்டம் "
+        "கூடுகிறது. உங்கள் முதல் நடவடிக்கை என்ன?",
+    },
+    {
+        "hi-en": "Ab pata chalta hai ki diesel ka theka ek prabhavshali vyakti ke rishtedaar ke "
+        "paas hai, aur wahi der kar raha hai. Aap ise kaise sambhalenge?",
+        "en": "Now you learn that the diesel contract is held by a relative of an influential "
+        "person, and that is the cause of the delay. What do you do?",
+        "hi": "अब पता चलता है कि डीज़ल का ठेका एक प्रभावशाली व्यक्ति के रिश्तेदार के पास है, और वही देर "
+        "कर रहा है। आप इसे कैसे संभालेंगे?",
+        "ta-en": "இப்போது டீசல் contract ஒரு செல்வாக்கான நபரின் உறவினரிடம் இருப்பதும், அவரால்தான் "
+        "தாமதம் என்பதும் தெரிகிறது. என்ன செய்வீர்கள்?",
+    },
+    {
+        "hi-en": "Ab media aspataal ke bahar hai aur aapse turant bayaan chahta hai, jabki jaanch "
+        "abhi shuru hi hui hai. Aap kya kahenge, aur kyun?",
+        "en": "Now the media is outside the hospital and wants a statement at once, while the "
+        "inquiry has only just begun. What do you say?",
+        "hi": "अब मीडिया अस्पताल के बाहर है और आपसे तुरंत बयान चाहता है, जबकि जाँच अभी शुरू ही हुई है। "
+        "आप क्या कहेंगे, और क्यों?",
+        "ta-en": "இப்போது ஊடகங்கள் மருத்துவமனைக்கு வெளியே நின்று உடனே அறிக்கை கேட்கின்றன, ஆனால் விசாரணை "
+        "இப்போதுதான் தொடங்கியுள்ளது. என்ன சொல்வீர்கள்?",
+    },
+    {
+        "hi-en": "Ab parivaar dharne par baith gaye hain, aur adalat ne agle hafte paalan ki "
+        "report maangi hai. Aap ise kaise sambhalenge?",
+        "en": "Now the families have begun a sit-in, and the court wants a compliance report next "
+        "week. What do you do?",
+        "hi": "अब परिवार धरने पर बैठ गए हैं, और अदालत ने अगले हफ़्ते पालन की रिपोर्ट माँगी है। "
+        "आप इसे कैसे संभालेंगे?",
+        "ta-en": "இப்போது குடும்பங்கள் தர்ணாவில் அமர்ந்துள்ளன, நீதிமன்றம் அடுத்த வாரம் இணக்க அறிக்கை "
+        "கேட்கிறது. என்ன செய்வீர்கள்?",
+    },
+)
+
+
+def _situation_index(text: str) -> tuple[int, str] | None:
+    """(situation index, language mix) when `text` contains one of the situations. Pure."""
+    norm = unicodedata.normalize("NFC", text or "")
+    for index, situation in enumerate(SITUATIONS):
+        for mix, wording in situation.items():
+            if unicodedata.normalize("NFC", wording) in norm:
+                return index, mix
+    return None
+
+
+def is_situation(text: str) -> bool:
+    """True when `text` is (or contains) one of the DM/SP situations."""
+    return _situation_index(text) is not None
+
+
+def twist_for(question: str) -> str | None:
+    """The twist for the situation `question` contains, in the same language, or None."""
+    found = _situation_index(question)
+    if found is None:
+        return None
+    index, mix = found
+    return TWISTS[index].get(mix)
 
 
 def _term(value: str | None) -> str | None:
@@ -459,7 +695,9 @@ def _term(value: str | None) -> str | None:
         return None
     spaced = value.translate(_TERM_SPACES).replace("&", " and ").replace(".", "")
     term = " ".join(spaced.split())
-    if not _TERM.match(term) or _INSTRUCTION.search(term):
+    if not _TERM.match(term) or _INSTRUCTION.search(term) or names_an_institution(term):
+        return None
+    if re.search(r"\bfrom\b", term, re.IGNORECASE):  # "Electronics from <somewhere>"
         return None
     if any(re.search(p, term.lower()) for p in PLACE_FACT_PATTERNS):
         return None
@@ -491,7 +729,9 @@ def _fill(seed: _Seed, terms: dict[str, str], segment_id: str, form: CandidateFo
 
 
 def _mix(form: CandidateForm) -> str:
-    return {"english": "en", "hindi": "hi"}.get(form.interview_language, "hi-en")
+    return {"english": "en", "hindi": "hi", "tanglish": "ta-en"}.get(
+        form.interview_language, "hi-en"
+    )
 
 
 def situation_for(form: CandidateForm) -> str:
@@ -517,6 +757,7 @@ NEUTRAL_SEEDS: dict[str, str] = {
     "hi-en": "Is vishay par aap apne anubhav se kya kehna chahenge, aur kyun?",
     "en": "On this subject, what would you like to say from your own experience, and why?",
     "hi": "इस विषय पर आप अपने अनुभव से क्या कहना चाहेंगे, और क्यों?",
+    "ta-en": "இந்தத் தலைப்பில் உங்கள் அனுபவத்திலிருந்து என்ன சொல்ல விரும்புகிறீர்கள், ஏன்?",
 }
 
 

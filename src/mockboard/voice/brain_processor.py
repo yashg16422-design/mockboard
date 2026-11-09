@@ -809,6 +809,12 @@ class BrainProcessor(FrameProcessor):
         if getattr(report, "by_member", None):
             from mockboard.brain.report_panel import page_fields
             extra = page_fields(report)
+        elif self.session.mode == "study_partner":  # "Your points, made stronger" (Nov 7)
+            try:
+                from mockboard.modes.partner.report import partner_page_fields
+                extra = partner_page_fields(report)
+            except (ImportError, AttributeError, TypeError, ValueError) as e:
+                logger.warning(f"[voice] partner summary not sent to the page: {e}")
         await self.emit("report", text=self.report_text, path=str(path) if path else None,
                         trace=str(self.session.recorder.path), **extra)
         if self._on_report is not None:

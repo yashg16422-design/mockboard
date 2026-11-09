@@ -50,8 +50,12 @@ def test_form_collects_no_identifiers():
 def test_form_limits():
     with pytest.raises(ValidationError):
         CandidateForm(home_state="UP", degree_subject="Physics", hobbies=["a", "b", "c", "d"])
+    form = CandidateForm(
+        home_state="Tamil Nadu", degree_subject="Physics", interview_language="tanglish"
+    )
+    assert form.interview_language == "tanglish"
     with pytest.raises(ValidationError):
-        CandidateForm(home_state="UP", degree_subject="Physics", interview_language="tamil")
+        CandidateForm(home_state="UP", degree_subject="Physics", interview_language="kannada")
 
 
 @pytest.mark.parametrize("name", sorted(ALL_TOOLS))

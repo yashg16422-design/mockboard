@@ -579,6 +579,9 @@ def make_actor_responder() -> Callable[[str, str], str]:
 
 
 def actor_responder(system: str, user: str, used: set[str] | None = None) -> str:
+    partner = _tag(user, "partner_board")
+    if partner:  # the study partner (partner_actor.v1)
+        return _partner_actor_line(json.loads(partner), user)
     debate = _tag(user, "debate_board")
     if debate:
         return _debate_actor_line(json.loads(debate), user)
@@ -608,6 +611,89 @@ def actor_responder(system: str, user: str, used: set[str] | None = None) -> str
             "aapko kaunsi chunauti sabse zaroori lagti hai, aur kyun?"
         )
     return _ACTOR_LINES.get(move, _ACTOR_LINES[Move.probe.value])
+
+
+# ---------------------------------------------------------------------------
+# Study partner (partner_actor.v1, partner_summary.v1)
+# ---------------------------------------------------------------------------
+
+_NOTE_WORDS = re.compile(r"spoke about ([^.;]+)")
+_PARTNER_AND = {"hi-en": " aur ", "en": " and ", "hi": " और ", "ta-en": ", "}
+_PARTNER_RESTATE = {
+    "hi-en": ("Achha, aapki baat {kw} ke baare mein hai.", "Achha, samajh raha hoon."),
+    "en": ("So your point is about {kw}.", "I see what you mean."),
+    "hi": ("अच्छा, आपकी बात {kw} के बारे में है।", "अच्छा, समझ रहा हूँ।"),
+    "ta-en": ("சரி, உங்கள் point {kw} பற்றியது.", "சரி, புரிகிறது."),
+}
+_PARTNER_RECAP = {
+    "hi-en": "Theek hai, ab tak aapne {kw} par apni baat rakhi.",
+    "en": "All right, so far you have made your case on {kw}.",
+    "hi": "ठीक है, अब तक आपने {kw} पर अपनी बात रखी।",
+    "ta-en": "சரி, இதுவரை நீங்கள் {kw} பற்றி உங்கள் கருத்தைச் சொன்னீர்கள்.",
+}
+_PARTNER_CLOSE = {
+    "hi-en": "Aaj aapne {kw} par apne points rakhe. Aapke notes taiyaar hain, shukriya!",
+    "en": "Today you made your points on {kw}. Your notes are ready, thank you!",
+    "hi": "आज आपने {kw} पर अपने पॉइंट रखे। आपके नोट्स तैयार हैं, शुक्रिया!",
+    "ta-en": "இன்று நீங்கள் {kw} பற்றி உங்கள் points சொன்னீர்கள். உங்கள் notes தயார், நன்றி!",
+}
+
+
+def _note_keywords(text: str, limit: int = 2) -> list[str]:
+    """The words of the fake listener's notes ("Candidate spoke about a, b, c.")."""
+    words: list[str] = []
+    for line in text.splitlines():
+        m = _NOTE_WORDS.search(line.strip().lstrip("- "))
+        if m:
+            words.extend(w.strip() for w in m.group(1).split(",") if w.strip())
+    return list(dict.fromkeys(words))[:limit]
+
+
+def _partner_actor_line(board: dict[str, Any], user: str) -> str:
+    """A stand-in for Mitra: a restating sentence built from the listener's note, then the move's
+    own fixed question (from the partner's templates)."""
+    from mockboard.modes.partner.lines import CLOSE_TARGET, RECAP_TARGET, template_line
+    from mockboard.modes.partner.lines import template_question as partner_question
+
+    mix = board.get("language_mix", "hi-en")
+    mix = mix if mix in _PARTNER_RESTATE else "hi-en"
+    move = Move(board.get("move", "probe"))
+    joiner = _PARTNER_AND[mix]
+    if move == Move.move_on:
+        kws = _note_keywords(_tag(user, "points_so_far"), 3) or _note_keywords(
+            _tag(user, "listener_note"), 3)
+        kw = joiner.join(kws) or {"hi-en": "is vishay", "en": "this topic", "hi": "इस विषय",
+                                  "ta-en": "இந்த விஷயம்"}[mix]
+        if not board.get("ask_a_question", True):
+            return _PARTNER_CLOSE[mix].format(kw=kw)
+        return f"{_PARTNER_RECAP[mix].format(kw=kw)} {partner_question(move, RECAP_TARGET, mix)}"
+    if move == Move.reassure:
+        return template_line(move, None, mix)
+    kws = _note_keywords(_tag(user, "listener_note"))
+    with_kw, plain = _PARTNER_RESTATE[mix]
+    first = with_kw.format(kw=joiner.join(kws)) if kws else plain
+    question = partner_question(move, None, mix) or template_line(move, CLOSE_TARGET, mix)
+    return f"{first} {question}"
+
+
+def partner_summary_responder(system: str, user: str) -> dict[str, Any]:
+    """A stand-in for the note writer: the code draft as it came, plus one practice suggestion per
+    gap. It quotes nothing new, so the quote check passes on the fake path."""
+    drafts = json.loads(_tag(user, "draft_points") or "[]")
+    points = [
+        {k: str(d.get(k, "")) for k in ("point", "reason", "example", "counterpoint", "answer",
+                                        "open")}
+        for d in drafts if isinstance(d, dict)
+    ]
+    steps = []
+    if any(not p["reason"] for p in points):
+        steps.append("Say each point again with the reason behind it, in two sentences.")
+    if any(not p["example"] for p in points):
+        steps.append("Find one example you know well for each point and practise it aloud.")
+    if any(p["counterpoint"] and not p["answer"] for p in points):
+        steps.append("Give a one-line reply to the counterpoint you left open.")
+    steps.append("Explain the whole topic once more in two minutes, point by point.")
+    return {"points": points, "next_steps": steps[:3]}
 
 
 def opener_responder(system: str, user: str) -> str:
@@ -713,7 +799,8 @@ def agenda_plan_responder(system: str, user: str) -> dict[str, Any]:
     form = dict(
         line.split(": ", 1) for line in _tag(user, "application_form").splitlines() if ": " in line
     )
-    mix = "en" if form.get("interview_language") == "english" else "hi-en"
+    language = form.get("interview_language")
+    mix = {"english": "en", "hindi": "hi", "tanglish": "ta-en"}.get(language, "hi-en")
     hobbies = [t for t in (_term(h) for h in form.get("hobbies", "").split(",")) if t]
     terms = {
         "place": _term(form.get("district")) or _term(form.get("home_state")) or "aapka ilaaka",
@@ -1004,10 +1091,12 @@ def fake_responders(
         "opener": opener_responder,
         "plan_agenda": agenda_plan_responder,
         "summary": summary_responder,
+        "repair": lambda system, user: {"repairs": []},  # offline: no word is claimed misheard
         "judge": judge_responder,
         "judge_debate": debate_judge_responder,
         "motion_screen": motion_screen_responder,
         "case_file": case_file_responder,
+        "partner_summary": partner_summary_responder,
     }
 
 

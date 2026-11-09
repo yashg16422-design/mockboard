@@ -68,13 +68,9 @@ def _to_claim(
 # Ruling 37: honest "I don't know" markers, read from the RAW segment text in both scripts,
 # so a garbled or mis-labelled transcript of an honest answer still gets reassure or move_on
 # (R3/R3b, debate D4), never pressure. Our own lists; UNVERIFIED against real Prisma output.
-_UNKNOWN_STRONG = re.compile(
-    r"\b(?:pata nahi[n]?|nahi[n]? pata|maloom nahi[n]?|malum nahi[n]?|nahi[n]? maloom|"
-    r"yaad nahi[n]?|nahi[n]? yaad|(?:koi )?idea nahi[n]?|i (?:do not|don'?t) know|"
-    r"not sure|no idea)\b"
-    r"|पता नहीं|पता नही|नहीं पता|नही पता|मालूम नहीं|नहीं मालूम|याद नहीं|आइडिया नहीं",
-    re.IGNORECASE,
-)
+# The strong markers live in a model-free module so the director can read them too.
+from mockboard.brain.unknown_markers import UNKNOWN_STRONG as _UNKNOWN_STRONG  # noqa: E402
+
 # "baad mein" ("later") is a deflection only in a short segment, or next to "I will tell /
 # think / see". "badh mein" is the form Prisma wrote in the owner's run (Defect H).
 _UNKNOWN_LATER = re.compile(r"\b(?:baad|badh|bad) me(?:in|n)?\b|बाद में", re.IGNORECASE)

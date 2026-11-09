@@ -37,6 +37,7 @@ NEVER_FOR_HONESTY = {Move.pressure, Move.clarify, Move.counter, Move.fact_challe
     ("Abhi yaad nahi aa raha.", True),
     ("मुझे इसका सही आँकड़ा नहीं पता।", True),
     ("पता नहीं, सर।", True),
+    ("எனக்குத் தெரியாது.", True),
     ("Haan kuchh badh mein", True),  # the owner's run: "kuch baad mein", short deflection
     ("Is par main baad mein bataunga, abhi poori jaankari nahi hai mere paas sir.", True),
     ("इस पर मैं बाद में बताऊँगा।", True),

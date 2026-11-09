@@ -24,7 +24,7 @@ def test_form_is_one_column_of_the_contract_fields():
     assert 'name="optional_subject"' in PAGE
     assert 'name="work_experience"' in PAGE
     assert 'name="interview_language"' in PAGE
-    assert "kisi aur topic pe baat karte hain" in PAGE
+    assert 'id="topic-hint"' in PAGE
     assert "Likely questions" in PAGE
     assert "Not available in this version" not in PAGE
     assert 'id="likely-btn"' in PAGE
@@ -53,10 +53,20 @@ def test_report_can_be_printed_and_grouped_when_the_server_sends_members():
     js = Path("src/mockboard/voice/static/app.js").read_text(encoding="utf-8")
     assert "weakest_question" in js
     assert "practice_plan" in js
+    assert "practice_indicator" in js
+    assert "item.evidence" in js
     assert "/api/likely-questions" in js
     assert "Practise this moment" in PAGE
     assert "window.print" in js
     assert "m.text" in js
+
+
+def test_topic_change_help_tracks_the_selected_interview_language():
+    js = Path("src/mockboard/voice/static/app.js").read_text(encoding="utf-8")
+    assert "function updateTopicHint()" in js
+    assert 'tanglish: ' in js
+    assert "வேறு தலைப்புக்கு போகலாமா?" in js
+    assert "Can we move to another topic?" in js
 
 
 def test_limit_notice_does_not_blame_the_visitor():
@@ -71,16 +81,28 @@ def test_limit_notice_does_not_blame_the_visitor():
 
 
 def test_the_field_follows_the_pointer_and_the_voice():
-    assert 'id="home-field"' in PAGE
-    assert 'id="room-field"' in PAGE
+    # One particle cloud behind the whole page (owner's direction, Nov 7, 2026).
+    assert 'id="field"' in PAGE
     js = Path("src/mockboard/voice/static/presence.js").read_text(encoding="utf-8")
     assert "prefers-reduced-motion" in js
     assert "pointermove" in js
+    assert 'getContext("webgl"' in js
+    for word in ("show(", "who(", "level(", "pulse(", "state("):
+        assert word in js
     app = Path("src/mockboard/voice/static/app.js").read_text(encoding="utf-8")
     assert "Presence.show" in app
     assert "Presence.who" in app
     assert "Presence.level" in app
     assert "Presence.pulse" in app
+
+
+def test_the_page_loads_only_its_own_scripts():
+    # The handoff allows Google Fonts but no third-party scripts; the cloud is plain WebGL.
+    import re
+
+    sources = re.findall(r"<script[^>]*\bsrc=\"([^\"]+)\"", PAGE)
+    assert sources == ["/static/presence.js", "/static/app.js"]
+    assert "<script type=\"module\"" not in PAGE and "importmap" not in PAGE
 
 
 def test_page_keeps_the_voice_client_contract():

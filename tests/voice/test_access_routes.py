@@ -115,7 +115,7 @@ def test_a_connection_that_connects_writes_one_row_and_runs(ran, settings):
         assert offer(client).status_code == 200
         settle(client, lambda: ran)
     assert rows(db_path()) == 1 and len(ran) == 1
-    assert ran[0][1].home_state == "Goa"
+    assert ran[0][1].form.home_state == "Goa"  # a Sitting since the mode picker
 
 
 def test_a_connection_that_never_connects_writes_nothing(ran, settings):

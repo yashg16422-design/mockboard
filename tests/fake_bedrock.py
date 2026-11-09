@@ -24,6 +24,8 @@ from mockboard.brain.tools import (
     LIBRARIAN_TOOL,
     LISTENER_TOOL,
     PANEL_LISTENER_TOOL,
+    PARTNER_SUMMARY_TOOL,
+    REPAIR_TOOL,
 )
 
 TOOL_TO_CALL = {
@@ -32,6 +34,8 @@ TOOL_TO_CALL = {
     AGENDA_TOOL.name: "plan_agenda",
     LIBRARIAN_TOOL.name: "librarian",
     JUDGE_TOOL.name: "judge",
+    REPAIR_TOOL.name: "repair",  # likely-misheard words, once at the report (repair.v1)
+    PARTNER_SUMMARY_TOOL.name: "partner_summary",  # the study partner's notes (partner_summary.v1)
 }
 MIDSTREAM = "midstream-throttle"  # a fault value: the stream starts, then Bedrock throttles
 

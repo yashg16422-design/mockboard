@@ -77,6 +77,7 @@ def _load_builtin() -> None:
     # alone gives every built-in mode.
     from mockboard.modes import upsc  # noqa: F401
     from mockboard.modes.debate import profile  # noqa: F401
+    from mockboard.modes.partner import profile as _partner  # noqa: F401
 
 
 def get_profile(mode: str | None) -> ModeProfile:
