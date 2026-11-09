@@ -181,12 +181,34 @@ def thanks_said(text: str) -> frozenset[str]:
     return frozenset(w for w in THANKS_WORDS if w in low)
 
 
+# A candour sentence needs the signal it names (actor.v12). The owner's last live run (Nov 9):
+# "Aap khud aashwast nahi lag rahe" was said to a confident answer with no hedge in it.
+_CANDOUR = {
+    "unsure": re.compile(r"aashwast nahi|ashwast nahi|sure nahi lag|sure of this|आश्वस्त नहीं",
+                         re.IGNORECASE),
+    "thin": re.compile(r"bahut chhota|too brief|बहुत छोटा", re.IGNORECASE),
+    "no_reason": re.compile(r"kaaran nahi|karan nahi|not a reason|कारण नहीं", re.IGNORECASE),
+}
+
+
+def unsupported_candour(sentence: str, signals: frozenset[str]) -> bool:
+    """A sentence that names a gap code did not find in the answer. Pure."""
+    return any(
+        name not in signals and pattern.search(sentence) and not sentence.rstrip().endswith("?")
+        for name, pattern in _CANDOUR.items()
+    )
+
+
 def clean_lead_sentence(
-    sentence: str, *, after_handoff: bool = False, echo: frozenset[str] = frozenset()
+    sentence: str, *, after_handoff: bool = False, echo: frozenset[str] = frozenset(),
+    signals: frozenset[str] | None = None,
 ) -> str:
-    """One opening sentence of a member's line with the openings above removed ('' drops it)."""
+    """One opening sentence of a member's line with the openings above removed ('' drops it).
+    `signals` None means unknown (no candour check)."""
     text = sentence.strip()
     if grades_the_answer(text):
+        return ""
+    if signals is not None and unsupported_candour(text, signals):
         return ""
     if after_handoff:
         if _THANKS_ONLY.match(text) and thanks_said(text) & echo:
@@ -200,7 +222,7 @@ def clean_lead_sentence(
 
 def without_lead(
     text: str, *, greeting_allowed: bool = False, after_handoff: bool = False,
-    echo: frozenset[str] = frozenset(),
+    echo: frozenset[str] = frozenset(), signals: frozenset[str] | None = None,
 ) -> str:
     """The whole-text form of `strip_lead`: what it yields, joined."""
     out, used = [], 0
@@ -211,7 +233,7 @@ def without_lead(
         room = GREETING_WINDOW_WORDS - used
         used += len(sentence.split())
         clean = sentence.strip() if greeting_allowed else _strip_window(sentence.strip(), room)
-        clean = clean_lead_sentence(clean, after_handoff=after_handoff, echo=echo)
+        clean = clean_lead_sentence(clean, after_handoff=after_handoff, echo=echo, signals=signals)
         if clean:
             out.append(clean)
     return " ".join(out)
@@ -225,7 +247,7 @@ async def strip_greeting(chunks: AsyncIterator[str]) -> AsyncIterator[str]:
 
 async def strip_lead(
     chunks: AsyncIterator[str], *, greeting_allowed: bool = False, after_handoff: bool = False,
-    echo: frozenset[str] = frozenset(),
+    echo: frozenset[str] = frozenset(), signals: frozenset[str] | None = None,
 ) -> AsyncIterator[str]:
     """`without_greeting` on a stream, one whole sentence at a time, plus `clean_lead_sentence`. A
     sentence inside the first `GREETING_WINDOW_WORDS` words is held only until it is complete,
@@ -246,7 +268,9 @@ async def strip_lead(
             room = GREETING_WINDOW_WORDS - used
             used += len(sentence.split())
             clean = sentence.strip() if greeting_allowed else _strip_window(sentence.strip(), room)
-            clean = clean_lead_sentence(clean, after_handoff=after_handoff, echo=echo)
+            clean = clean_lead_sentence(
+                clean, after_handoff=after_handoff, echo=echo, signals=signals
+            )
             if clean:
                 yield clean + " "
         if used >= GREETING_WINDOW_WORDS and held:
@@ -257,7 +281,9 @@ async def strip_lead(
         if used < GREETING_WINDOW_WORDS:
             if not greeting_allowed:
                 tail = _strip_window(tail, GREETING_WINDOW_WORDS - used)
-            tail = clean_lead_sentence(tail, after_handoff=after_handoff, echo=echo)
+            tail = clean_lead_sentence(
+                tail, after_handoff=after_handoff, echo=echo, signals=signals
+            )
         if tail:
             yield tail
 
@@ -269,12 +295,13 @@ class _TitleDotLLM:
 
     def __init__(
         self, llm: LLMClient, *, greeting_allowed: bool = True, after_handoff: bool = False,
-        echo: frozenset[str] = frozenset(),
+        echo: frozenset[str] = frozenset(), signals: frozenset[str] | None = None,
     ) -> None:
         self._llm = llm
         self._greeting_allowed = greeting_allowed
         self._after_handoff = after_handoff
         self._echo = echo
+        self._signals = signals
 
     def __getattr__(self, name: str) -> Any:
         return getattr(self._llm, name)
@@ -283,7 +310,7 @@ class _TitleDotLLM:
         stream = strip_title_dots(self._llm.stream_text(**kwargs))
         return strip_lead(
             stream, greeting_allowed=self._greeting_allowed, after_handoff=self._after_handoff,
-            echo=self._echo,
+            echo=self._echo, signals=self._signals,
         )
 
 
@@ -575,6 +602,7 @@ async def compose_panel_line(
         _TitleDotLLM(
             llm, greeting_allowed=panel.first_handoff, after_handoff=after_handoff,
             echo=thanks_said(joined(fixed)) if after_handoff else frozenset(),
+            signals=frozenset(answer_signals(last_answer)),
         ),
         kit, user, max_words=cap, cap_grace=PANEL_CAP_GRACE,
         max_tokens=max_tokens, turn_id=turn_id,

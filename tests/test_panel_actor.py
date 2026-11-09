@@ -700,3 +700,20 @@ async def test_a_line_that_only_repeats_the_board_falls_back(form, kit):
     out, _ = await line_for_move(kit, form, before, kind=Move.probe, answer="Main baat karunga.",
                                  earlier_lines=[before])
     assert out.is_fallback and out.text != before and out.text.endswith("?")
+
+
+CONFIDENT = ("Lucknow mein sabse badi samasya traffic hai, main pehle data dekhunga kyunki jam ki "
+             "jagah pata honi chahiye, phir public transport sudharunga.")
+HEDGED = "Shayad main police bula lunga, mujhe pakka nahi pata."
+UNSURE_LINE = "Aap khud aashwast nahi lag rahe. Pehle chaubees ghante mein aap kya karenge?"
+
+
+async def test_you_sound_unsure_is_dropped_when_the_answer_was_not(form, kit):
+    """The owner's last live run (Nov 9): Nova said it to a confident answer with no hedge."""
+    out, _ = await line_for_move(kit, form, UNSURE_LINE, kind=Move.probe, answer=CONFIDENT)
+    assert out.text == "Pehle chaubees ghante mein aap kya karenge?"
+
+
+async def test_you_sound_unsure_stays_when_the_answer_hedged(form, kit):
+    out, _ = await line_for_move(kit, form, UNSURE_LINE, kind=Move.probe, answer=HEDGED)
+    assert out.text == UNSURE_LINE
