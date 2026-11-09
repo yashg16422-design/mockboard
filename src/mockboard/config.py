@@ -207,6 +207,10 @@ class Settings(BaseSettings):
     # takes the same fallback. Must stay below the read timeout to matter.
     # UNVERIFIED: placeholder until the Nova probe measures the actor's TTFT from EC2.
     actor_first_token_budget_s: float = Field(default=2.5, gt=0)
+    # The UPSC panel's own wait for Nova's first token (Round 56). On the owner's live run of Nov 9
+    # two panel lines arrived at 2.2-2.3 s, missed 2.5 s and were replaced by stock lines. Debate
+    # and the study partner keep `actor_first_token_budget_s`.
+    panel_actor_first_token_budget_s: float = Field(default=3.5, gt=0)
     # Ruling 17 (CTO_NOTES_03 §5.2): one exception to "the actor is never retried". When on,
     # an actor call that fails with a ThrottlingException within
     # `actor_fast_throttle_window_ms` of its request, before any token arrived, is retried

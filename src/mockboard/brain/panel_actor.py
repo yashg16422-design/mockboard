@@ -65,6 +65,8 @@ from mockboard.brain.schemas import (
 
 # A line that asks the agenda seed has to hold the seed's own words (up to 28), so it gets room.
 SEED_LINE_WORDS = 40
+# Words a panel line may run past what its prompt asks before the stream is cut (Round 56).
+PANEL_CAP_GRACE = 15
 SUMMARY_WORDS = 120
 RECENT_EXCHANGES = 3
 _DIGIT = re.compile(r"\d")
@@ -519,7 +521,7 @@ async def compose_panel_line(
             llm, greeting_allowed=panel.first_handoff, after_handoff=after_handoff,
             echo=thanks_said(joined(fixed)) if after_handoff else frozenset(),
         ),
-        kit, user, max_words=cap,
+        kit, user, max_words=cap, cap_grace=PANEL_CAP_GRACE,
         max_tokens=max_tokens, turn_id=turn_id,
         on_first_token=on_first_token, first_token_budget_s=first_token_budget_s,
         fast_throttle_retry_window_s=fast_throttle_retry_window_s, gate=gate,

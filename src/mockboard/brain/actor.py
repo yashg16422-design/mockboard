@@ -770,13 +770,17 @@ def line_system(kit: PromptKit, *, max_words: int, prompt_id: str = "actor") -> 
 def stream_line(
     llm: LLMClient, kit: PromptKit, user: str, *, max_words: int, max_tokens: int, tag_: str,
     prompt_id: str = "actor", name: str = "actor", gate: SentenceGate | None = None,
+    cap_grace: int = 0,
 ) -> AsyncIterator[str]:
-    """The raw streamed line, capped at `max_words`. Phase 2 feeds this to Timbre."""
+    """The raw streamed line, capped at `max_words`. Phase 2 feeds this to Timbre. The prompt asks
+    for `max_words`; `cap_grace` more are allowed before the stream is cut, so a question that runs
+    a little long is said whole (the owner's live run, Nov 9: the cut turned real follow-ups into
+    the generic move question)."""
     system = line_system(kit, max_words=max_words, prompt_id=prompt_id)
     chunks = llm.stream_text(
         name=name, system=system, user=user, max_tokens=max_tokens, tag=tag_
     )
-    return stream_capped(chunks, max_words, gate)
+    return stream_capped(chunks, max_words + cap_grace, gate)
 
 
 async def compose_line(
@@ -903,6 +907,7 @@ async def call_actor(
     fast_throttle_retry_window_s: float | None = None,
     prompt_id: str = "actor",
     gate: SentenceGate | None = None,
+    cap_grace: int = 0,
 ) -> ActorCall:
     """One streamed actor attempt with the first-token budget (ruling 14) and the optional
     fast-throttle retry (ruling 17). Never raises for model failures; the caller chooses the
@@ -923,7 +928,7 @@ async def call_actor(
         try:
             text = await collect_line(
                 stream_line(llm, kit, user, max_words=max_words, max_tokens=max_tokens,
-                            tag_=turn_id, prompt_id=prompt_id, gate=gate),
+                            tag_=turn_id, prompt_id=prompt_id, gate=gate, cap_grace=cap_grace),
                 first_token_budget_s=budget,
                 on_first_token=first_token,
             )
@@ -946,7 +951,7 @@ async def call_actor(
             return ActorCall(
                 error=f"{type(exc).__name__}: {exc}"[:300], guard="actor_failed", retried=retried
             )
-    text = cap_words(text, max_words)
+    text = cap_words(text, max_words + cap_grace)
     if not text and gate is not None and (gate.stopped is not None or gate.skipped):
         return ActorCall(text="", guard=gate.reason, retried=retried)  # every sentence refused
     if not text:

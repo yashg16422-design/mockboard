@@ -220,3 +220,53 @@ def test_listener_v7_defines_prejudice_narrowly():
     assert "- prejudice: true only when" in body
     assert "criticises a policy, a government or one person's act" in body
     assert load_prompt("listener", 6).body.count("prejudice") == 0
+
+
+
+# --- Round 56: the live voice run of Nov 9 (generated candidate speech, real Prisma, Nova, Timbre)
+
+
+@pytest.mark.parametrize("reply", [
+    "हाँ सर प्लीज", "हां सर, प्लीज़।", "हाँ जी, ख़त्म कीजिए।", "हां सर, थैंक यू।",
+])  # fmt: skip
+def test_a_devanagari_yes_closes(reply):
+    """Prisma wrote "Haan sir, please" as "हाँ सर प्लीज" and the board resumed instead of ending."""
+    from mockboard.brain.director import is_clear_yes
+
+    assert is_clear_yes(reply)
+
+
+@pytest.mark.parametrize("reply", [
+    "हां सर, प्लीज़?", "हां लेकिन एक सवाल और", "नहीं सर, प्लीज़ जारी रखिए",
+])  # fmt: skip
+def test_a_doubtful_devanagari_reply_still_resumes(reply):
+    from mockboard.brain.director import is_clear_yes
+
+    assert not is_clear_yes(reply)
+
+
+def _listened(text: str, honest: bool) -> Analysis:
+    from mockboard.brain.listener import to_analysis
+    from mockboard.brain.schemas import Segment
+
+    out = PanelListenerOutput.model_validate({
+        "stance": "", "reasons": [], "claims": [], "balance": "unclear",
+        "honest_unknown": honest, "concedes_error": False, "garbled": False,
+    })
+    return to_analysis(out, turn_id="t4", turn_index=4,
+                       segment=Segment(segment_id="s0", segment_index=0, text=text))
+
+
+def test_a_lone_ji_is_not_an_honest_i_dont_know():
+    """The live run: "जी" before a full answer was marked "I don't know", the move was R3, and
+    the board asked the same question again."""
+    assert not _listened("जी", honest=True).honest_unknown
+    assert not _listened("haan sir", honest=True).honest_unknown
+    assert _listened("pata nahi", honest=False).honest_unknown  # the marker still decides
+    assert _listened("नहीं पता", honest=True).honest_unknown
+    assert _listened("is vishay par meri jaankari kam hai", honest=True).honest_unknown
+
+
+def test_the_panel_waits_longer_for_novas_first_word_than_debate(settings):
+    assert settings.panel_actor_first_token_budget_s == 3.5
+    assert settings.actor_first_token_budget_s == 2.5  # debate and the partner unchanged

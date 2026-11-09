@@ -123,7 +123,12 @@ def to_analysis(
             "point_strength": out.point_strength,
             "off_limits": out.off_limits or _raw_text_off_limits(out, segment.text),
         }
-    honest = out.honest_unknown or honest_unknown_marker(segment.text)
+    # A segment of one or two words ("जी", "haan sir") is never an honest "I don't know" on the
+    # model's word alone; short real ones ("pata nahi", "नहीं पता") are caught by the marker. The
+    # owner's live run (Nov 9): a lone "जी" before a full answer made the turn R3, and the board
+    # asked the same question again.
+    marker = honest_unknown_marker(segment.text)
+    honest = marker or (out.honest_unknown and word_count(segment.text) > 2)
     if hasattr(out, "candidate_request"):  # the panel listener's field (P5)
         debate["candidate_request"] = out.candidate_request
     if hasattr(out, "prejudice"):  # the panel listener's field (listener.v7)

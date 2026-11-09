@@ -155,6 +155,9 @@ _YES_FILLERS = frozenset(
     for w in (
         "please", "sir", "madam", "mam", "hai", "kijiye", "है", "कृपया", "सर", "मैडम",
         "சார்", "மேடம்", "மேம்", "saar",
+        # Prisma (hi-IN) writes a Hinglish "please" in Devanagari: "हां सर, प्लीज़।" did not close
+        # the owner's live run of Nov 9 (Round 56).
+        "प्लीज़", "प्लीज", "प्लीस", "मैम", "मेम",
     )
 )  # fmt: skip
 _NEGATIONS = frozenset(
@@ -175,6 +178,8 @@ _YES_TAIL = frozenset(
         "we", "can", "lets", "let", "us", "khatam", "kar", "karo", "kariye", "kijiye", "dijiye",
         "band", "samapt", "yahin", "abhi", "thank", "thanks", "you", "dhanyavaad", "shukriya",
         "समाप्त", "खत्म", "ख़त्म", "कर", "दीजिए", "यहीं", "धन्यवाद", "शुक्रिया", "நன்றி", "nandri",
+        "कीजिए", "कीजिये", "करिए", "करिये", "करो", "दो", "इंटरव्यू", "अभी", "बंद", "थैंक", "यू",
+        "थैंक्यू",
         "இங்கே", "இங்கேயே",  # "here": "ஆமாம் சார், இங்கே முடிக்கலாம்" (yes sir, let's end here)
     )
 )  # fmt: skip

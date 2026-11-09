@@ -638,9 +638,15 @@ def test_the_model_is_told_whether_this_is_the_first_handoff(form):
 
 # --- the owner's run of Nov 9: a cut sentence, and a quote that killed the question --------------
 
-CUT = (
+CUT = (  # past the cap and its grace (30 + 15 words), so the stream cuts the question
     "Aapne samajik bhedbhav ko door karne ka tareeka bataya. Lekin kya aap is baat se sahmat "
-    "hain ki kabhi-kabhi sakht faisle lena zaroori hota hai jo kuch logon ko achha nahi lagta?"
+    "hain ki kabhi-kabhi ek prashasak ko bahut sakht faisle lene padte hain jo shehar ke kuch "
+    "logon ko bilkul achha nahi lagta aur unke virodh ke bawajood bhi kaam aage badhana padta hai?"
+)
+LONG_OK = (  # 38 words: over what the prompt asks, inside the grace, so it is said whole
+    "Aapne pilot se shuru karne ki baat kahi. Agar pilot ke pehle hi mahine mein vyapari aur "
+    "rehne wale dono virodh karein, aur media bhi sawal uthaye, to aap kis baat par tike "
+    "rahenge aur kya badlenge?"
 )
 
 
@@ -666,3 +672,12 @@ async def test_a_quoting_sentence_is_skipped_and_the_members_question_kept(form,
     out, _ = await line_for_move(kit, form, reply, kind=Move.probe, answer=answer)
     assert out.text == "Is kami ko door karne ke liye aap pehla kadam kya uthayenge?"
     assert not out.is_fallback
+
+
+async def test_a_question_a_little_over_the_cap_is_said_whole(form, kit):
+    """The owner's live run (Nov 9): a 30-word cap cut real follow-ups into the generic one."""
+    assert 30 < len(LONG_OK.split()) <= 45
+    out, _ = await line_for_move(
+        kit, form, LONG_OK, kind=Move.counter, answer="Main sabse milunga."
+    )
+    assert out.text == LONG_OK and not out.is_fallback
