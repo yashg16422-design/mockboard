@@ -32,6 +32,7 @@ Mock Board is a voice-first, Hinglish UPSC Personality Test (interview) board, w
 - **P8–P11 (Nov 1, fake only):** a voice per member (placeholder table; real choice is `make voice-lab`); likely questions (`make likely-questions`, `/api/likely-questions`, counted by access); report grouped by member with a text-only replay (`--replay`); `make check-trace TRACE=traces/<id>.jsonl`.
 - **E started (Nov 2, owner approved):** one scripted Nova panel (`traces/e-panel-1.jsonl`, listener 4, actor 5 at that run, agenda_plan 2, judge 1) and one Timbre socket with two voices. The live socket sends a second status `complete`; ignoring it is in `fbdebde`. Which voice actually spoke is still for the ear. Prisma rotation, `voice-lab`, `stt-ab` and `voice-record` have not been run. The UPSC actor is now v6 (`eef302d`); that file has not run on Nova. Clear slang gets one fixed line, then the question. There is no web search.
 - Owner still to report: voice lab choice (`make voice-lab`), Prisma mode choice (`make stt-ab`).
+- **Nov 9 (Round 54):** three modes on one server (UPSC, debate, study partner); partner has repeat/skip/think and a confirmed end; Prisma locale follows the language (English `en-IN`); Nova's broken tool calls retry once; real runs of all three modes and a Gnani round trip done (generated speech). Open: MCP App probe in Claude Desktop, the owner's own voice, a Tamil review.
 - No real fact cards yet; real sessions run without fact checks and say so.
 
 ## Commands (owner's Mac, in the repo folder, inside `.venv`)

@@ -1,16 +1,16 @@
 # Mock Board
 
-Mock Board is a practice interview board for the UPSC Civil Services Personality Test. A fictional five-member panel (a chairperson and four members, each with their own field) interviews the candidate in Hinglish from their application form, hands over from member to member by name, understands requests like "let's talk about something else" or "please repeat", asks follow-up questions based on what the candidate actually said, and politely question a wrong figure by quoting a checked fact card. They always ask, never assert. After the interview, a judge writes a report against the personal qualities that UPSC publishes, and every score is backed by a quote taken word for word from the candidate's answers. It is being built for Gnani.ai's Great Indian AI Internship Challenge 2026, using Gnani Prisma (speech to text) and Gnani Timbre (text to speech) for the voice, and Amazon Nova Pro on Bedrock for the language model.
+Mock Board is a voice-first practice room for UPSC aspirants with three modes on one server: a **UPSC Personality Test** board, a **debate** opponent, and a **study partner** ("Mitra") who helps your own points get stronger. In the interview, a fictional five-member panel interviews from the candidate's form, remembers their answers, handles requests to repeat or change topic, and asks follow-ups tied to what they actually said. It supports Hinglish, Hindi, English, and Tamil-English Tanglish. Numeric fact challenges need a checked source card and are phrased as questions. The post-interview report gives evidence-based feedback and practice prompts; it is not a UPSC mark.
 
-Today Mock Board runs in **text mode only**: you type your answers in a terminal. The voice loop, the web page and the deployment are not built yet (see "Honest status" below).
+The voice app uses **Gnani Prisma** (`prisma-v2.5`) for speech recognition and **Gnani Timbre** (`timbre-v2.5`) for speech synthesis. The page has a guide at `/guide` (where everything is, what you can say, what the report shows). Amazon Nova Pro on Bedrock handles structured listening, panel lines, and report judging. The text CLI and fake voice mode support offline development. Start with [the project and demo brief](docs/PROJECT_AND_DEMO_BRIEF.md) for current positioning, verified behavior, and known validation gaps.
 
 ## Prerequisites
 
-- Linux or WSL with Python 3.11 or newer (the code is tested on Python 3.13).
+- macOS, Linux or WSL with Python 3.12 or newer (the full suite has been run on Python 3.14 only).
 - `make` and `git`.
 - For the offline interview, the tests and the eval, nothing else is needed: everything runs on your machine with a rule-based fake model and costs nothing.
 - For the real model only: an AWS account with access to Amazon Nova Pro (`amazon.nova-pro-v1:0`) in the Sydney region (`ap-southeast-2`), and the AWS CLI configured with a profile. Real calls cost money.
-- For the probes only: a Gnani API key (the probes spend Gnani credits).
+- For the real voice app and the probes: a Gnani API key in `.env` as `GNANI_API_KEY` (real speech spends Gnani credits).
 
 ## Setup
 
@@ -55,6 +55,24 @@ make cli
 
 The program first asks a few application-form questions (home state, district, degree subject, hobbies and so on; it never asks for a name or any identifier). Then type one answer per prompt. Typing ` | ` inside an answer splits it into two transcript segments, as if the speech recogniser had heard a pause there. Type `/quit` to stop early and go straight to the report.
 
+The other two modes, offline and scripted:
+
+```bash
+make cli-fake-debate
+make cli-fake-partner
+```
+
+## Run the voice app
+
+Free, in your browser, with the fake model and fake speech (nothing leaves your machine). In the `mockboard` folder:
+
+```bash
+make voice-install
+make voice-fake
+```
+
+Then open http://localhost:7860 in Chrome, press Begin and pick a mode. The real thing (Gnani Prisma and Timbre for speech, Nova Pro for the board; costs credits) is `make voice-upsc`; the same server offers all three modes from the chooser. Use headphones so the board does not hear itself.
+
 ## Run against Amazon Nova Pro
 
 This uses the real model and costs money, so try the offline interview first. Mock Board reads AWS credentials only through the standard AWS credential chain (your CLI profile on the laptop, the instance role on a server); no key is ever written in the code or in `.env`. The region and model id default to `ap-southeast-2` and `amazon.nova-pro-v1:0`, and can be changed with `AWS_REGION` and `NOVA_MODEL_ID`.
@@ -71,7 +89,7 @@ If the Bedrock client cannot be created (for example, the profile does not exist
 
 ## Run the tests and the linter
 
-All tests run offline with fake models and take about 20 seconds. On your laptop (WSL), in the `mockboard` folder:
+The test suite runs without real Gnani or Bedrock calls; the voice tests use local fake services and sockets, so a full run can take a few minutes. On your laptop, in the `mockboard` folder:
 
 ```bash
 make test
@@ -107,7 +125,7 @@ The probes measure the three outside services (Prisma, Timbre and Nova) before w
 python3 -m probes.selftest
 ```
 
-Full instructions for every probe, including which machine to run each one from, are in [probes/README.md](probes/README.md). No probe results have been recorded yet.
+Full instructions for every probe, including which machine to run each one from, are in [probes/README.md](probes/README.md).
 
 ## Where traces go
 
@@ -126,12 +144,10 @@ Eval summaries go to `eval/results/`. A report is printed at the end of each int
 - `eval/` holds the evaluation harness, `tests/` the offline tests, `probes/` the service probes, and `examples/` the scripted session.
 - `docs/` holds the plan, the engineering standards, the CTO reviews, the orchestrator's rulings, the learning guide [docs/WALKTHROUGH.md](docs/WALKTHROUGH.md), and the decision records in [docs/adr/](docs/adr/).
 
-## Honest status (October 26, 2026; the paragraphs below are older than the voice app, the site and the panel)
+## Honest status (November 9, 2026)
 
-**Update, November 1 (P7).** The UPSC interview is now the panel on every path: text, `make voice-fake` and `make voice-upsc`. The interview limit is 17 minutes (wrap-up at 16), and Prisma's stream is rotated before its 15-minute cap (`UNVERIFIED`: rotation has never run live). No real Nova, Prisma or Timbre call has run on the panel yet; its prompts (`listener.v4`, `actor.v5`, `opener.v2`, `agenda_plan.v1`) have only met the offline fake model.
+Built and tested: the five-member voice panel (agenda from the form, hand-offs, repeat, think time, topic change, a confirmed end, DM situations with a twist), the debate (curated motions, rounds, a judged verdict), the study partner (why, example, counterpoint, recap; repeat, skip, think and a confirmed end), the report with "How the board heard you", a microphone and language check, and the guide. `make test` and `make lint` pass offline.
 
-**What works.** The whole text-mode interview runs end to end, offline or against Nova: the form-driven opening question, per-segment analysis, the rule-based strategist with its nine moves, delayed fact challenges that only fire when the model and a deterministic numeric check agree, the actor's guards (word cap, ask-never-assert, opener check), the persona fallback line when the actor fails, separate thread pools and timeouts for the three kinds of Bedrock call, the shared cache of real librarian votes, the judge's report with verified quotes, the per-turn trace, and the evaluation harness. There are 342 offline tests, including whole-session behaviour checks and a chaos test that injects Bedrock failures into 24 complete interviews.
+Checked live on November 9 (owner-approved, in text on Nova and with **generated** speech on Gnani): a full UPSC sitting, a debate and a study-partner session on Nova Pro; a Timbre-to-Prisma round trip in Hinglish, Hindi, English and Tamil, with every Hinglish and English request phrase recognised from Prisma's real output. These are not measurements on human voices. A scripted text run sends turns every few seconds and hits Bedrock's request limit; sessions survive it on fixed lines.
 
-**What is synthetic.** Every fact card is an obviously fake "Exampleland" or "Testland" test card with no source, so nothing the board cites is a real fact; the owner will write real cards from official sources. The six eval items are illustrative examples, not the frozen golden set. The board members are fictional, and their Timbre voices are placeholders until the Timbre probe is run. Results produced with the fake model say nothing about Nova's quality.
-
-**What is not built yet.** The voice loop (Pipecat with Gnani Prisma and Timbre, voice activity detection, barge-in), the web front end, and the deployment (EC2 with Caddy HTTPS) do not exist yet; the `src/mockboard/speech/` folder is empty. Also not built: the cost meter, daily cap and kill switch, the feature-flagged innovations (dual decode, board interruption, echo filter), and a real Langfuse integration (only a stub). No probe has been run, so every latency and timeout value is a placeholder marked `UNVERIFIED`. The voice stack's exact versions are pinned in an optional `voice` extra in `pyproject.toml`, but that extra cannot be installed alongside the base dependencies yet, because `pipecat-gnani` needs an older `websockets` than the probes use (ADR-001 explains the choice the owner has to make).
+Not yet done: a sitting in a real candidate's voice, a fluent-speaker review of the Tamil lines, real fact cards (real sessions run without fact checks and say so), and the "bring your own AI" MCP panel, which waits on a check in Claude Desktop. The fact cards and much of the test set are synthetic and must not be presented as real-world evidence; a report from this board is not a UPSC mark. See [the project and demo brief](docs/PROJECT_AND_DEMO_BRIEF.md) for details.

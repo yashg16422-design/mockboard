@@ -4,7 +4,7 @@ Work split agreed by the owner on Nov 1, 2026. Claude Code builds the agents (th
 
 ## Paste this into Arena Agent Mode
 
-> You are the frontend engineer and product designer on Mock Board, a voice-first Hinglish mock of the UPSC Personality Test, built for Gnani.ai's Great Indian AI Internship Challenge (submission Nov 9, 2026).
+> You are the frontend engineer and product designer on Mock Board, a voice-first mock of the UPSC Personality Test, built for Gnani.ai's Great Indian AI Internship Challenge (submission Nov 10, 2026). The current form supports Hinglish, Hindi, English, and Tamil-English Tanglish.
 >
 > Start from branch `panel-phase` and create branch `web-frontend`. Read `docs/tasks/WEB_HANDOFF.md` from "Boundaries" onward and follow it exactly: it holds the file boundaries, API contract, design direction and access-limit spec. Read `CLAUDE.md` for project background, but do not make real-service checks: you have no credentials and must not ask for any.
 >
@@ -35,7 +35,7 @@ Another agent is changing the backend at the same time, so these limits are what
 - `GET /api/config`: `mode`, `fake_llm`, `fake_speech`, `voice`, `tts_model`, `stt_model`, `llm`, `region`, `max_minutes`, `record_audio`.
 - `POST /api/offer`: body has `sdp`, `type`, `pc_id`, `restart_pc`, and `request_data: { form, page_id }`. A bad form returns 400 `{ "error": "form", "problems": [...] }`.
 - `PATCH /api/offer`: ICE candidates.
-- Form fields, from `CandidateForm`: `home_state` (required, 2-60 chars), `district`, `degree_subject` (required, 2-80), `hobbies` (up to 3), `optional_subject`, `work_experience` (up to 200), `interview_language` (`hinglish`, `hindi` or `english`). **There is deliberately no name, roll number, phone, email or college field. Never add one.**
+- Form fields, from `CandidateForm`: `home_state` (required, 2-60 chars), `district`, `degree_subject` (required, 2-80), `hobbies` (up to 3), `optional_subject`, `work_experience` (up to 200), `interview_language` (`hinglish`, `hindi`, `english` or `tanglish`). **There is deliberately no name, roll number, phone, email or college field. Never add one.**
 - Server events arrive on the WebRTC data channel `messages` as `{ "type": "mockboard", "event": ..., "t": ..., ...fields }`. Events: `session`, `state`, `caption`, `line_end`, `turn_resumed`, `turn_reopened`, `transcript_dropped`, `no_speech`, `time_up`, `error`, `tts_failed`, `stopping`, `ended`, `preparing_report`, `report`.
 - The working client is the current `index.html`. Keep its WebRTC logic and restyle around it. Read `voice/brain_processor.py` to see each event's fields, but do not edit it.
 
@@ -51,6 +51,8 @@ Another agent is changing the backend at the same time, so these limits are what
 Everything must work at phone width and with a keyboard, and respect `prefers-reduced-motion`. Keep it responsive while the voice call runs: the audio path matters more than decoration.
 
 ## Design direction
+
+> **Superseded on Nov 7, 2026 by Ruling 93 (owner's direction):** the page now uses one mint-to-violet particle cloud (orb, galaxy, brain, constellation) and Geist type. The honesty rules below still apply in full.
 
 The aim is a serious examination room rendered as precise engineering documentation. Nothing should look like an AI landing page. "Inspired by" means the qualities below: never copy logos, copy, images, or layouts one to one, and never use Gnani's or DAQ's branding as our own.
 
