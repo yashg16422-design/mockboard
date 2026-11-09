@@ -41,6 +41,9 @@ git checkout-index -a --prefix="$tmp/"  # honours GIT_INDEX_FILE, so `commit -a`
 
 # Git sets these for hooks. They would point any git call made by a test at this repository.
 unset GIT_DIR GIT_INDEX_FILE GIT_WORK_TREE GIT_PREFIX
+# The merge flag is for this hook alone. Left set, it reaches the hook that tests/test_commit_hook.py
+# runs in its throwaway repository and turns a docs-only commit there into a full one (Nov 9).
+unset MOCKBOARD_HOOK_FULL
 
 cd "$tmp"
 export PYTHONPATH=src:.

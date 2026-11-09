@@ -24,6 +24,7 @@ BAD = GOOD.replace("== 1", "== 2")
 def _env() -> dict[str, str]:
     env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
     env.pop("PYTHONPATH", None)
+    env.pop("MOCKBOARD_HOOK_FULL", None)  # each git merge below sets its own
     return {
         **env,
         "MOCKBOARD_HOOK_PYTHON": sys.executable,
@@ -249,6 +250,16 @@ def test_a_red_merge_is_refused(plain_repo: Path):
     before = _head(plain_repo)
     assert _git(plain_repo, "merge", "-q", "--no-ff", "-m", "merge", side).returncode != 0
     assert _head(plain_repo) == before
+
+
+def test_the_merge_flag_never_reaches_the_tests(plain_repo: Path):
+    """A merge sets MOCKBOARD_HOOK_FULL. Seen by the tests, it broke this file's docs-only cases
+    whenever the suite ran inside a merge (Nov 9), so the hook clears it before pytest starts."""
+    probe = "import os\n\n\ndef test_flag():\n    assert 'MOCKBOARD_HOOK_FULL' not in os.environ\n"
+    side = _branch_with(plain_repo, "tests/test_flag.py", probe)
+    _git(plain_repo, "config", "core.hooksPath", str(HOOK_DIR))
+    done = _git(plain_repo, "merge", "-q", "--no-ff", "-m", "merge", side)
+    assert done.returncode == 0, done.stdout + done.stderr
 
 
 def test_a_green_merge_goes_through(plain_repo: Path):
