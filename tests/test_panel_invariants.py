@@ -249,9 +249,10 @@ async def test_a_model_line_naming_the_refused_topic_in_any_script_is_never_hear
 async def test_a_seed_that_names_the_refused_topic_is_replaced_by_a_clean_question(
     settings, cards, form, tmp_path
 ):
-    """The degree seed says "Electronics". After the candidate refused it, Doctor Iyer must not."""
+    """The degree seed says "Electronics". After the candidate refused it, Doctor Iyer must not.
+    The refusal comes on the Chairperson's last question, right before the degree segment."""
     session, _, _ = await start(settings, cards, form, tmp_path)
-    await reach(session, 1, 0, [])
+    await reach(session, 0, 1, [])
     out = await answer(session, "Electronics ke alawa kisi aur topic pe baat karte hain",
                        think_s=0.5)
     assert session.state.topic == "degree"
@@ -263,7 +264,7 @@ async def test_the_segments_aliases_are_refused_even_when_the_candidate_names_no
     settings, cards, form, tmp_path
 ):
     session, _, _ = await start(settings, cards, form, tmp_path)
-    await reach(session, 2, 0, [])  # in the degree segment
+    await reach(session, 1, 0, [])  # in the degree segment (second since Nov 9)
     out = await answer(session, CHANGES["no_term"], think_s=0.5)
     assert out.trace is not None
     row = trace_rows(session)[-1]["panel"]
@@ -305,7 +306,7 @@ async def test_the_session_start_line_names_the_agenda_and_the_openers_member(
     assert [s["id"] for s in first["agenda"]["segments"]] == SEGMENTS
     assert first["agenda"]["source"] == "nova" and first["agenda_plan"]["status"] == "used"
     assert first["segment_id"] == "form_hr" and first["member"] == "chairman"
-    assert first["prompt_versions"]["actor"] == 11 and first["prompt_versions"]["opener"] == 3
+    assert first["prompt_versions"]["actor"] == 12 and first["prompt_versions"]["opener"] == 3
     assert opener.parts[0].text == line_for(RITUAL_LINES, "hi-en")
     assert not opener.text.lower().startswith("namaste. namaste")
 
@@ -405,10 +406,10 @@ async def test_a_repeat_right_after_a_handoff_says_the_new_members_question(
     outs: list = []
     await reach(session, 1, 0, outs)
     assert outs[-1].move.rule_id == "D-HANDOFF"
-    seed = session.hooks.agenda.segment("home_district").seeds[0].text
+    seed = session.hooks.agenda.segment("degree").seeds[0].text
     out = await answer(session, "please repeat", think_s=0.5)
     assert out.line.parts[-1].text == seed  # the question, without "Shukriya. Namaste."
-    assert out.line.parts[-1].member == "administrator" and len(out.line.parts) == 2
+    assert out.line.parts[-1].member == "economist" and len(out.line.parts) == 2
 
 
 async def test_a_repeat_does_not_let_a_second_pressure_through(settings, cards, form, tmp_path):
@@ -428,7 +429,7 @@ async def test_a_skip_acknowledges_and_asks_the_next_seed(settings, cards, form,
     await reach(session, 1, 0, [])
     out = await answer(session, "next question please", think_s=0.5)
     assert texts(out)[0] == line_for(SKIP_ACK_LINES, "hi-en")
-    assert out.move.rule_id == "D-SEED" and out.line.parts[-1].member == "administrator"
+    assert out.move.rule_id == "D-SEED" and out.line.parts[-1].member == "economist"
 
 
 async def test_matlab_rephrases_and_costs_no_budget(settings, cards, form, tmp_path):
@@ -540,7 +541,7 @@ async def test_the_report_lists_each_detected_request_with_its_source(
     assert "Request at t1: repeat" in notes and "Request at t2: change_topic" in notes
     assert REQUEST_ACCURACY_NOTE in report.notes
     assert "Accuracy on real speech has not been measured yet." in notes
-    assert report.prompt_versions["actor"] == 11
+    assert report.prompt_versions["actor"] == 12
 
 
 async def test_a_session_with_no_request_says_so(settings, cards, form, tmp_path):
@@ -567,7 +568,7 @@ async def test_a_session_without_options_is_still_the_panel_uncapped(
     assert session.max_turns == session.hooks.agenda.total_budget + session.hooks.setup.free_turns
     assert session.state.topics == SEGMENTS
     assert session.max_answers() is None and session.panel_members() == [
-        "Chairperson Sharma", "Shrimati Menon", "Doctor Iyer", "Professor Sen", "Shri Rathore",
+        "Chairperson Sharma", "Doctor Iyer", "Shri Rathore", "Shrimati Menon", "Professor Sen",
     ]
     assert session.opening_ritual() and session.request_wrap_up() is True
     await session.close()
@@ -621,12 +622,12 @@ def test_the_scripted_panel_session_moves_on_from_tourism_and_it_never_returns(c
     lines = out.splitlines()
     board = [x for x in lines if x.startswith("[")]
     at = next(i for i, x in enumerate(lines) if x.startswith("You: tourism ke alawa"))
-    assert lines[at + 1].startswith("[Shrimati Menon] Zaroor, koi baat nahi.")
+    assert lines[at + 1].startswith("[Doctor Iyer] Zaroor, koi baat nahi.")
     # The second hand-off of the session, so the second wording (Ruling 73 item 3).
     assert lines[at + 2].startswith(
-        f"[Chairperson Sharma] {handoff_line('Doctor Iyer', 'hi-en', 1)}"
+        f"[Chairperson Sharma] {handoff_line('Shri Rathore', 'hi-en', 1)}"
     )
-    assert lines[at + 3].startswith("[Doctor Iyer] (move_on, D-HANDOFF)")
+    assert lines[at + 3].startswith("[Shri Rathore] (move_on, D-HANDOFF)")
     said = " ".join(x for x in lines[at + 1 :] if x.startswith("["))
     assert find_avoided(said, expand_terms(["tourism"])) is None
     assert board[-1] == "[Chairperson Sharma] (move_on, D-CLOSE) Thank you, that will be all."
@@ -675,9 +676,9 @@ async def test_a_repeat_after_a_reassure_says_the_reassures_simpler_question(
     assert after.line.parts[-1].text == asked  # silence did not replace it
 
 
-SEGMENT_REFERENTS = [
-    "civil services ki taraf aapke safar", "apne zile", "apni padhai",
-    "apne shauk aur optional vishay", "is mudde",
+SEGMENT_REFERENTS = [  # in panel order since Nov 9: form, degree, case study, district, hobbies
+    "civil services ki taraf aapke safar", "apni padhai", "is mudde", "apne zile",
+    "apne shauk aur optional vishay",
 ]
 
 

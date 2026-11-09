@@ -65,6 +65,9 @@ from mockboard.brain.schemas import (
 
 # A line that asks the agenda seed has to hold the seed's own words (up to 28), so it gets room.
 SEED_LINE_WORDS = 40
+REPEAT_MIN_WORDS = 4  # a shorter sentence ("Achha.", "Theek hai.") may come up again
+# Words a panel line may run past what its prompt asks before the stream is cut (Round 56).
+PANEL_CAP_GRACE = 15
 SUMMARY_WORDS = 120
 RECENT_EXCHANGES = 3
 _DIGIT = re.compile(r"\d")
@@ -135,13 +138,124 @@ def without_greeting(text: str) -> str:
     return _strip_window(text, GREETING_WINDOW_WORDS)
 
 
+# Three more things a member's line must not open with (the owner's live sitting, Nov 9):
+# a sentence that grades the answer ("Aapka jawab sahi hai": a board never says so aloud); after a
+# hand-off, a thanks that echoes the Chairperson's own thanks word ("Shukriya. Ab Doctor Iyer ki
+# baari hai." then "Shukriya."; actor.v5 already asks for different words), and "Aapke is point
+# par," before a new member's first question, which has no point of the candidate's to be on.
+_GRADING = re.compile(
+    r"\b(?:jawab|jawaab|uttar|answer)\b.{0,40}\b(?:sahi|galat|theek|correct|right|wrong|"
+    r"accha|achha|acha|badhiya|good|excellent|great|perfect|shandaar)\b"
+    r"|^(?:bilkul\s+sahi|sahi\s+kaha|bahut\s+(?:accha|achha|badhiya|khoob)|shabash|well\s+said|"
+    r"very\s+good|good\s+answer|excellent|perfect|correct)\b"
+    r"|(?:जवाब|उत्तर).{0,40}(?:सही|ग़लत|गलत|अच्छा|बढ़िया)|^(?:बिल्कुल सही|सही कहा|बहुत अच्छा|बहुत बढ़िया)",
+    re.IGNORECASE,
+)
+_GRADING_MAX_WORDS = 10
+THANKS_WORDS = ("shukriya", "dhanyavaad", "dhanyawad", "thank you", "thanks", "शुक्रिया",
+                "धन्यवाद", "நன்றி")  # fmt: skip
+_THANKS_ONLY = re.compile(
+    r"^(?:ji|जी)?[\s,]*(?:bahut\s+)?(?:shukriya|dhanyavaad|dhanyawad|thank\s+you|thanks|शुक्रिया|"
+    r"धन्यवाद|நன்றி)(?:[\s,]+(?:ji|sir|madam|chairperson|जी))?[\s.!।]*$",
+    re.IGNORECASE,
+)
+_POINT_LEAD = re.compile(
+    r"^(?:aapke|aapki|aapne)\s+(?:is|us)\s+(?:point|baat|jawab)\s+(?:par|pe)\s*,?\s*"
+    r"|^on\s+(?:your|that|this)\s+point\s*,?\s*",
+    re.IGNORECASE,
+)
+
+
+def grades_the_answer(sentence: str) -> bool:
+    """A short statement that says the answer was right, wrong or good. Pure."""
+    text = sentence.strip()
+    return (
+        bool(text) and not text.endswith("?") and len(text.split()) <= _GRADING_MAX_WORDS
+        and _GRADING.search(text) is not None
+    )
+
+
+def thanks_said(text: str) -> frozenset[str]:
+    """The thanks words in `text` (the director's fixed lines before a member speaks)."""
+    low = text.lower()
+    return frozenset(w for w in THANKS_WORDS if w in low)
+
+
+# A candour sentence needs the signal it names (actor.v12). The owner's last live run (Nov 9):
+# "Aap khud aashwast nahi lag rahe" was said to a confident answer with no hedge in it.
+_CANDOUR = {
+    "unsure": re.compile(r"aashwast nahi|ashwast nahi|sure nahi lag|sure of this|आश्वस्त नहीं",
+                         re.IGNORECASE),
+    "thin": re.compile(r"bahut chhota|too brief|बहुत छोटा", re.IGNORECASE),
+    "no_reason": re.compile(r"kaaran nahi|karan nahi|not a reason|कारण नहीं", re.IGNORECASE),
+}
+
+
+def unsupported_candour(sentence: str, signals: frozenset[str]) -> bool:
+    """A sentence that names a gap code did not find in the answer. Pure."""
+    return any(
+        name not in signals and pattern.search(sentence) and not sentence.rstrip().endswith("?")
+        for name, pattern in _CANDOUR.items()
+    )
+
+
+def clean_lead_sentence(
+    sentence: str, *, after_handoff: bool = False, echo: frozenset[str] = frozenset(),
+    signals: frozenset[str] | None = None,
+) -> str:
+    """One opening sentence of a member's line with the openings above removed ('' drops it).
+    `signals` None means unknown (no candour check)."""
+    text = sentence.strip()
+    if grades_the_answer(text):
+        return ""
+    if signals is not None and unsupported_candour(text, signals):
+        return ""
+    if after_handoff:
+        if _THANKS_ONLY.match(text) and thanks_said(text) & echo:
+            return ""
+        lead = _POINT_LEAD.match(text)
+        if lead and text[lead.end():].strip():
+            rest = text[lead.end():].strip()
+            text = rest[0].upper() + rest[1:]
+    return text
+
+
+def without_lead(
+    text: str, *, greeting_allowed: bool = False, after_handoff: bool = False,
+    echo: frozenset[str] = frozenset(), signals: frozenset[str] | None = None,
+) -> str:
+    """The whole-text form of `strip_lead`: what it yields, joined."""
+    out, used = [], 0
+    for sentence in _SENTENCE_SPLIT.split(text.strip()):
+        if used >= GREETING_WINDOW_WORDS:
+            out.append(sentence)
+            continue
+        room = GREETING_WINDOW_WORDS - used
+        used += len(sentence.split())
+        clean = sentence.strip() if greeting_allowed else _strip_window(sentence.strip(), room)
+        clean = clean_lead_sentence(clean, after_handoff=after_handoff, echo=echo, signals=signals)
+        if clean:
+            out.append(clean)
+    return " ".join(out)
+
+
 async def strip_greeting(chunks: AsyncIterator[str]) -> AsyncIterator[str]:
-    """`without_greeting` on a stream, one whole sentence at a time. A sentence inside the first
-    `GREETING_WINDOW_WORDS` words is held only until it is complete, which is also when the sentence
-    gate downstream could pass it, so the check adds no wait to the first audio of an ordinary line
-    (holding the whole window would have: about eight words of model text before anything is
-    said). A greeting that makes a sentence empty ("Namaste.") drops it. Past the window the stream
-    passes through untouched. The text joined is what `without_greeting` gives."""
+    """`strip_lead` for a line that may not greet, with no hand-off before it."""
+    async for piece in strip_lead(chunks):
+        yield piece
+
+
+async def strip_lead(
+    chunks: AsyncIterator[str], *, greeting_allowed: bool = False, after_handoff: bool = False,
+    echo: frozenset[str] = frozenset(), signals: frozenset[str] | None = None,
+) -> AsyncIterator[str]:
+    """`without_greeting` on a stream, one whole sentence at a time, plus `clean_lead_sentence`. A
+    sentence inside the first `GREETING_WINDOW_WORDS` words is held only until it is complete,
+    which is also when the sentence gate downstream could pass it, so the check adds no wait to
+    the first audio of an ordinary line (holding the whole window would have: about eight words
+    of model text before anything is said). A greeting that makes a sentence empty ("Namaste.")
+    drops it. Past the window the stream passes through untouched. The text joined is what
+    `without_greeting` gives."""
     held = ""
     used = 0  # words of the window already read
     async for chunk in chunks:
@@ -153,33 +267,51 @@ async def strip_greeting(chunks: AsyncIterator[str]) -> AsyncIterator[str]:
             sentence, held = held[: m.end()], held[m.end() :]
             room = GREETING_WINDOW_WORDS - used
             used += len(sentence.split())
-            clean = _strip_window(sentence.strip(), room)
+            clean = sentence.strip() if greeting_allowed else _strip_window(sentence.strip(), room)
+            clean = clean_lead_sentence(
+                clean, after_handoff=after_handoff, echo=echo, signals=signals
+            )
             if clean:
                 yield clean + " "
         if used >= GREETING_WINDOW_WORDS and held:
             yield held
             held = ""
     if held:
-        tail = _strip_window(held.strip(), GREETING_WINDOW_WORDS - used)
+        tail = held.strip()
+        if used < GREETING_WINDOW_WORDS:
+            if not greeting_allowed:
+                tail = _strip_window(tail, GREETING_WINDOW_WORDS - used)
+            tail = clean_lead_sentence(
+                tail, after_handoff=after_handoff, echo=echo, signals=signals
+            )
         if tail:
             yield tail
 
 
 class _TitleDotLLM:
-    """The model client with `stream_text` passed through `strip_title_dots`, and through
-    `strip_greeting` unless the line may greet. Anything else is the client's own, so `offline`
-    and the fake's call log still read through."""
+    """The model client with `stream_text` passed through `strip_title_dots` and `strip_lead`
+    (a greeting is removed unless the line may greet). Anything else is the client's own, so
+    `offline` and the fake's call log still read through."""
 
-    def __init__(self, llm: LLMClient, *, greeting_allowed: bool = True) -> None:
+    def __init__(
+        self, llm: LLMClient, *, greeting_allowed: bool = True, after_handoff: bool = False,
+        echo: frozenset[str] = frozenset(), signals: frozenset[str] | None = None,
+    ) -> None:
         self._llm = llm
         self._greeting_allowed = greeting_allowed
+        self._after_handoff = after_handoff
+        self._echo = echo
+        self._signals = signals
 
     def __getattr__(self, name: str) -> Any:
         return getattr(self._llm, name)
 
     def stream_text(self, **kwargs: Any) -> AsyncIterator[str]:
         stream = strip_title_dots(self._llm.stream_text(**kwargs))
-        return stream if self._greeting_allowed else strip_greeting(stream)
+        return strip_lead(
+            stream, greeting_allowed=self._greeting_allowed, after_handoff=self._after_handoff,
+            echo=self._echo, signals=self._signals,
+        )
 
 
 @dataclass
@@ -189,8 +321,20 @@ class PanelGate(SentenceGate):
 
     avoid: tuple[str, ...] = ()
     check_place_facts: bool = True
+    # Sentences the board already said in its last lines, normalised (`_norm`). The owner's live run
+    # (Nov 9): Nova said the same sentences in two turns running, and in voice they were spoken
+    # before the whole-line repeat check could act. A repeat is skipped, never spoken.
+    earlier: frozenset[str] = frozenset()
 
     def ok(self, sentence: str) -> bool:
+        if (
+            self.stopped is None
+            and len(sentence.split()) >= REPEAT_MIN_WORDS
+            and _norm(sentence) in self.earlier
+        ):
+            self.skipped.append(sentence)
+            self.reason = "repeats_board"
+            return False
         if not super().ok(sentence):
             return False
         low = sentence.lower()
@@ -237,6 +381,39 @@ def render_recent(notes: Sequence[TurnNote], n: int = RECENT_EXCHANGES) -> str:
     return "\n".join(rows)
 
 
+# What code can tell about the answer a member is following up (the owner, Nov 9: "if the student
+# feels under-confident or gives a less satisfactory answer, the board should be blunt"). actor.v12
+# names the gap in one direct sentence when a signal is present. Word lists are ours, unmeasured.
+_HEDGES = re.compile(
+    r"\b(?:shayad|shaayad|lagta hai|mujhe lagta|pata nahi|pakka nahi|pakka pata nahi|ho sakta hai|"
+    r"i think|i guess|maybe|perhaps|probably|not sure|i am not sure|kind of|sort of)\b"
+    r"|शायद|लगता है|पता नहीं|पक्का नहीं|हो सकता है",
+    re.IGNORECASE,
+)
+_REASONS = re.compile(
+    r"\b(?:kyunki|kyonki|kyuki|isliye|islie|taaki|because|since|so that|therefore|hence|"
+    r"isse|iski wajah)\b|क्योंकि|इसलिए|ताकि|इसकी वजह",
+    re.IGNORECASE,
+)
+THIN_ANSWER_WORDS = 15
+_SIGNAL_MOVES = frozenset({Move.probe, Move.counter, Move.pressure, Move.steelman, Move.interrupt})
+
+
+def answer_signals(answer: str) -> list[str]:
+    """`unsure`, `thin` and `no_reason` for a spoken answer; empty for silence. Pure."""
+    words = len(answer.split())
+    if words == 0:
+        return []
+    out = []
+    if _HEDGES.search(answer):
+        out.append("unsure")
+    if words < THIN_ANSWER_WORDS:
+        out.append("thin")
+    if words >= 6 and not _REASONS.search(answer):
+        out.append("no_reason")
+    return out
+
+
 def board_context(
     persona: Persona,
     move: BoardMove,
@@ -245,6 +422,7 @@ def board_context(
     spoken: Sequence[str],
     after_handoff: bool,
     first_handoff: bool = False,
+    last_answer: str = "",
 ) -> str:
     actor_move = Move.next_question if move.move == Move.move_on else move.move
     ctx = {
@@ -261,6 +439,9 @@ def board_context(
         # Already said by code before this line; the model must not repeat it.
         "preface_already_spoken": list(spoken),
     }
+    signals = answer_signals(last_answer) if move.move in _SIGNAL_MOVES else []
+    if signals:  # only on a follow-up to an answer; absent otherwise, so other lines are unchanged
+        ctx["answer_signals"] = signals
     return tag("board_context", json.dumps(ctx, ensure_ascii=False, indent=1))
 
 
@@ -287,7 +468,7 @@ def build_panel_user(
     parts = [
         board_context(
             persona, move, form=form, spoken=spoken, after_handoff=after_handoff,
-            first_handoff=panel.first_handoff,
+            first_handoff=panel.first_handoff, last_answer=last_answer,
         ),
         tag("agenda_item", json.dumps(item, ensure_ascii=False)),
     ]
@@ -379,6 +560,7 @@ async def compose_panel_line(
     filler_played: Callable[[], bool] | None = None,
     fast_throttle_retry_window_s: float | None = None,
     briefing: tuple[AffairsNote, ...] | None = None,
+    earlier_lines: Sequence[str] = (),
 ) -> PanelLine:
     """One panel turn. `preface` is the director's fixed lines; a conceded error adds the
     acknowledgement first, by `ack_member`, as in the UPSC board."""
@@ -400,7 +582,16 @@ async def compose_panel_line(
 
     seeded = move.move in (Move.next_question, Move.move_on) and bool(panel.seed)
     is_fact = move.move == Move.fact_challenge
-    gate = None if is_fact else PanelGate(answer=last_answer, avoid=tuple(avoid))
+    # A sentence that copies the answer is skipped and the member's question kept (the owner's
+    # run, Nov 9: "every sentence refused" turned a real follow-up into a generic counter).
+    said = frozenset(
+        _norm(x) for line in (*earlier_lines, last_question) for x in _SENTENCE_SPLIT.split(line)
+        if len(x.split()) >= REPEAT_MIN_WORDS
+    )
+    gate = (
+        None if is_fact
+        else PanelGate(answer=last_answer, avoid=tuple(avoid), skip_quotes=True, earlier=said)
+    )
     user = build_panel_user(
         persona, move, panel, memory, form=form, spoken=[p.text for p in fixed],
         after_handoff=after_handoff, last_question=last_question, last_answer=last_answer,
@@ -408,7 +599,12 @@ async def compose_panel_line(
     )
     cap = max(max_words, SEED_LINE_WORDS) if seeded else max_words
     call = await call_actor(
-        _TitleDotLLM(llm, greeting_allowed=panel.first_handoff), kit, user, max_words=cap,
+        _TitleDotLLM(
+            llm, greeting_allowed=panel.first_handoff, after_handoff=after_handoff,
+            echo=thanks_said(joined(fixed)) if after_handoff else frozenset(),
+            signals=frozenset(answer_signals(last_answer)),
+        ),
+        kit, user, max_words=cap, cap_grace=PANEL_CAP_GRACE,
         max_tokens=max_tokens, turn_id=turn_id,
         on_first_token=on_first_token, first_token_budget_s=first_token_budget_s,
         fast_throttle_retry_window_s=fast_throttle_retry_window_s, gate=gate,
@@ -440,10 +636,10 @@ async def compose_panel_line(
     if not text:  # every sentence was refused by the gate
         # Quoting the candidate is how a specific follow-up dies and becomes "please finish
         # your point". Keep a real question for that move, still without their words.
-        if call.guard == "quotes_answer":
+        if call.guard in ("quotes_answer", "repeats_board"):
             question = filler_for(move.move, mix)
             return say(
-                question, is_fallback=True, guard="quotes_answer",
+                question, is_fallback=True, guard=call.guard,
                 error="every sentence refused", fallback_kind="move_template",
                 retried=call.retried,
             )
@@ -454,13 +650,15 @@ async def compose_panel_line(
     earlier = {_norm(q) for q in (last_question, *(n.question for n in memory.notes)) if q}
     if _norm(question_part(text)) in earlier or _norm(text) in earlier:  # no repeated questions
         return fallback("repeats an earlier question", "repeat_guard", call.retried)
-    if gate is not None and gate.stopped is not None and not text.rstrip().endswith("?"):
+    cut = gate is not None and (gate.stopped is not None or gate.capped)
+    if cut and not text.rstrip().endswith("?"):
         if seeded and panel.seed and find_avoided(panel.seed, avoid) is None:
             question = panel.seed
         else:
             question = filler_for(move.move, mix)
-        return say(f"{text} {question}".strip(), is_fallback=True, guard=gate.reason,
-                   fallback_kind="move_template", retried=call.retried)
+        return say(f"{text} {question}".strip(), is_fallback=True,
+                   guard=gate.reason or "word_cap", fallback_kind="move_template",
+                   retried=call.retried)
     return say(text, guard=gate.reason if gate and gate.stopped else "", retried=call.retried)
 
 

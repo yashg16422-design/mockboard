@@ -101,7 +101,7 @@ def test_the_server_gives_the_panel_its_voices_and_debate_or_an_explicit_voice_n
     upsc = cfg_for(settings, ["--mode", "upsc", "--fake-llm", "--fake-speech"])
     assert upsc.panel_voices == settings.panel_voices() and upsc.panel_voices
     pick = upsc.voice_for()
-    assert pick("chairman") == "Vikrant" and pick("ips_officer") == "Poorvi"
+    assert pick("chairman") == "Vikrant" and pick("ips_officer") == "Urmila"
     assert pick("someone_new") == upsc.voice  # a member the table leaves out speaks in TTS_VOICE
     one = cfg_for(settings, ["--mode", "upsc", "--voice", "Vikrant", "--fake-llm", "--fake-speech"])
     assert one.panel_voices == {} and one.voice_for() is None

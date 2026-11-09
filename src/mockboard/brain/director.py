@@ -45,8 +45,9 @@ from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import END, START, StateGraph
 
 from mockboard.brain.affairs import AffairsNote, words_heard
-from mockboard.brain.agenda import twist_for
+from mockboard.brain.agenda import CASE_STUDY_SEGMENT, twist_for
 from mockboard.brain.graphs import make_serde
+from mockboard.brain.greeting_turn import is_greeting_only
 from mockboard.brain.panel_lines import (
     CAP_CLOSE_LINES,
     CHANGE_TOPIC_ACK_LINES,
@@ -55,11 +56,14 @@ from mockboard.brain.panel_lines import (
     END_CLOSE_LINES,
     END_CONFIRM_LINES,
     END_DECLINED_LINES,
+    GREETING_BACK_LINES,
     HANDOFF_LINES,
     REGISTER_LINES,
     REPEAT_PREFIX_LINES,
     SKIP_ACK_LINES,
     THINK_LINES,
+    VALUES_LINES,
+    VALUES_QUESTION_LINES,
     WRAP_UP_CLOSE_LINES,
     LineSet,
     handoff_line,
@@ -151,6 +155,9 @@ _YES_FILLERS = frozenset(
     for w in (
         "please", "sir", "madam", "mam", "hai", "kijiye", "है", "कृपया", "सर", "मैडम",
         "சார்", "மேடம்", "மேம்", "saar",
+        # Prisma (hi-IN) writes a Hinglish "please" in Devanagari: "हां सर, प्लीज़।" did not close
+        # the owner's live run of Nov 9 (Round 56).
+        "प्लीज़", "प्लीज", "प्लीस", "मैम", "मेम",
     )
 )  # fmt: skip
 _NEGATIONS = frozenset(
@@ -171,6 +178,8 @@ _YES_TAIL = frozenset(
         "we", "can", "lets", "let", "us", "khatam", "kar", "karo", "kariye", "kijiye", "dijiye",
         "band", "samapt", "yahin", "abhi", "thank", "thanks", "you", "dhanyavaad", "shukriya",
         "समाप्त", "खत्म", "ख़त्म", "कर", "दीजिए", "यहीं", "धन्यवाद", "शुक्रिया", "நன்றி", "nandri",
+        "कीजिए", "कीजिये", "करिए", "करिये", "करो", "दो", "इंटरव्यू", "अभी", "बंद", "थैंक", "यू",
+        "थैंक्यू",
         "இங்கே", "இங்கேயே",  # "here": "ஆமாம் சார், இங்கே முடிக்கலாம்" (yes sir, let's end here)
     )
 )  # fmt: skip
@@ -236,10 +245,37 @@ def next_seed(
     unasked = _unasked(segment, memory)
     must = next((pair for pair in unasked if pair[1].must_ask), None)
     plain = next((pair for pair in unasked if not pair[1].must_ask), None)
+    if must is not None and segment.id == CASE_STUDY_SEGMENT:
+        return must  # the case study opens its segment, then is dug into (owner, Nov 9)
     room = 2 if must is not None and twist_for(must[1].text) else 1
     if must is not None and (questions_left <= room or plain is None):
         return must
     return plain
+
+
+# Follow-ups on the case study: its twist, then deeper questions on the candidate's own plan, the
+# way a board member digs into one situation (owner, Nov 9). Other seeds keep one follow-up.
+CASE_PROBES = 3
+
+
+def on_case(segment: AgendaSegment, memory: PanelMemory) -> bool:
+    """The segment's last asked seed is its DM/SP situation."""
+    asked = memory.asked_seeds.get(segment.id) or []
+    return bool(asked) and 0 <= asked[-1] < len(segment.seeds) and segment.seeds[asked[-1]].must_ask
+
+
+def _deep_probe_due(turn: DirectorTurn, segment: AgendaSegment, memory: PanelMemory) -> bool:
+    """One more question on the case: after its twist, while the answers have substance."""
+    analysis = turn.analysis
+    return (
+        on_case(segment, memory)
+        and 1 <= memory.probes_on_seed < CASE_PROBES
+        and not memory.pending_end
+        and not turn.wrap_up_due
+        and not analysis.honest_unknown
+        and not analysis.garbled
+        and word_count(turn.raw_text) >= TWIST_MIN_WORDS
+    )
 
 
 def _must_ask_unasked(segment: AgendaSegment, memory: PanelMemory) -> bool:
@@ -419,9 +455,19 @@ def understand(
     )
     if think:
         hit = ResolvedRequest(source="rules", pattern="think_time")
+    # Only a greeting ("hello sir"): greet back and ask the same question (owner's sitting, Nov 9).
+    greeting = (
+        not think
+        and not memory.pending_end
+        and hit.source in ("none", "llm", "llm_ignored")
+        and is_greeting_only(turn.raw_text)
+    )
+    if greeting:
+        hit = ResolvedRequest(source="rules", pattern="greeting")
     kind = hit.kind
+    own_kind = "think" if think else "greeting" if greeting else None
     known: dict[str, Any] = {
-        "request_kind": "think" if think else (kind.value if kind else None),
+        "request_kind": own_kind or (kind.value if kind else None),
         "request_source": hit.source,
         "request_pattern": hit.pattern,
         "avoid_terms": hit.avoid_terms,
@@ -439,8 +485,8 @@ def understand(
         known = {}
     elif kind in (RequestKind.END, RequestKind.REPEAT, RequestKind.CLARIFY_QUESTION):
         free_kind = kind.value
-    elif think:
-        free_kind = "think"
+    elif own_kind:
+        free_kind = own_kind
     elif kind is None and (turn.base_move.rule_id == "R1" or turn.analysis.garbled):
         # `analysis` too: on the last allowed turn the session's cap has replaced R1's move.
         # A second unclear hearing is not another free "please repeat": it counts, and the
@@ -488,7 +534,13 @@ def understand(
         return TurnUnderstanding(node="next_question", **priced)
     if free_kind:  # free turns have run out: an answer now, with the same response
         return _handle(priced)
-    if memory.probes_on_seed >= 1 and turn.base_move.move != Move.reassure:
+    if not free_kind and kind is None and _deep_probe_due(turn, segment, memory):
+        return TurnUnderstanding(node="next_question", **priced)  # dig into the case
+    if (
+        memory.probes_on_seed >= 1
+        and turn.base_move.move != Move.reassure
+        and not turn.analysis.honest_unknown  # R3b's move on stands: honesty is never pressed
+    ):
         # A substantive answer to a follow-up returns to the plan even if the strategist would
         # otherwise counter or press again. Explicit requests above still take precedence.
         return TurnUnderstanding(node="next_question", **priced)
@@ -696,6 +748,8 @@ def plan_handle_request(p: _Plan) -> PanelDecision:
         if seed is None:  # budget spent or no seed left; what is left is forfeited
             return p.advance(ack, "agenda")
         return p.ask_seed(seed, "candidate skipped the question", ack)
+    if kind == "greeting":  # the same question stands, after a greeting back
+        return p.repeat((p.own(GREETING_BACK_LINES),), "D-GREET", "the candidate only greeted")
     if kind == "think":  # before any forced question: the same question stands
         move = p.board_move(Move.reassure, p.segment.member, "D-THINK", "asked for time to think")
         return p.decision(
@@ -713,12 +767,35 @@ def plan_handle_request(p: _Plan) -> PanelDecision:
     return p.keep_base("handle_request")  # garbled or silence: R1's clarify, R3's reassure
 
 
+def _values_due(p: _Plan) -> bool:
+    """The answer called a community inferior or wanted it driven out (listener.v7), and the turn
+    was an answer, not a request."""
+    return p.turn.analysis.prejudice and not p.u.free_kind and not p.u.request_kind
+
+
 def plan_handoff(p: _Plan) -> PanelDecision:
     before = (p.chair(END_DECLINED_LINES),) if p.u.free_kind == "end_declined" else ()
+    if _values_due(p):  # the member who heard it answers it before the hand-off
+        before = (*before, p.own(VALUES_LINES))
     return p.handoff(before)
 
 
+def plan_values(p: _Plan) -> PanelDecision:
+    """`D-VALUES`: the equal-dignity line, then one fixed question on the candidate's own duty."""
+    uses = p.memory.line_uses.get(VALUES_LINES.id, 0)
+    move = p.board_move(
+        Move.probe, p.segment.member, "D-VALUES",
+        "the answer called a community inferior or wanted it driven out",
+    )
+    return p.decision(
+        move, "next_question", preface=(p.own(VALUES_LINES),),
+        repeat_text=line_for(VALUES_QUESTION_LINES, p.cfg.mix, uses), line_complete=True,
+    )
+
+
 def plan_next_question(p: _Plan) -> PanelDecision:
+    if _values_due(p):
+        return plan_values(p)
     twist = None if p.u.free_kind or p.u.request_kind else _twist_due(p.turn, p.memory, p.cfg)
     if twist is not None:
         move = p.board_move(Move.probe, p.segment.member, "D-TWIST", "the situation's twist")
@@ -732,6 +809,12 @@ def plan_next_question(p: _Plan) -> PanelDecision:
         return p.advance((), "agenda")
     if p.turn.base_move.move == Move.reassure:
         return p.keep_base("next_question")
+    if not p.u.free_kind and not p.u.request_kind and _deep_probe_due(p.turn, p.segment, p.memory):
+        move = p.board_move(
+            Move.probe, p.segment.member, "D-DEEP",
+            "the case study: one level deeper into the candidate's own plan",
+        )
+        return p.decision(move, "next_question")
     if p.memory.probes_on_seed >= 1:
         seed = next_seed(p.segment, p.memory, _questions_left(p.segment, p.turn, p.cfg))
         if seed is not None:
@@ -887,10 +970,10 @@ def _fold_one(memory: PanelMemory, done: CompletedTurn) -> PanelMemory:
         update["last_question"] = done.asked or d.seed
     elif done.asked and not _keeps_last_question(done):
         update["last_question"] = done.asked
-    if d.move.rule_id == "D-TWIST" and d.repeat_text:  # spoken whole, so `asked` is None
+    if d.move.rule_id in {"D-TWIST", "D-VALUES"} and d.repeat_text:  # spoken whole: no `asked`
         update["last_question"] = d.repeat_text
         update["probes_on_seed"] = memory.probes_on_seed + 1
-    if d.move.move == Move.probe and d.move.rule_id in {"R8", "D-BRIEF", "D-ANSWER"}:
+    if d.move.move == Move.probe and d.move.rule_id in {"R8", "D-BRIEF", "D-ANSWER", "D-DEEP"}:
         update["probes_on_seed"] = memory.probes_on_seed + 1
     if d.move.rule_id == "R1" and d.move.move == Move.clarify:
         update["unclear_hearings"] = memory.unclear_hearings + 1

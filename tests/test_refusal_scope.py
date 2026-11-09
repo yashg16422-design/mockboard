@@ -36,7 +36,7 @@ async def test_leaving_chess_refuses_chess_and_not_the_other_hobbies(
         hobbies=["chess", "cycling"], optional_subject="Public Administration",
     )
     session, _, _ = await start(settings, cards, form, tmp_path)
-    await talk_until(session, 3, 0)  # Professor Sen's segment; his first question is about chess
+    await talk_until(session, 4, 0)  # Professor Sen's segment (last since Nov 9); chess first
     hooks = session.hooks
     await answer(session, "aage badhiye", think_s=0)
     refused = " ".join(hooks._refused)
@@ -53,7 +53,7 @@ async def test_a_refusal_that_names_nothing_refuses_the_segments_whole_list(
         hobbies=["chess", "cycling"],
     )
     session, _, _ = await start(settings, cards, form, tmp_path)
-    await talk_until(session, 1, 1)  # a follow-up in Menon's segment: a probe was last asked
+    await talk_until(session, 3, 1)  # a follow-up in Menon's segment: a probe was last asked
     hooks = session.hooks
     await answer(session, "kisi aur topic pe baat karte hain", think_s=0)
     refused = " ".join(hooks._refused).lower()

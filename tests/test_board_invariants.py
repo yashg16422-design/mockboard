@@ -293,10 +293,10 @@ async def test_honest_unknown_on_a_topics_last_question_moves_on(deps, form, tmp
         for a, m, topic, last in zip(p.analyses, p.moves, p.topics, p.last_in_topic, strict=True)
         if a.honest_unknown and last
     ]
-    # Both honest unknowns fell on a last question: the form segment's 2nd and home and district's
-    # 3rd. The director owns the hand-off at a spent budget (D-HANDOFF), where the strategist's own
-    # row was R3b before the panel.
-    assert [t for t, _ in at_budget] == ["form_hr", "home_district"]
+    # Both honest unknowns fell on a last question: the form segment's 2nd and the degree's 3rd
+    # (the panel order is form, degree, case study, district, hobbies since Nov 9). The director
+    # owns the hand-off at a spent budget (D-HANDOFF), where the strategist's own row was R3b.
+    assert [t for t, _ in at_budget] == ["form_hr", "degree"]
     assert all((m.move, m.rule_id) == (Move.move_on, "D-HANDOFF") for _, m in at_budget)
     assert Move.reassure not in [m.move for m in p.moves]
 

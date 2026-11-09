@@ -161,6 +161,80 @@ REPEAT_PREFIX_LINES = LineSet(
 )
 # A request for a moment to think (`think_time`, owner's request Nov 7): the whole line. The same
 # question stands, and the next turn is a long one. UNVERIFIED: Tamil wording (fluent review).
+# An answer that calls a community inferior or wants it driven out (listener.v7 `prejudice`,
+# the owner's live sitting, Nov 9). The member says calmly what the Constitution promises every
+# citizen, names no community, quotes nothing back, and asks one question on the candidate's own
+# duty (`D-VALUES`). A board does not let such a remark pass as "one-sided". No article number:
+# board lines carry no digits. UNVERIFIED: Tamil wording.
+VALUES_LINES = LineSet(
+    "values",
+    {
+        "hi-en": (
+            "Ek baat saaf kar doon. Samvidhan har nagrik ko, chahe uska dharm, jaati, ling ya "
+            "kshetra kuch bhi ho, barabar adhikar aur samman deta hai.",
+            "Yahan ek cheez yaad rakhiye. Ek lok sevak har samuday ke liye barabar hota hai, "
+            "kyunki Samvidhan sabko ek jaisa samman deta hai.",
+        ),
+        "en": (
+            "Let me be clear on one point. The Constitution gives every citizen equal rights and "
+            "equal dignity, whatever their religion, caste, gender or region.",
+            "Keep one thing in mind here. A civil servant serves every community equally, because "
+            "the Constitution gives everyone the same dignity.",
+        ),
+        "hi": (
+            "एक बात साफ़ कर दूँ। संविधान हर नागरिक को, चाहे उसका धर्म, जाति, लिंग या क्षेत्र कुछ भी हो, "
+            "बराबर अधिकार और सम्मान देता है।",
+            "यहाँ एक बात याद रखिए। एक लोक सेवक हर समुदाय के लिए बराबर होता है, क्योंकि संविधान सबको एक "
+            "जैसा सम्मान देता है।",
+        ),
+        "ta-en": (
+            "ஒன்றைத் தெளிவாகச் சொல்கிறேன். மதம், சாதி, பாலினம், பகுதி எதுவாக இருந்தாலும், "
+            "அரசியலமைப்பு ஒவ்வொரு குடிமகனுக்கும் சம உரிமையும் சம மரியாதையும் தருகிறது.",
+            "இதை நினைவில் கொள்ளுங்கள். அரசியலமைப்பு எல்லோருக்கும் ஒரே மரியாதை தருவதால், ஒரு அரசு "
+            "அதிகாரி எல்லா சமூகங்களுக்கும் சமமாகப் பணியாற்றுகிறார்.",
+        ),
+    },
+)
+# The question after `VALUES_LINES`, same wording index.
+VALUES_QUESTION_LINES = LineSet(
+    "values_question",
+    {
+        "hi-en": (
+            "Ek civil servant ke roop mein, aap har samuday ka bharosa kaise jeetenge, khaas kar "
+            "unka jinke baare mein aapne abhi baat ki?",
+            "Agar aapke zile mein do samudayon ke beech tanav ho, to aap dono ka bharosa kaise "
+            "banayenge?",
+        ),
+        "en": (
+            "As a civil servant, how would you earn the trust of every community, including the "
+            "one you just spoke about?",
+            "If two communities in your district were in tension, how would you earn the trust of "
+            "both?",
+        ),
+        "hi": (
+            "एक लोक सेवक के रूप में, आप हर समुदाय का भरोसा कैसे जीतेंगे, ख़ास कर उनका जिनके बारे में "
+            "आपने अभी बात की?",
+            "अगर आपके ज़िले में दो समुदायों के बीच तनाव हो, तो आप दोनों का भरोसा कैसे बनाएँगे?",
+        ),
+        "ta-en": (
+            "ஒரு அரசு அதிகாரியாக, நீங்கள் இப்போது பேசிய சமூகம் உட்பட, ஒவ்வொரு சமூகத்தின் "
+            "நம்பிக்கையையும் எப்படிப் பெறுவீர்கள்?",
+            "உங்கள் மாவட்டத்தில் இரண்டு சமூகங்களுக்கு இடையே பதற்றம் இருந்தால், இருவரின் "
+            "நம்பிக்கையையும் எப்படிப் பெறுவீர்கள்?",
+        ),
+    },
+)
+# A turn that was only a greeting ("hello sir"): the member greets back, then the same question
+# follows verbatim (`D-GREET`, owner's live sitting, Nov 9). UNVERIFIED: Tamil wording.
+GREETING_BACK_LINES = LineSet(
+    "greeting_back",
+    {
+        "hi-en": ("Namaste. Aaiye, shuru karte hain.", "Ji, namaste. Sawal yeh tha."),
+        "en": ("Good day to you. Let us begin.", "Hello. The question was this."),
+        "hi": ("नमस्ते। आइए, शुरू करते हैं।", "जी, नमस्ते। प्रश्न यह था।"),
+        "ta-en": ("வணக்கம். தொடங்கலாம்.", "வணக்கம். கேள்வி இதுதான்."),
+    },
+)
 THINK_LINES = LineSet(
     "think",
     {

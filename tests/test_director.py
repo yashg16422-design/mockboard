@@ -56,6 +56,11 @@ CLARIFY = "matlab?"
 SKIP = "next question please"
 CHANGE = "tourism ke alawa kisi aur topic pe baat karte hain"
 END = "interview yahin khatam karte hain"
+# A real answer to the case study: long enough for its twist and the deeper questions.
+LONG = (
+    "Main pehle prabhavit logon se milunga, phir panchayat ke saath suchi banaunga, aur "
+    "zaroorat ke hisaab se rahat pahunchaunga."
+)
 
 
 def hi(table: dict[str, str]) -> str:
@@ -189,19 +194,19 @@ async def test_clarify_question_rephrases_for_the_actor():
 async def test_skip_counts_acks_and_asks_the_next_seed():
     sim = Sim()
     await answers(sim, 2)
-    assert sim.topic == "home_district"
+    assert sim.topic == "degree"  # panel order since Nov 9: form, degree, case study, ...
     d = await sim.say(SKIP)
     assert (d.counted, d.free) == (True, False)
     assert d.move.move == Move.next_question and d.seed_index == 1
-    assert texts(d) == [hi(SKIP_ACK_LINES)] and speakers(d) == ["administrator"]
+    assert texts(d) == [hi(SKIP_ACK_LINES)] and speakers(d) == ["economist"]
 
 
 async def test_skip_with_the_budget_spent_hands_off():
     sim = Sim(cap=10)
-    await answers(sim, 2)  # one answer in home_district, budget 2
+    await answers(sim, 2)  # one answer in degree, budget 2
     d = await sim.say(SKIP)
-    assert d.node == "handoff" and d.move.target == "degree"
-    assert speakers(d) == ["administrator", "chairman"]
+    assert d.node == "handoff" and d.move.target == "current_affairs"
+    assert speakers(d) == ["economist", "chairman"]
 
 
 async def test_skip_with_no_seed_left_hands_off_and_forfeits_budget():
@@ -217,9 +222,12 @@ async def test_change_topic_counts_and_ends_the_segment():
     await answers(sim, 2)
     d = await sim.say(CHANGE)
     assert (d.counted, d.free) == (True, False)
-    assert d.node == "handoff" and d.move.target == "degree" and d.move.member == "economist"
+    assert d.node == "handoff" and d.move.target == "current_affairs"
+    assert d.move.member == "ips_officer"
     assert d.avoid_terms == ("tourism",)
-    assert d.seed_segment == "degree" and d.seed_index == 0
+    # The case study opens its segment (owner, Nov 9): its situation is the last seed.
+    case = sim.agenda.segment("current_affairs")
+    assert d.seed_segment == "current_affairs" and case.seeds[d.seed_index].must_ask
 
 
 async def test_change_topic_preface_has_two_speakers_in_order():
@@ -227,8 +235,8 @@ async def test_change_topic_preface_has_two_speakers_in_order():
     await answers(sim, 2)
     d = await sim.say(CHANGE)
     assert [(p.member, p.text) for p in d.preface] == [
-        ("administrator", hi(CHANGE_TOPIC_ACK_LINES)),
-        ("chairman", handoff_line("Doctor Iyer", "hi-en", 1)),  # the second hand-off
+        ("economist", hi(CHANGE_TOPIC_ACK_LINES)),
+        ("chairman", handoff_line("Shri Rathore", "hi-en", 1)),  # the second hand-off
     ]
 
 
@@ -237,7 +245,7 @@ async def test_change_topic_in_the_last_segment_closes():
     await answers(sim, 4)
     d = await sim.say(CHANGE)
     assert d.finished and d.close_reason == "agenda" and d.counted
-    assert speakers(d) == ["ips_officer", "chairman"]
+    assert speakers(d) == ["humanities", "chairman"]
     assert texts(d) == [hi(CHANGE_TOPIC_ACK_LINES), hi(CLOSE_LINES)]
 
 
@@ -342,27 +350,29 @@ def test_the_question_guard_leaves_a_plain_yes_alone():
     assert is_clear_yes("haan ji") and is_clear_yes("जी हाँ") and is_clear_yes("ji  ")
 
 
-async def exhausted_at_current_affairs(answered: int) -> Sim:
-    """Cap 10, every free turn gone, `answered` answers given, standing in the last segment."""
-    sim = Sim(cap=10)
+async def exhausted_at_the_last_segment(cap: int | None) -> Sim:
+    """Every free turn gone, plain answers until the last segment's first question was asked."""
+    sim = Sim(cap=cap)
     for _ in range(PANEL_FREE_TURNS):
         assert (await sim.say("")).free
-    await answers(sim, answered)
-    assert sim.topic == "current_affairs"
+    while sim.topic != "interests":
+        await sim.say()
+    assert sim.turns_in_topic == 0
     return sim
 
 
-async def test_a_counted_decline_asks_the_situation_when_it_is_due():
-    sim = await exhausted_at_current_affairs(7)
+async def test_a_counted_decline_resumes_the_question_it_interrupted():
+    sim = await exhausted_at_the_last_segment(None)  # room left: budget 3
+    question = sim.log[-1][1].seed  # the hand-off's question (memory folds one turn late)
     assert (await sim.say(END)).pending_end
     d = await sim.say("nahi")
-    assert d.counted and d.seed_segment == "current_affairs" and d.seed_index == 2
+    assert d.counted and d.move.rule_id == "D-RESUME" and d.repeat_text == question
     assert texts(d)[0] == hi(END_DECLINED_LINES)
-    assert not d.finished and d.move.move == Move.next_question
+    assert not d.finished and d.move.move == Move.repeat_question
 
 
 async def test_a_decline_that_closes_does_not_first_say_we_go_on():
-    sim = await exhausted_at_current_affairs(8)
+    sim = await exhausted_at_the_last_segment(10)  # the request and the decline use the cap
     assert (await sim.say(END)).pending_end
     d = await sim.say("nahi")
     assert d.finished and d.close_reason == "answers"
@@ -494,16 +504,12 @@ async def test_a_plain_run_asks_the_situation_inside_the_budget(cap: int | None)
         if sim.agenda.segment("current_affairs").seeds[d.seed_index].must_ask
     ]  # fmt: skip
     assert len(must) == 1
+    # The case study opens its segment (owner, Nov 9), and with room its twist follows it.
+    assert asks[0] is must[0]
     budget = sim.agenda.segment("current_affairs").budget
-    # Nov 7: a situation with a twist is asked one place early and its twist takes the last place
-    # (inside the budget); with room for only one question there is no twist.
-    last_asked = sim.log[-(1 + 1)][1]
-    if budget == 1:
-        return
-    if last_asked.move.rule_id == "D-TWIST":
-        assert sim.log[-(1 + 2)][1] is must[0]
-    else:
-        assert last_asked is must[0]
+    at = next(i for i, (_, d) in enumerate(sim.log) if d is must[0])
+    if budget >= 2:
+        assert sim.log[at + 1][1].move.rule_id == "D-TWIST"
 
 
 def test_next_seed_at_budget_one_returns_the_must_ask_at_index_two():
@@ -513,16 +519,16 @@ def test_next_seed_at_budget_one_returns_the_must_ask_at_index_two():
     assert index == 2 and seed.must_ask
 
 
-def test_next_seed_goes_by_questions_left_not_index():
+def test_next_seed_opens_the_case_study_segment_with_its_situation():
     agenda = build_fallback_agenda(FORM)
     segment = agenda.segment("current_affairs")
     memory = opening_memory(agenda)
-    assert next_seed(segment, memory, 4)[0] == 0
-    assert next_seed(segment, memory, 3)[0] == 0
-    # Nov 7: a situation with a twist waits for the last two places, not the last one.
-    assert next_seed(segment, memory, 2)[0] == 2
-    assert next_seed(segment, memory, 1)[0] == 2
+    for left in (4, 3, 2, 1):
+        index, seed = next_seed(segment, memory, left)
+        assert index == 2 and seed.must_ask
     assert next_seed(segment, memory, 0) is None
+    after = memory.model_copy(update={"asked_seeds": {**memory.asked_seeds, segment.id: [2]}})
+    assert next_seed(segment, after, 2)[0] == 0  # then the plain questions, in order
 
 
 def test_next_seed_falls_to_the_must_ask_when_nothing_else_is_left():
@@ -536,23 +542,39 @@ def test_next_seed_falls_to_the_must_ask_when_nothing_else_is_left():
 
 async def test_at_budget_one_the_situation_is_the_first_question():
     sim = Sim(cap=5)
-    await answers(sim, 4)
+    await answers(sim, 2)  # form and degree, one each; then the case study
     _, d = sim.log[-1]
     assert d.seed_segment == "current_affairs" and d.seed_index == 2
 
 
-async def test_a_strategist_move_on_with_budget_left_becomes_the_situation():
+async def test_the_case_study_is_dug_into_then_the_board_moves_on():
+    """Owner, Nov 9: the situation, its twist, then deeper questions on the candidate's own plan,
+    up to `CASE_PROBES` follow-ups inside the segment's budget, then the next member."""
+    from mockboard.brain.director import CASE_PROBES
+
     sim = Sim()
-    await answers(sim, 11)
-    assert sim.topic == "current_affairs" and sim.turns_in_topic == 0
-    await sim.say("Pata nahi sir.", honest_unknown=True)  # R3 reassure, first time
+    await answers(sim, 5)  # form 2, degree 3: the hand-off asks the situation
+    assert sim.log[-1][1].seed_segment == "current_affairs" and sim.topic == "current_affairs"
+    follow = [await sim.say(LONG) for _ in range(CASE_PROBES)]
+    assert [d.move.rule_id for d in follow] == ["D-TWIST", "D-DEEP", "D-DEEP"]
+    assert all(d.counted and d.move.member == "ips_officer" for d in follow)
+    nxt = await sim.say(LONG)
+    assert nxt.node == "handoff" and nxt.move.target == "home_district"
+
+
+async def test_an_honest_i_dont_know_ends_the_digging():
+    sim = Sim()
+    await answers(sim, 5)
+    assert (await sim.say(LONG)).move.rule_id == "D-TWIST"
     d = await sim.say("Pata nahi sir.", honest_unknown=True)
-    assert d.move.move == Move.next_question and d.seed_index == 2
+    assert d.move.rule_id != "D-DEEP" and d.move.move == Move.reassure
 
 
 async def test_a_skipped_situation_counts_as_asked():
     sim = Sim(cap=7)
-    while sim.log == [] or sim.log[-1][1].seed_index != 2:
+    while sim.log == [] or (sim.log[-1][1].seed_segment, sim.log[-1][1].seed_index) != (
+        "current_affairs", 2
+    ):
         await sim.say()
     d = await sim.say(SKIP)
     # Nov 7: the situation now takes the second-last place, so a skip may leave one plain
@@ -562,13 +584,13 @@ async def test_a_skipped_situation_counts_as_asked():
     assert again == [] and rest[-1].finished and rest[-1].close_reason == "agenda"
 
 
-async def test_change_topic_can_leave_the_situation_unasked():
+async def test_change_topic_during_the_case_study_leaves_it_for_good():
     sim = Sim()
-    await answers(sim, 11)
+    await answers(sim, 5)  # the situation was just asked
     d = await sim.say(CHANGE)
-    assert d.finished and d.close_reason == "agenda"
-    asked = sim.director.memory.asked_seeds.get("current_affairs", [])
-    assert 2 not in asked
+    assert d.node == "handoff" and d.move.target == "home_district"
+    rest = await sim.plain_until_done()
+    assert not any(x.seed_segment == "current_affairs" for x in rest)
 
 
 async def test_wrap_up_can_leave_the_situation_unasked():
@@ -592,7 +614,7 @@ def test_the_opener_consumes_form_hr_seed_zero():
 
 async def test_at_form_hr_budget_one_the_first_answer_hands_off():
     d = await Sim(cap=5).say()
-    assert d.node == "handoff" and d.move.target == "home_district"
+    assert d.node == "handoff" and d.move.target == "degree"
 
 
 async def test_the_spoken_opener_is_what_a_repeat_replays():
@@ -699,7 +721,7 @@ async def test_two_repeats_after_a_hand_off_are_identical_with_no_stacked_prefix
     assert len(one.preface) == len(two.preface) == 1
     assert texts(one) == [hi(REPEAT_PREFIX_LINES)]
     assert texts(two) == [line_for(REPEAT_PREFIX_LINES, "hi-en", 1)] != texts(one)
-    assert one.move.member == "administrator"
+    assert one.move.member == "economist"
 
 
 async def test_a_repeat_after_a_skip_replays_the_seed_not_the_ack():

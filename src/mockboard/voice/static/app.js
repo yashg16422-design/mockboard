@@ -1370,6 +1370,11 @@ async function requestStop() {
   if (mic) mic.getAudioTracks().forEach((t) => { t.enabled = false; });
   setMic("Microphone paused");
   $("status").textContent = "The board is preparing your report.";
+  // The confirm() dialog freezes the page, and with it the 1 s pinger. Pipecat treats a page
+  // with no ping for 3 s as gone and queues its messages until a reconnect that never comes,
+  // so Stop was lost (Nov 9, live). A ping first, on the same ordered channel, marks the page
+  // alive before the stop arrives.
+  dc.send("ping: " + Date.now());
   dc.send(JSON.stringify({ type: "mockboard", event: "stop" }));
   await new Promise((resolve) => {
     stopWaiter = resolve;

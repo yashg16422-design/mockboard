@@ -106,8 +106,8 @@ def test_upsc_prompt_versions_are_the_panels_and_the_old_board_files_stay_on_dis
     """P7: one version map for UPSC. The old board's v3, v3 and v1 files are never edited and never
     deleted (the prompt rule), they are simply no longer named."""
     versions = settings.prompt_versions()
-    assert versions["listener"] == 6 and versions["actor"] == 11
-    assert versions["opener"] == 3 and versions["agenda_plan"] == 3
+    assert versions["listener"] == 7 and versions["actor"] == 12
+    assert versions["opener"] == 3 and versions["agenda_plan"] == 5
     for old in ("listener.v3.md", "actor.v3.md", "actor.v5.md", "actor.v6.md", "actor.v7.md",
                 "opener.v1.md"):
         assert (PROMPT_DIR / old).exists(), old
@@ -634,3 +634,86 @@ def test_the_model_is_told_whether_this_is_the_first_handoff(form):
             spoken=[], after_handoff=True, last_question="Q?", last_answer="A.",
         )
         assert f'"first_handoff": {str(first).lower()}' in user
+
+
+# --- the owner's run of Nov 9: a cut sentence, and a quote that killed the question --------------
+
+CUT = (  # past the cap and its grace (30 + 15 words), so the stream cuts the question
+    "Aapne samajik bhedbhav ko door karne ka tareeka bataya. Lekin kya aap is baat se sahmat "
+    "hain ki kabhi-kabhi ek prashasak ko bahut sakht faisle lene padte hain jo shehar ke kuch "
+    "logon ko bilkul achha nahi lagta aur unke virodh ke bawajood bhi kaam aage badhana padta hai?"
+)
+LONG_OK = (  # 38 words: over what the prompt asks, inside the grace, so it is said whole
+    "Aapne pilot se shuru karne ki baat kahi. Agar pilot ke pehle hi mahine mein vyapari aur "
+    "rehne wale dono virodh karein, aur media bhi sawal uthaye, to aap kis baat par tike "
+    "rahenge aur kya badlenge?"
+)
+
+
+async def test_a_sentence_the_word_cap_cuts_is_not_said_and_a_question_follows(form, kit):
+    out, _ = await line_for_move(kit, form, CUT, kind=Move.counter, answer="Main sabse milunga.")
+    assert "achha" not in out.text  # the unfinished end ("...jo kuch logon ko achha") is gone
+    assert out.text.startswith("Aapne samajik bhedbhav ko door karne ka tareeka bataya.")
+    assert out.text.endswith("?") and out.is_fallback and out.guard == "word_cap"
+
+
+async def test_a_line_inside_the_cap_is_untouched(form, kit):
+    line = "Aapne do baatein kahin. Inmein se pehle kya karenge, aur kyun?"
+    out, _ = await line_for_move(kit, form, line, kind=Move.probe, answer="Main sabse milunga.")
+    assert out.text == line and not out.is_fallback
+
+
+async def test_a_quoting_sentence_is_skipped_and_the_members_question_kept(form, kit):
+    answer = "School mein science padhate hue dekha ki bachchon ke paas lab nahi hai."
+    reply = (
+        "Aapne kaha ki bachchon ke paas lab nahi hai. "
+        "Is kami ko door karne ke liye aap pehla kadam kya uthayenge?"
+    )
+    out, _ = await line_for_move(kit, form, reply, kind=Move.probe, answer=answer)
+    assert out.text == "Is kami ko door karne ke liye aap pehla kadam kya uthayenge?"
+    assert not out.is_fallback
+
+
+async def test_a_question_a_little_over_the_cap_is_said_whole(form, kit):
+    """The owner's live run (Nov 9): a 30-word cap cut real follow-ups into the generic one."""
+    assert 30 < len(LONG_OK.split()) <= 45
+    out, _ = await line_for_move(
+        kit, form, LONG_OK, kind=Move.counter, answer="Main sabse milunga."
+    )
+    assert out.text == LONG_OK and not out.is_fallback
+
+
+async def test_a_sentence_the_board_just_said_is_skipped_and_the_new_question_kept(form, kit):
+    """The owner's live run (Nov 9): Nova repeated its own last sentences, and in voice they were
+    spoken before the whole-line check. The gate now skips them as they stream."""
+    before = ("Aapka matlab hai ki har system mein kuch na kuch kshati hoti hai. Lekin kya aap "
+              "sochte hain ki har kshati buri hoti hai?")
+    reply = ("Lekin kya aap sochte hain ki har kshati buri hoti hai? "
+             "Solar urja mein yeh nuksaan kaun uthata hai, sarkar ya upbhokta?")
+    out, _ = await line_for_move(kit, form, reply, kind=Move.counter,
+                                 answer="Solar urja ka udaharan lijiye.", earlier_lines=[before])
+    assert out.text == "Solar urja mein yeh nuksaan kaun uthata hai, sarkar ya upbhokta?"
+
+
+async def test_a_line_that_only_repeats_the_board_falls_back(form, kit):
+    before = "Aapne dono taraf ke netaon ko bulaya. Ab aap unhe kya kahenge?"
+    out, _ = await line_for_move(kit, form, before, kind=Move.probe, answer="Main baat karunga.",
+                                 earlier_lines=[before])
+    assert out.is_fallback and out.text != before and out.text.endswith("?")
+
+
+CONFIDENT = ("Lucknow mein sabse badi samasya traffic hai, main pehle data dekhunga kyunki jam ki "
+             "jagah pata honi chahiye, phir public transport sudharunga.")
+HEDGED = "Shayad main police bula lunga, mujhe pakka nahi pata."
+UNSURE_LINE = "Aap khud aashwast nahi lag rahe. Pehle chaubees ghante mein aap kya karenge?"
+
+
+async def test_you_sound_unsure_is_dropped_when_the_answer_was_not(form, kit):
+    """The owner's last live run (Nov 9): Nova said it to a confident answer with no hedge."""
+    out, _ = await line_for_move(kit, form, UNSURE_LINE, kind=Move.probe, answer=CONFIDENT)
+    assert out.text == "Pehle chaubees ghante mein aap kya karenge?"
+
+
+async def test_you_sound_unsure_stays_when_the_answer_hedged(form, kit):
+    out, _ = await line_for_move(kit, form, UNSURE_LINE, kind=Move.probe, answer=HEDGED)
+    assert out.text == UNSURE_LINE

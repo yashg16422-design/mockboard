@@ -396,7 +396,7 @@ class PanelHooks:
             s.deps.llm, self.kit, s.form, s.deps.cards, seed,
             max_words=max(tuning.actor_max_words, 40),
             max_tokens=token_budget(tuning.actor_max_tokens, self.mix),
-            turn_id="opener", first_token_budget_s=tuning.actor_first_token_budget_s,
+            turn_id="opener", first_token_budget_s=tuning.panel_actor_first_token_budget_s,
         )
         self.director.memory = opening_memory(self.agenda, opener.text)
         parts = (
@@ -516,7 +516,7 @@ class PanelHooks:
             ),
             turn_id=turn.turn_id, claim=claim, card=card,
             on_first_token=lambda: tr.mark("actor_first_token"),
-            first_token_budget_s=tuning.actor_first_token_budget_s,
+            first_token_budget_s=tuning.panel_actor_first_token_budget_s,
             filler_played=lambda: turn.filler_played,
             fast_throttle_retry_window_s=(
                 tuning.actor_fast_throttle_window_ms / 1000
@@ -524,6 +524,7 @@ class PanelHooks:
                 else None
             ),
             briefing=self._briefing,
+            earlier_lines=[line.text for line in s.state.board_lines[-2:]],
         )
         tr.mark("actor_done")
         self._line = line
@@ -724,10 +725,13 @@ class PanelHooks:
                 prompt_versions=self.prompt_versions(),
             )
         else:
+            from mockboard.brain.report_panel import answer_turns
+
             report = await generate_report(
                 s.deps,
                 session_id=s.session_id,
-                turns=s.state.turns,
+                # Only answers are scored and quoted; requests stay in "How the board heard you".
+                turns=answer_turns(s.state.turns, self.director.requests, s.state.moves),
                 ledger=s.state.claim_ledger,
                 moves=s.state.moves,
                 language=language,

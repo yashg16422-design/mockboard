@@ -28,7 +28,8 @@ from mockboard.brain.panel_lines import CLOSE_LINES, RITUAL_LINES, WRAP_UP_CLOSE
 from mockboard.modes.upsc_panel.setup import PanelSetup
 from mockboard.voice.brain_processor import BOARD, LISTENING
 
-FIVE = ["Chairperson Sharma", "Shrimati Menon", "Doctor Iyer", "Professor Sen", "Shri Rathore"]
+# The seats in panel order since Nov 9 (form, degree, case study, district, hobbies).
+FIVE = ["Chairperson Sharma", "Doctor Iyer", "Shri Rathore", "Shrimati Menon", "Professor Sen"]
 RITUAL = line_for(RITUAL_LINES, "hi-en")
 CLOSE = line_for(CLOSE_LINES, "hi-en")
 TIME_CLOSE = line_for(WRAP_UP_CLOSE_LINES, "hi-en")
@@ -120,10 +121,10 @@ async def test_a_hand_off_is_captioned_as_the_chairpersons_with_the_new_segment(
             await rig.until(lambda n=n: len(rig.brain.outcomes) == n, timeout=15)
             await rig.until(lambda: rig.brain.state == LISTENING)
     board = [e for e in rig.events("caption") if e["side"] == "board" and e.get("segment") ==
-             "home_district"]
+             "degree"]
     assert board and board[0]["speaker"] == "Chairperson Sharma"
     assert board[0]["kind"] == "preface"
-    assert any(e["speaker"] == "Shrimati Menon" for e in board)
+    assert any(e["speaker"] == "Doctor Iyer" for e in board)
     users = [e for e in rig.events("caption") if e["side"] == "user"]
     assert [u["segment"] for u in users] == ["form_hr", "form_hr"]
 
@@ -299,8 +300,8 @@ async def test_debate_keeps_its_single_stop_with_no_wrap_up(settings, cards, fak
 
 # --- P8: a voice per member ------------------------------------------------------------------
 
-VOICES = {"chairman": "Vikrant", "administrator": "Urmila", "economist": "Poorvi",
-          "humanities": "Urmila", "ips_officer": "Poorvi"}
+VOICES = {"chairman": "Vikrant", "economist": "Poorvi", "ips_officer": "Urmila",
+          "administrator": "Poorvi", "humanities": "Urmila"}
 IDS = dict(zip(FIVE, VOICES, strict=True))  # display name -> persona id, in seat order
 
 
@@ -335,12 +336,12 @@ async def test_every_request_is_in_the_voice_of_the_member_who_says_it(
             await rig.until(lambda: rig.brain.state == LISTENING)
     assert rig.tts.requests
     voices_follow_speakers(rig)
-    # The hand-off is the Chairperson's voice and the question that follows is Smt. Menon's.
-    at = rig.tts.requests.index(("Vikrant", "Shrimati Menon, please."))
-    assert rig.tts.requests[at + 1][0] == "Urmila"
+    # The hand-off is the Chairperson's voice and the question that follows is Doctor Iyer's.
+    at = rig.tts.requests.index(("Vikrant", "Doctor Iyer, please."))
+    assert rig.tts.requests[at + 1][0] == "Poorvi"
     # The trace says which voice each request had.
     assert rig.brain.outcomes[1].trace["voice"]["tts_voices"][0] == "Vikrant"
-    assert "Urmila" in rig.brain.outcomes[1].trace["voice"]["tts_voices"]
+    assert "Poorvi" in rig.brain.outcomes[1].trace["voice"]["tts_voices"]
 
 
 async def test_a_voice_is_named_at_the_start_of_every_line_even_when_it_has_not_changed(
@@ -381,7 +382,7 @@ async def test_a_member_left_out_of_the_table_is_not_given_a_frame(
             await rig.speak(0.1)
             await rig.until(lambda n=n: len(rig.brain.outcomes) == n, timeout=15)
             await rig.until(lambda: rig.brain.state == LISTENING)
-    assert set(rig.tts.voice_changes) == {"Vikrant"}  # Smt. Menon got none: the last voice stays
+    assert set(rig.tts.voice_changes) == {"Vikrant"}  # Doctor Iyer got none: the last voice stays
 
 
 @pytest.mark.parametrize("unit", ["line", "first_rest"])
@@ -396,14 +397,14 @@ async def test_a_request_held_for_a_whole_line_never_mixes_two_voices(
             await rig.until(lambda n=n: len(rig.brain.outcomes) == n, timeout=15)
             await rig.until(lambda: rig.brain.state == LISTENING)
     board = [e for e in rig.events("caption") if e["side"] == "board"]
-    question = [e["text"] for e in board if e["speaker"] == FIVE[1]][-1]  # Smt. Menon's question
-    called = next(e["text"] for e in board if e["text"].startswith("Shrimati Menon, please"))
-    # The Chairperson's hand-off and Smt. Menon's question are separate requests, each in its own
+    question = [e["text"] for e in board if e["speaker"] == FIVE[1]][-1]  # Doctor Iyer's question
+    called = next(e["text"] for e in board if e["text"].startswith("Doctor Iyer, please"))
+    # The Chairperson's hand-off and Doctor Iyer's question are separate requests, each in its own
     # voice, even though the unit is a whole line: one request never carries both.
     mine = [(v, t) for v, t in rig.tts.requests if called in t]
     hers = [(v, t) for v, t in rig.tts.requests if question in t]
     assert len(mine) == 1 and mine[0][0] == "Vikrant" and question not in mine[0][1]
-    assert len(hers) == 1 and hers[0][0] == "Urmila" and called not in hers[0][1]
+    assert len(hers) == 1 and hers[0][0] == "Poorvi" and called not in hers[0][1]
     assert len(rig.tts.requests) < len(board)  # and it did hold sentences together
 
 
@@ -420,7 +421,7 @@ async def test_a_voice_cut_off_by_a_barge_in_does_not_leak_into_the_next_line(
         await rig.until(lambda: len(rig.brain.outcomes) == 1, timeout=15)
         await rig.until(lambda: rig.brain.state == LISTENING)
         rig.tts.ms_per_word = 300  # slow, so there is time to cut in
-        await rig.speak(0.1)  # the second answer: the Chairperson hands over to Smt. Menon
+        await rig.speak(0.1)  # the second answer: the Chairperson hands over to Doctor Iyer
         await rig.until(lambda: rig.brain.state == BOARD
                         and rig.ledger.playback_started_at is not None, timeout=15)
         await asyncio.sleep(0.3)
@@ -429,9 +430,9 @@ async def test_a_voice_cut_off_by_a_barge_in_does_not_leak_into_the_next_line(
         await rig.worker.queue_frame(InterruptionFrame())
         await rig.until(lambda: len(rig.brain.outcomes) == 2, timeout=10)
         await asyncio.sleep(0.3)
-        # What the cut line left behind: Smt. Menon's voice is still set on the TTS service.
-        assert rig.tts.voice == "Urmila"
-        # A line by the Chairperson names her voice again, so nothing of Smt. Menon's leaks in.
+        # What the cut line left behind: Doctor Iyer's voice is still set on the TTS service.
+        assert rig.tts.voice == "Poorvi"
+        # A line by the Chairperson names her voice again, so nothing of Doctor Iyer's leaks in.
         await rig.brain.say("Ek minute.", speaker=FIVE[0], kind="test")
         assert rig.tts.requests[-1] == ("Vikrant", "Ek minute.")
         rig.tts.ms_per_word = 5

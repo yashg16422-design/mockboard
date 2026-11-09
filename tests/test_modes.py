@@ -70,7 +70,9 @@ DEBATE_BOARD_LINES_MD5 = "f2a23f33b90df75103f505a2696e6944"
 # lines changed, the planner stand-in no longer names the district in two questions, and a reassure
 # after silence names what it is about ("is mudde par", not "is par"). The debate hash below is
 # untouched.
-UPSC_BOARD_LINES_MD5 = "e32140d5f91a41cfa21da8b5860720fa"
+# Replaced ON PURPOSE on Nov 9 (Round 57): the owner's order (form, degree, case study dug into,
+# district, hobbies). Was e32140d5... The new transcript was read line by line before it was taken.
+UPSC_BOARD_LINES_MD5 = "abeb4cd8babe94f9d2039b68c6d1a956"
 # sha256 values taken at 7d94936, before any Panel phase code.
 DEBATE_PREFIX_SHA256 = "a36d6feb232b9f86209639a161be6a48465e1635140a7bf15a4a402659246555"
 DEBATE_TOOLS_SHA256 = {
@@ -248,11 +250,13 @@ def test_the_golden_session_shows_the_whole_panel():
         who = line[1 : line.index("]")]
         if who not in speakers:
             speakers.append(who)
-    assert speakers == ["Chairperson Sharma", "Shrimati Menon", "Doctor Iyer", "Professor Sen",
-                        "Shri Rathore"]
+    # The owner's order (Nov 9): introduction, degree, the case study dug into, district, hobbies.
+    assert speakers == ["Chairperson Sharma", "Doctor Iyer", "Shri Rathore", "Shrimati Menon",
+                        "Professor Sen"]
     assert sum("D-HANDOFF" in x for x in board) == 4
     for needle in ("(fact_challenge, R4)", "Theek hai, yeh maanna achhi baat hai.",
-                   "(repeat_question, D-REPEAT)", "(reassure, R3)", "(next_question, D-SEED)"):
+                   "(repeat_question, D-REPEAT)", "(reassure, R3)", "(probe, D-TWIST)",
+                   "(probe, D-DEEP)"):
         assert any(needle in x for x in board), needle
     assert board[-1] == "[Chairperson Sharma] (move_on, D-CLOSE) Thank you, that will be all."
     after = text[text.index("chess ke alawa kisi aur topic"):]

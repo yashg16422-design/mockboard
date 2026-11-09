@@ -45,7 +45,9 @@ __all__ = [
     "score_turn",
 ]
 
-REQUEST_KINDS = frozenset({"change_topic", "skip", "repeat", "clarify_question", "end", "think"})
+REQUEST_KINDS = frozenset(
+    {"change_topic", "skip", "repeat", "clarify_question", "end", "think", "greeting"}
+)
 PRESSURE_MOVES = frozenset({
     Move.pressure, Move.counter, Move.steelman, Move.fact_challenge, Move.interrupt,
 })
@@ -108,6 +110,28 @@ def _analysis(turn: CandidateTurn) -> Analysis | None:
     return turn.analysis
 
 
+def answer_turns(
+    turns: Sequence[CandidateTurn],
+    requests: Sequence[PanelRequest] = (),
+    moves: Sequence[BoardMove] = (),
+) -> list[CandidateTurn]:
+    """The turns that were answers, for the judge. A request ("phir se boliye", "ek minute"), a
+    greeting, the reply to "end here?" and an empty turn are not: on the owner's live run of Nov 9
+    the judge quoted "सॉरी सर फिर से बोलिए" as evidence of mental alertness and wrote "requests
+    for repetition" into a score, though the board allows them freely (Round 57)."""
+    skip = {r.turn_id for r in requests if r.kind in REQUEST_KINDS}
+    confirm = {m.for_turn for m in moves if m.rule_id == "D-END-CONFIRM" and m.for_turn}
+    out: list[CandidateTurn] = []
+    after_confirm = False
+    for turn in turns:
+        reply_to_confirm = after_confirm
+        after_confirm = turn.turn_id in confirm
+        if turn.turn_id in skip or reply_to_confirm or not turn.transcript.strip():
+            continue
+        out.append(turn)
+    return out
+
+
 def score_turn(turn: CandidateTurn, *, request_ids: set[str], pressure: bool) -> int | None:
     """How weak this answer looks. None means it must not be ranked (garbled, silent, request)."""
     analysis = _analysis(turn)
@@ -147,19 +171,46 @@ def _fixed_openings() -> tuple[str, ...]:
     return tuple(sorted(found, key=len, reverse=True))
 
 
+def _named_openings() -> tuple[re.Pattern[str], ...]:
+    """Fixed lines that take a member's name ("Shukriya. Ab {name} ki baari hai."), as patterns:
+    the live run of Nov 9 offered "Ab Doctor Iyer ki baari hai. Physics ki..." as the question to
+    practise (Round 57)."""
+    from mockboard.brain.panel_lines import ALL_LINE_TABLES
+
+    found = set()
+    for table in ALL_LINE_TABLES:
+        for options in table.variants.values():
+            for line in options:
+                if "{name}" not in line:
+                    continue
+                pattern = re.escape(line.strip()).replace(re.escape("{name}"), r"[^.?!।]{1,40}?")
+                found.add(pattern)
+                # The handoff's thanks may have been said as its own sentence: the call alone too.
+                head, _, tail = line.strip().partition(". ")
+                if tail and "{name}" in tail and "{name}" not in head:
+                    found.add(re.escape(tail).replace(re.escape("{name}"), r"[^.?!।]{1,40}?"))
+    return tuple(re.compile(f"^{p}\\s*") for p in sorted(found, key=len, reverse=True))
+
+
 def strip_fixed_lines(text: str) -> str:
     """The question without a fixed line in front of it ("Zaroor, sawal phir se suniye. ...").
 
-    `question_part` drops only acknowledgements of a few words; the repeat, skip and topic lines are
-    longer, and a practice question must start with the question itself."""
+    `question_part` drops only acknowledgements of a few words; the repeat, skip, topic and hand-off
+    lines are longer, and a practice question must start with the question itself."""
     text = text.strip()
     openings = _fixed_openings()
+    named = _named_openings()
     changed = True
     while changed:
         changed = False
         for opening in openings:
             if text.startswith(opening) and len(text) > len(opening):
                 text = text[len(opening):].strip()
+                changed = True
+        for pattern in named:
+            m = pattern.match(text)
+            if m and m.end() < len(text):
+                text = text[m.end():].strip()
                 changed = True
     return text
 
@@ -211,6 +262,7 @@ REQUEST_WORDS: dict[str, str] = {
     "clarify_question": "have the question explained",
     "end": "end the interview",
     "think": "take a moment to think",
+    "greeting": "greet the board",
 }
 REQUEST_SOURCE_WORDS: dict[str, str] = {
     "rules": "the board's phrase rules",
@@ -252,6 +304,13 @@ def _next_step(move: BoardMove | None, this: CandidateTurn, following: Candidate
         return "asked you to confirm ending the interview"
     if move.rule_id == "D-THINK":
         return "gave you time to think; the same question stood"
+    if move.rule_id == "D-VALUES":
+        return (
+            "reminded you that every community has equal rights and dignity, and asked how you "
+            "would earn every community's trust"
+        )
+    if move.rule_id == "D-GREET":
+        return "greeted you back and asked the same question"
     if following is None and move.move == Move.move_on:
         return "closed the interview"
     if following is not None and following.topic != this.topic:

@@ -19,53 +19,50 @@ You: Kanpur mein maine dekha ki small electronics repair shops bahut hain, lekin
 [Chairperson Sharma] (probe, R8) Ji. Agar aap khud is sthiti mein hote, to pehla qadam kya uthate, aur kyun?
 
 You: Exampleland mein tourism GDP ka 30 percent hai in 2023, isliye tourism hi growth ka main engine hai and jobs bhi wahi deta hai.
-[Chairperson Sharma] Dhanyavaad. Shrimati Menon, please.
-[Shrimati Menon] (move_on, D-HANDOFF) Shukriya. Namaste. Apne zile mein rehkar aapne logon ki kaunsi dikkat kareeb se dekhi, aur use door karne ke liye aap kya karenge?
+[Chairperson Sharma] Dhanyavaad. Doctor Iyer, please.
+[Doctor Iyer] (move_on, D-HANDOFF) Shukriya. Namaste. Electronics padhte hue aapne kaunsa ek vichar seekha jo aam logon ki zindagi se jud sakta hai, aur kaise?
 
 You: Mujhe lagta hai tourism se local logon ko rozgaar milta hai. Lekin environment par bhi asar padta hai, so carrying capacity rules zaroori hain.
-[Shrimati Menon] (fact_challenge, R4) Aapne 30 percent kaha. Exampleland test data ke 2023 ke figure ke hisaab se yeh 12 percent hai. Aapka figure kahan se hai?
+[Doctor Iyer] (fact_challenge, R4) Aapne 30 percent kaha. Exampleland test data ke 2023 ke figure ke hisaab se yeh 12 percent hai. Aapka figure kahan se hai?
    show-your-work: R4: claim t1.s0.c0 contradicts card test_tourism_gdp_share (model + numeric check agree)
 
 You: Haan, shayad mera figure galat tha. Main card wala data check karunga, lekin mera point ki tourism important hai abhi bhi valid hai.
-[Shrimati Menon] Theek hai, yeh maanna achhi baat hai.
-[Shrimati Menon] (probe, R8) Achha. Is par aapko sabse badi dikkat kahan dikhti hai?
+[Doctor Iyer] Theek hai, yeh maanna achhi baat hai.
+[Doctor Iyer] (probe, R8) Achha. Is par aapko sabse badi dikkat kahan dikhti hai?
 
 You: Homestays aur local guides ko train karna chahiye. Saath hi waste management par cess lagana chahiye.
-[Chairperson Sharma] Shukriya. Ab Doctor Iyer ki baari hai.
-[Doctor Iyer] (move_on, D-HANDOFF) Aabhaar. Electronics padhte hue aapne kaunsa ek vichar seekha jo aam logon ki zindagi se jud sakta hai, aur kaise?
+[Chairperson Sharma] Shukriya. Ab Shri Rathore ki baari hai.
+[Shri Rathore] (move_on, D-HANDOFF) Aabhaar. Maan lijiye aap DM hain aur ek factory ke theke ke mazdoor hadtaal par hain. Dono pakshon se baat karke aap kaise aage badhenge?
 
 You: Electronics padhne se mujhe system ki tarah sochna aaya, har cheez ke input aur output hote hain.
-[Doctor Iyer] (counter, R6) Samajh mein aata hai. Lekin doosra paksh kehta hai ki isse nuksaan bhi ho sakta hai. Aap use kaise tolenge?
+[Shri Rathore] (probe, D-TWIST) Ab factory maalik kehte hain ki agar hadtaal kal tak khatam nahi hui, to woh factory band kar denge aur saikdon log berozgaar ho jayenge. Aap kaise aage badhenge?
 
 You: please repeat
-[Doctor Iyer] Zaroor, sawal phir se suniye.
-[Doctor Iyer] (repeat_question, D-REPEAT) Lekin doosra paksh kehta hai ki isse nuksaan bhi ho sakta hai. Aap use kaise tolenge?
+[Shri Rathore] Zaroor, sawal phir se suniye.
+[Shri Rathore] (repeat_question, D-REPEAT) Ab factory maalik kehte hain ki agar hadtaal kal tak khatam nahi hui, to woh factory band kar denge aur saikdon log berozgaar ho jayenge. Aap kaise aage badhenge?
 
 You: Mujhe lagta hai ki technology se sarkari daftaron mein kaam tez ho sakta hai, lekin logon ki training bhi zaroori hai.
-[Doctor Iyer] (pressure, R7) Aapki baat mein dum hai. Koi ek thos udaharan dijiye, jisse yeh aur saaf ho.
+[Shri Rathore] (probe, D-DEEP) Achha. Is par aapko kis tarah ki madad ya jaankari chahiye hogi?
 
 You: Digital system sab jagah kaam nahi karta, isliye pehle kuch gaon mein try karna chahiye.
-[Chairperson Sharma] Dhanyavaad. Professor Sen, aap aage badhaiye.
-[Professor Sen] (move_on, D-HANDOFF) Aabhaar. Chess ne aapke sochne ki aadat ko kaise badla, aur woh aapke kaam mein kaise dikhegi?
+[Shri Rathore] (probe, D-DEEP) Theek hai. Isse sabse zyada kiska fayda ya nuksaan hoga, aapke hisaab se?
 
 You: Mera hobby chess hai, usse maine seekha ki jaldbaazi mein faisla nahi lena chahiye.
-[Professor Sen] (counter, R6) Ji. Is soch ke khilaaf sabse vazandar baat kya ho sakti hai, aur uska aap kya karenge?
+[Chairperson Sharma] Dhanyavaad. Shrimati Menon, aap aage badhaiye.
+[Shrimati Menon] (move_on, D-HANDOFF) Aabhaar. Apne zile mein rehkar aapne logon ki kaunsi dikkat kareeb se dekhi, aur use door karne ke liye aap kya karenge?
 
 You: chess ke alawa kisi aur topic pe baat karte hain
-[Professor Sen] Zaroor, koi baat nahi.
-[Chairperson Sharma] Dhanyavaad. Shri Rathore, please.
-[Shri Rathore] (move_on, D-HANDOFF) Aabhaar. Haal ke samay mein aapne kis rashtriya mudde ko dhyan se follow kiya hai, aur kyun?
+[Shrimati Menon] Zaroor, koi baat nahi.
+[Chairperson Sharma] Dhanyavaad. Professor Sen, please.
+[Professor Sen] (move_on, D-HANDOFF) Aabhaar. Padhai ke bahar aapko kis kaam mein sachchi khushi milti hai, aur kyun?
 
 You: Public administration mujhe isliye pasand hai kyunki usme niti aur zameeni kaam dono hain.
-[Shri Rathore] (counter, R6) Samajh mein aata hai. Agar yeh tareeka na chale, to aapka doosra raasta kya hoga?
+[Professor Sen] (counter, R6) Samajh mein aata hai. Agar yeh tareeka na chale, to aapka doosra raasta kya hoga?
 
 You: Mujhe exact pata nahi hai, but I think local logon se baat karke pehle samasya samajhni chahiye.
-[Shri Rathore] (reassure, R3) Koi baat nahi. Chaliye ise aasaan karte hain: is mudde par aapka pehla khayal kya aata hai?
+[Professor Sen] (reassure, R3) Koi baat nahi. Chaliye ise aasaan karte hain: apne shauk aur optional vishay par aapka pehla khayal kya aata hai?
 
 You: Pehle rahat samagri ki list banakar sabse zaroorat mand logon tak pahunchaunga, aur gaon ke pradhan se baat karunga.
-[Shri Rathore] (next_question, D-SEED) Theek hai. Maan lijiye aap DM hain aur ek factory ke theke ke mazdoor hadtaal par hain. Dono pakshon se baat karke aap kaise aage badhenge?
-
-You: Main dono pakshon se baat karunga, lekin kaam rokne ka asar bhi dekhunga.
 [Chairperson Sharma] (move_on, D-CLOSE) Thank you, that will be all.
 
 ======================================================================
@@ -89,7 +86,7 @@ Mock Board practice indicators (our own, not UPSC criteria):
     evidence [variety_depth_of_interest / t0]: "Kanpur mein maine dekha ki small"
     evidence [intellectual_moral_integrity / t0]: "Kanpur mein maine dekha ki small"
     evidence [factual_accuracy / t0]: "Kanpur mein maine dekha ki small"
-    evidence [composure / t14]: "Main dono pakshon se baat karunga,"
+    evidence [composure / t13]: "Pehle rahat samagri ki list banakar"
 Claims checked against fact cards:
   [contradicted     ] Exampleland mein tourism GDP ka 30 percent hai in 2023, isliye tourism  <- card test_tourism_gdp_share (SYNTHETIC TEST CARD (no real source))
 NOTE: every fact card in this run is a SYNTHETIC TEST CARD, not a real fact.
@@ -98,27 +95,27 @@ Board discussion:
   Chairperson: The plan came from the form. Each of us held our questions, and we did not chase a number.
   Chairperson Sharma: I heard this. Candidate spoke about exampleland, tourism, percent.
   Chairperson Sharma still had ready: Agar civil services ka sapna poora na ho, to aap samaj ke liye kaunsa kaam chunenge, aur kyun?
-  Shrimati Menon: I heard this. Candidate spoke about homestays, chahiye, management.
-  Shrimati Menon still had ready: Agar aap apne zile ke prashasan mein hote, to sabse pehle kis ek cheez ko badalna chahenge, aur kyun?
-  Doctor Iyer: I heard this. Candidate spoke about digital, system, chahiye.
+  Doctor Iyer: I heard this. Candidate spoke about homestays, chahiye, management.
   Doctor Iyer still had ready: Electronics ki kaunsi samajh aapko prashasan ke kisi faisle mein kaam aa sakti hai, aur kyun?
-  Professor Sen: I heard this. Candidate spoke about chess, alawa, topic.
+  Shri Rathore: I heard this. Candidate spoke about seekha, jaldbaazi, chahiye.
+  Shri Rathore still had ready: Haal ke samay mein aapne kis rashtriya mudde ko dhyan se follow kiya hai, aur kyun?
+  Shrimati Menon: I heard this. Candidate spoke about chess, alawa, topic.
+  Shrimati Menon still had ready: Agar aap apne zile ke prashasan mein hote, to sabse pehle kis ek cheez ko badalna chahenge, aur kyun?
+  Professor Sen: I heard this. Candidate spoke about samagri, zaroorat, pahunchaunga.
   Professor Sen still had ready: Cycling mein aapko kya kathin laga, aur usse aapne dhairya ke baare mein kaise seekha?
-  Shri Rathore: I heard this. Candidate spoke about pakshon, karunga, dekhunga.
-  Shri Rathore still had ready: Apni pasand ke kisi rashtriya mudde par aap doosre paksh ki baat ko kaise tolte hain?
-  Chairperson: The thin moment to practise is this question. Haal ke samay mein aapne kis rashtriya mudde ko dhyan se follow kiya hai, aur kyun?
+  Chairperson: The thin moment to practise is this question. Padhai ke bahar aapko kis kaam mein sachchi khushi milti hai, aur kyun?
 By panel member:
   Chairperson Sharma (form_hr)
     Candidate spoke about electronics, training, badhaunga. Candidate spoke about exampleland, tourism, percent.
-  Shrimati Menon (home_district)
-    Candidate spoke about environment, carrying, capacity. Candidate spoke about karunga, tourism, important. Candidate spoke about homestays, chahiye, management.
   Doctor Iyer (degree)
-    Candidate spoke about electronics, padhne, system. Candidate spoke about technology, daftaron, training. Candidate spoke about digital, system, chahiye.
-  Professor Sen (interests)
-    Candidate spoke about seekha, jaldbaazi, chahiye. The candidate asked to change the topic.
+    Candidate spoke about environment, carrying, capacity. Candidate spoke about karunga, tourism, important. Candidate spoke about homestays, chahiye, management.
   Shri Rathore (current_affairs)
-    Candidate spoke about public, administration, zameeni. Candidate spoke about samasya, samajhni, chahiye. Candidate spoke about samagri, zaroorat, pahunchaunga. Candidate spoke about pakshon, karunga, dekhunga.
-    Weakest question: Haal ke samay mein aapne kis rashtriya mudde ko dhyan se follow kiya hai, aur kyun?
+    Candidate spoke about electronics, padhne, system. Candidate spoke about technology, daftaron, training. Candidate spoke about digital, system, chahiye. Candidate spoke about seekha, jaldbaazi, chahiye.
+  Shrimati Menon (home_district)
+    The candidate asked to change the topic.
+  Professor Sen (interests)
+    Candidate spoke about public, administration, zameeni. Candidate spoke about samasya, samajhni, chahiye. Candidate spoke about samagri, zaroorat, pahunchaunga.
+    Weakest question: Padhai ke bahar aapko kis kaam mein sachchi khushi milti hai, aur kyun?
       - Define the terms you will use, in one sentence.
       - Name two sides of the question and who is affected.
       - Say what you would do first, and why.
@@ -131,64 +128,60 @@ How the board heard you:
   t1 [Chairperson Sharma] answer
     heard: Exampleland mein tourism GDP ka 30 percent hai in 2023, isliye tourism hi growth ka main engine hai and jobs bhi wahi deta hai.
     understood: Candidate spoke about exampleland, tourism, percent.
-    next: the board handed over to Shrimati Menon
-  t2 [Shrimati Menon] answer
+    next: the board handed over to Doctor Iyer
+  t2 [Doctor Iyer] answer
     heard: Mujhe lagta hai tourism se local logon ko rozgaar milta hai. Lekin environment par bhi asar padta hai, so carrying capacity rules zaroori hain.
     understood: Candidate spoke about environment, carrying, capacity.
     next: the board asked where your figure came from
-  t3 [Shrimati Menon] answer
+  t3 [Doctor Iyer] answer
     heard: Haan, shayad mera figure galat tha. Main card wala data check karunga, lekin mera point ki tourism important hai abhi bhi valid hai.
     understood: Candidate spoke about karunga, tourism, important.
     next: the board asked a follow-up on this answer
-  t4 [Shrimati Menon] answer
+  t4 [Doctor Iyer] answer
     heard: Homestays aur local guides ko train karna chahiye. Saath hi waste management par cess lagana chahiye.
     understood: Candidate spoke about homestays, chahiye, management.
-    next: the board handed over to Doctor Iyer
-  t5 [Doctor Iyer] answer
+    next: the board handed over to Shri Rathore
+  t5 [Shri Rathore] answer
     heard: Electronics padhne se mujhe system ki tarah sochna aaya, har cheez ke input aur output hote hain.
     understood: Candidate spoke about electronics, padhne, system.
-    next: the board asked you to weigh another side
-  t6 [Doctor Iyer] request
+    next: the board asked a follow-up on this answer
+  t6 [Shri Rathore] request
     heard: please repeat
     request: hear the question again (found by the board's phrase rules)
     next: the board repeated the question
-  t7 [Doctor Iyer] answer
+  t7 [Shri Rathore] answer
     heard: Mujhe lagta hai ki technology se sarkari daftaron mein kaam tez ho sakta hai, lekin logon ki training bhi zaroori hai.
     understood: Candidate spoke about technology, daftaron, training.
-    next: the board asked for a reason or an example
-  t8 [Doctor Iyer] answer
+    next: the board asked a follow-up on this answer
+  t8 [Shri Rathore] answer
     heard: Digital system sab jagah kaam nahi karta, isliye pehle kuch gaon mein try karna chahiye.
     understood: Candidate spoke about digital, system, chahiye.
-    next: the board handed over to Professor Sen
-  t9 [Professor Sen] answer
+    next: the board asked a follow-up on this answer
+  t9 [Shri Rathore] answer
     heard: Mera hobby chess hai, usse maine seekha ki jaldbaazi mein faisla nahi lena chahiye.
     understood: Candidate spoke about seekha, jaldbaazi, chahiye.
-    next: the board asked you to weigh another side
-  t10 [Professor Sen] request
+    next: the board handed over to Shrimati Menon
+  t10 [Shrimati Menon] request
     heard: chess ke alawa kisi aur topic pe baat karte hain
     request: change the topic (found by the board's phrase rules)
-    next: the board handed over to Shri Rathore
-  t11 [Shri Rathore] answer
+    next: the board handed over to Professor Sen
+  t11 [Professor Sen] answer
     heard: Public administration mujhe isliye pasand hai kyunki usme niti aur zameeni kaam dono hain.
     understood: Candidate spoke about public, administration, zameeni.
     next: the board asked you to weigh another side
-  t12 [Shri Rathore] honest_unknown
+  t12 [Professor Sen] honest_unknown
     heard: Mujhe exact pata nahi hai, but I think local logon se baat karke pehle samasya samajhni chahiye.
     understood: Candidate spoke about samasya, samajhni, chahiye.
     next: the board gave you time and an easier place to start
-  t13 [Shri Rathore] answer
+  t13 [Professor Sen] answer
     heard: Pehle rahat samagri ki list banakar sabse zaroorat mand logon tak pahunchaunga, aur gaon ke pradhan se baat karunga.
     understood: Candidate spoke about samagri, zaroorat, pahunchaunga.
-    next: the board asked the next prepared question
-  t14 [Shri Rathore] answer
-    heard: Main dono pakshon se baat karunga, lekin kaam rokne ka asar bhi dekhunga.
-    understood: Candidate spoke about pakshon, karunga, dekhunga.
     next: the board closed the interview
 Practice plan:
   - Practise answering in two breaths: the point, then one reason.
   - Take one claim you made and name the strongest objection to it.
-  - Pick one issue you follow, two sides, and a first administrative step.
-Replay this moment (text): Haal ke samay mein aapne kis rashtriya mudde ko dhyan se follow kiya hai, aur kyun?
+  - Prepare what a hobby taught you about patience or judgement.
+Replay this moment (text): Padhai ke bahar aapko kis kaam mein sachchi khushi milti hai, aur kyun?
 note: Request at t6: repeat, found by the board's rules (repeat_bare).
 note: Request at t10: change_topic, found by the board's rules (change_other_baat).
 note: Listed request sentences work every time, in our tests, with the listener up or down, in Latin and Devanagari. Rephrased requests are caught less often: 0.75 on held-out synthetic lines by rules alone. Accuracy on real speech has not been measured yet.

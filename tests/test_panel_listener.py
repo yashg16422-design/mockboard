@@ -75,11 +75,13 @@ def long_turn_for(line: str, pattern: str) -> str:
 # --- the tool and the prompt --------------------------------------------------------------------
 
 
-def test_the_panel_listener_adds_one_field_and_the_other_tools_are_untouched():
+def test_the_panel_listener_adds_its_fields_and_the_other_tools_are_untouched():
+    """`candidate_request` (P5) and `prejudice` (listener.v7, Nov 9)."""
     base = LISTENER_TOOL.input_schema
     panel = PANEL_LISTENER_TOOL.input_schema
-    assert panel["properties"].keys() == {*base["properties"], "candidate_request"}
-    assert panel["required"] == [*base["required"], "candidate_request"]
+    assert panel["properties"].keys() == {*base["properties"], "candidate_request", "prejudice"}
+    assert panel["required"] == [*base["required"], "candidate_request", "prejudice"]
+    assert "prejudice" not in DEBATE_LISTENER_TOOL.input_schema["properties"]
     assert panel["properties"]["candidate_request"]["enum"] == list(CANDIDATE_REQUESTS)
     assert PANEL_LISTENER_TOOL.name == "record_panel_analysis" != LISTENER_TOOL.name
     assert "candidate_request" not in base["properties"]
@@ -155,7 +157,7 @@ def test_the_upsc_profile_wires_the_panel_listener_prompt_tool_and_model(setting
 
     deps = build_deps(settings, make_fake_llm(cards), cards=cards)
     assert get_profile(None).listener_tool == (PANEL_LISTENER_TOOL, PanelListenerOutput)
-    assert deps.kit.versions["listener"] == settings.prompt_listener_version == 6
+    assert deps.kit.versions["listener"] == settings.prompt_listener_version == 7
     assert "candidate_request" in deps.kit.system("listener")[1].text
 
 
