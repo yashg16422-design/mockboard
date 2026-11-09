@@ -61,12 +61,15 @@ class PromptKit:
     shared_prefix: str
     versions: dict[str, int]
     card_set_version: str
-    _cache: dict[str, Prompt] = field(default_factory=dict, compare=False, repr=False)
+    # Keyed by (id, version): `dataclasses.replace(kit, versions=...)` shares this dict, and a key
+    # by id alone served the old version to the copy (found Nov 8, comparing agenda_plan v3/v4).
+    _cache: dict[tuple[str, int], Prompt] = field(default_factory=dict, compare=False, repr=False)
 
     def prompt(self, prompt_id: str) -> Prompt:
-        if prompt_id not in self._cache:
-            self._cache[prompt_id] = load_prompt(prompt_id, self.versions[prompt_id])
-        return self._cache[prompt_id]
+        key = (prompt_id, self.versions[prompt_id])
+        if key not in self._cache:
+            self._cache[key] = load_prompt(*key)
+        return self._cache[key]
 
     def system(self, prompt_id: str, **values: str) -> list[PromptBlock]:
         """Shared prefix (cache checkpoint after it) + the role's rendered instructions."""

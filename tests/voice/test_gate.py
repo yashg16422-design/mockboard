@@ -102,3 +102,17 @@ async def test_different_pages_do_not_affect_each_other():
     b.pc.set("connected")
     await asyncio.sleep(0.05)
     assert sorted(ran) == ["a", "b"] and not a.disconnected and not b.disconnected
+
+
+async def test_on_unstarted_fires_for_a_connection_that_never_connects():
+    gone: list[str] = []
+
+    async def run(_connection) -> None:
+        raise AssertionError("no session for this one")
+
+    gate = PageSessions(run, connect_timeout_s=0.01, on_unstarted=gone.append)
+    connection = FakeConn("a")
+    await gate.offer(connection, "page")
+    await asyncio.gather(*gate.tasks, return_exceptions=True)
+    await asyncio.sleep(0)
+    assert gone == ["a"]

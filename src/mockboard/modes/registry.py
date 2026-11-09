@@ -52,7 +52,7 @@ class ModeProfile:
     listener_context: Callable[[StrategyContext], str] | None = None
     # session_hooks(session, mode_options) -> an object the session asks for the rounds, the
     # turn context, the spoken line, the state update, extra trace fields and the report.
-    # None (UPSC) means the session's own code paths, unchanged.
+    # (Both modes have hooks since P7.)
     session_hooks: Callable[[Any, Any], Any] | None = None
 
     def prompt_id(self, role: str) -> str:
@@ -77,6 +77,7 @@ def _load_builtin() -> None:
     # alone gives every built-in mode.
     from mockboard.modes import upsc  # noqa: F401
     from mockboard.modes.debate import profile  # noqa: F401
+    from mockboard.modes.partner import profile as _partner  # noqa: F401
 
 
 def get_profile(mode: str | None) -> ModeProfile:

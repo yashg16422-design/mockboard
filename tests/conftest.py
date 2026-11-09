@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 
 import pytest
 
@@ -22,17 +23,23 @@ from mockboard.brain.schemas import (
 )
 from mockboard.config import Settings
 
+# Frozen copy of data/cards as it stood at 7d94936. Every test reads these, so that adding a real
+# card to data/cards moves no golden file and no lock hash. Never update them to fix a lock.
+LOCK_CARDS_DIR = Path(__file__).parent / "data" / "lock_cards"
+
 
 @pytest.fixture(autouse=True)
 def _clean_env(monkeypatch: pytest.MonkeyPatch) -> None:
     """Tests never see the developer's real environment (flags, keys, regions) and never
     read the developer's `.env` file: with a real GNANI_API_KEY in `.env`, code under test
     that builds `Settings()` would otherwise find a key and start real services (seen on the
-    owner's Mac: the voice-lab test started a real server and waited)."""
+    owner's Mac: the voice-lab test started a real server and waited). Cards come from the
+    frozen `LOCK_CARDS_DIR`, not from the developer's `data/cards`."""
     for key in list(os.environ):
         if key.startswith(("FEATURE_", "GNANI_", "LANGFUSE_", "REPORT_", "CACHE_PREFIX")):
             monkeypatch.delenv(key, raising=False)
     monkeypatch.setitem(Settings.model_config, "env_file", None)
+    monkeypatch.setenv("CARDS_DIR", str(LOCK_CARDS_DIR))
 
 
 @pytest.fixture

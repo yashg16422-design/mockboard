@@ -21,7 +21,9 @@ from pipecat.frames.frames import (
     TTSAudioRawFrame,
     TTSSpeakFrame,
     TTSStartedFrame,
+    TTSUpdateSettingsFrame,
 )
+from pipecat.services.settings import TTSSettings
 from pipecat_gnani import GnaniTTSService
 from pipecat_gnani import tts as plugin_tts
 from tests.voice.fake_gnani import FakeTimbre
@@ -210,6 +212,19 @@ async def test_requests_are_serialised_one_at_a_time(timbre):
     assert [round(u.audio_ms) for u in ledger.units] == [1000, 1000]  # 20 x 1,600 bytes
 
 
+async def test_timbres_second_complete_does_not_cancel_the_next_line(monkeypatch):
+    """Live Timbre sends a status complete after is_final. It must not end the next line."""
+    async with FakeTimbre(chunks=5, chunk_gap_s=0.01, trailing_complete=True) as server:
+        monkeypatch.setattr(plugin_tts, "GNANI_TTS_WS_URL", server.url)
+        tts = make_tts()
+        async with Harness(tts) as h:
+            await h.queue(TTSSpeakFrame("Pehla vaakya.", append_to_context=False))
+            await h.queue(TTSSpeakFrame("Doosra vaakya?", append_to_context=False))
+            await h.wait_until(lambda: len(h.collector.of_type(TTSAudioRawFrame)) >= 10, timeout=4)
+    assert [r["text"] for r in server.conns[0].requests] == ["Pehla vaakya.", "Doosra vaakya?"]
+    assert len(h.collector.of_type(TTSAudioRawFrame)) >= 10
+
+
 async def test_a_barge_in_between_two_sentences_leaves_no_stale_audio(timbre):
     tts = make_tts()
     async with Harness(tts) as h:
@@ -286,3 +301,106 @@ def test_voice_and_model_must_match_the_published_catalog():
     s = Settings(_env_file=None, gnani_api_key=KEY, tts_model="timbre-v3.0", tts_voice="Avinash")
     tts = TimbreTTSService.from_settings(s, voice=s.tts_voice)
     assert (tts.model, tts.voice, tts.language) == ("timbre-v3.0", "Avinash", "auto")
+
+
+# ------------------------------------------------------------------ P8: a voice per request
+
+
+def voice_frame(voice: str) -> TTSUpdateSettingsFrame:
+    return TTSUpdateSettingsFrame(delta=TTSSettings(voice=voice))
+
+
+def say(text: str) -> TTSSpeakFrame:
+    return TTSSpeakFrame(text, append_to_context=False)
+
+
+async def test_a_settings_frame_changes_the_voice_the_next_request_sends(timbre):
+    """`TTSUpdateSettingsFrame` alone would not: the body is ours and reads `self.voice`."""
+    tts = make_tts()
+    async with Harness(tts) as h:
+        await h.queue(voice_frame("Vikrant"))
+        await h.queue(say("Pehla vaakya."))
+        await h.queue(voice_frame("Urmila"))
+        await h.queue(say("Doosra vaakya?"))
+        await h.wait_until(lambda: len(h.collector.of_type(TTSAudioRawFrame)) >= 40, timeout=6)
+
+    assert [(r["voice"], r["text"]) for r in timbre.conns[0].requests] == [
+        ("Vikrant", "Pehla vaakya."), ("Urmila", "Doosra vaakya?"),
+    ]
+    assert tts.voice_changes == ["Vikrant", "Urmila"] and not tts.voice_refused
+    assert len(timbre.conns) == 1  # no reconnect for a new voice
+    assert tts._settings.voice == "Urmila" and tts.voice == "Urmila"
+    assert not h.errors
+
+
+async def test_no_settings_frame_means_the_voice_the_service_was_built_with(timbre):
+    tts = make_tts()
+    async with Harness(tts) as h:
+        await h.queue(say(LINE))
+        await h.wait_until(lambda: len(h.collector.of_type(TTSAudioRawFrame)) >= 20, timeout=5)
+    assert timbre.conns[0].requests[0]["voice"] == "Poorvi" and tts.voice_changes == []
+
+
+async def test_a_voice_the_model_does_not_have_is_refused_and_the_old_voice_stays(timbre):
+    tts = make_tts()
+    async with Harness(tts) as h:
+        await h.queue(voice_frame("Yashraj"))  # a v3.0 voice, on a v2.5 service
+        await h.queue(say("Pehla vaakya."))
+        await h.wait_until(lambda: len(h.collector.of_type(TTSAudioRawFrame)) >= 20, timeout=5)
+    assert timbre.conns[0].requests[0]["voice"] == "Poorvi"
+    assert tts.voice_refused == ["Yashraj"] and tts.voice_changes == []
+    assert not h.errors  # refused quietly: a bad config must not stop the interview
+
+
+async def test_a_timbre_v3_voice_is_accepted_past_the_plugins_own_check(timbre):
+    """The plugin refuses every v3.0 voice name, so a switch cannot go through its validation."""
+    tts = TimbreTTSService(api_key=KEY, voice="Avinash", model="timbre-v3.0", language="auto")
+    async with Harness(tts) as h:
+        await h.queue(voice_frame("Vasudha"))
+        await h.queue(say("Pehla vaakya."))
+        await h.queue(voice_frame("Poorvi"))  # a v2.5 voice on a v3.0 service: refused
+        await h.queue(say("Doosra vaakya?"))
+        await h.wait_until(lambda: len(h.collector.of_type(TTSAudioRawFrame)) >= 40, timeout=6)
+    assert [(r["model"], r["voice"]) for r in timbre.conns[0].requests] == [
+        ("timbre-v3.0", "Vasudha"), ("timbre-v3.0", "Vasudha"),
+    ]
+    assert tts.voice_changes == ["Vasudha"] and tts.voice_refused == ["Poorvi"]
+    assert not h.errors
+
+
+async def test_a_frame_that_survives_an_interruption_changes_the_voice_but_the_line_is_dropped(
+    timbre
+):
+    """The settings frame is uninterruptible and the line after it is not: the voice sticks. That
+    is why the voice loop sends one before every line (tests/voice/test_panel_voice.py)."""
+    tts = make_tts()
+    async with Harness(tts) as h:
+        await h.queue(voice_frame("Vikrant"))
+        await h.queue(say(LINE))
+        await h.wait_until(lambda: len(h.collector.of_type(TTSAudioRawFrame)) >= 4)
+        await h.queue(InterruptionFrame())
+        await asyncio.sleep(0.4)
+        mark = len(h.collector.frames)
+        await h.queue(voice_frame("Urmila"))
+        await h.queue(say("Naya sawaal?"))
+        await h.wait_until(
+            lambda: len([f for _, f in h.collector.frames[mark:]
+                         if isinstance(f, TTSAudioRawFrame)]) >= 20, timeout=5)
+    sent = [(r["voice"], r["text"]) for c in timbre.conns for r in c.requests]
+    assert sent == [("Vikrant", LINE), ("Urmila", "Naya sawaal?")]
+
+
+async def test_a_resend_by_the_watchdog_keeps_the_voice_of_the_first_send(monkeypatch):
+    async with FakeTimbre(chunks=5, chunk_gap_s=0.01, silent_requests=1) as server:
+        monkeypatch.setattr(plugin_tts, "GNANI_TTS_WS_URL", server.url)
+        tts = make_tts(first_byte_timeout_s=0.3)
+        async with Harness(tts) as h:
+            await h.queue(voice_frame("Vikrant"))
+            await h.queue(say(LINE))
+            await asyncio.sleep(0.1)
+            await h.queue(voice_frame("Urmila"))  # arrives while the first line waits for audio
+            await h.wait_until(lambda: len(h.collector.of_type(TTSAudioRawFrame)) >= 5, 3)
+    assert tts.first_byte_resends == 1
+    assert [(r["voice"], r["text"]) for c in server.conns for r in c.requests] == [
+        ("Vikrant", LINE), ("Vikrant", LINE),
+    ]

@@ -23,21 +23,21 @@ from dataclasses import dataclass
 
 from mockboard.brain.numbers import SCALE_WORDS, CanonicalUnit, canonical_unit
 
-MIXES = ("hi-en", "en", "hi")
+MIXES = ("hi-en", "en", "hi", "ta-en")
 DEFAULT_MIX = "hi-en"
 
 # One spoken word per scale token, per mix. Abbreviations and spelling variants are
 # normalised ("cr" -> "crore", "lac" -> "lakh"); Devanagari words for the "hi" mix.
 _SCALE_SPOKEN: dict[str, dict[str, str]] = {
-    "hundred": {"hi-en": "sau", "en": "hundred", "hi": "सौ"},
-    "thousand": {"hi-en": "hazaar", "en": "thousand", "hi": "हज़ार"},
-    "lakh": {"hi-en": "lakh", "en": "lakh", "hi": "लाख"},
-    "million": {"hi-en": "million", "en": "million", "hi": "मिलियन"},
-    "crore": {"hi-en": "crore", "en": "crore", "hi": "करोड़"},
-    "billion": {"hi-en": "billion", "en": "billion", "hi": "बिलियन"},
-    "arab": {"hi-en": "arab", "en": "arab", "hi": "अरब"},
-    "trillion": {"hi-en": "trillion", "en": "trillion", "hi": "ट्रिलियन"},
-    "kharab": {"hi-en": "kharab", "en": "kharab", "hi": "खरब"},
+    "hundred": {"hi-en": "sau", "en": "hundred", "hi": "सौ", "ta-en": "நூறு"},
+    "thousand": {"hi-en": "hazaar", "en": "thousand", "hi": "हज़ार", "ta-en": "ஆயிரம்"},
+    "lakh": {"hi-en": "lakh", "en": "lakh", "hi": "लाख", "ta-en": "லட்சம்"},
+    "million": {"hi-en": "million", "en": "million", "hi": "मिलियन", "ta-en": "மில்லியன்"},
+    "crore": {"hi-en": "crore", "en": "crore", "hi": "करोड़", "ta-en": "கோடி"},
+    "billion": {"hi-en": "billion", "en": "billion", "hi": "बिलियन", "ta-en": "பில்லியன்"},
+    "arab": {"hi-en": "arab", "en": "arab", "hi": "अरब", "ta-en": "நூறு கோடி"},
+    "trillion": {"hi-en": "trillion", "en": "trillion", "hi": "ट्रिलियन", "ta-en": "டிரில்லியன்"},
+    "kharab": {"hi-en": "kharab", "en": "kharab", "hi": "खरब", "ta-en": "பத்தாயிரம் கோடி"},
 }
 _SCALE_ALIASES: dict[str, str] = {
     "sau": "hundred",
@@ -48,14 +48,21 @@ _SCALE_ALIASES: dict[str, str] = {
     "bn": "billion",
 }
 _UNIT_SPOKEN: dict[str, dict[str, str]] = {
-    CanonicalUnit.percent.value: {"hi-en": "percent", "en": "percent", "hi": "प्रतिशत"},
+    CanonicalUnit.percent.value: {
+        "hi-en": "percent", "en": "percent", "hi": "प्रतिशत", "ta-en": "சதவீதம்",
+    },
     CanonicalUnit.percentage_points.value: {
         "hi-en": "percentage points", "en": "percentage points", "hi": "प्रतिशत अंक",
+        "ta-en": "சதவீத புள்ளிகள்",
     },
-    CanonicalUnit.inr.value: {"hi-en": "rupaye", "en": "rupees", "hi": "रुपये"},
-    CanonicalUnit.usd.value: {"hi-en": "dollar", "en": "dollars", "hi": "डॉलर"},
+    CanonicalUnit.inr.value: {
+        "hi-en": "rupaye", "en": "rupees", "hi": "रुपये", "ta-en": "ரூபாய்",
+    },
+    CanonicalUnit.usd.value: {
+        "hi-en": "dollar", "en": "dollars", "hi": "डॉलर", "ta-en": "டாலர்",
+    },
 }
-_YEAR_WORD = {"hi-en": "saal", "en": "", "hi": "साल"}
+_YEAR_WORD = {"hi-en": "saal", "en": "", "hi": "साल", "ta-en": "ஆம் ஆண்டு"}
 
 
 def _mix(mix: str | None) -> str:
@@ -134,6 +141,8 @@ def spoken_parts(
     mix = _mix(mix)
     if is_date:
         year = format_number(value)
+        if mix == "ta-en":
+            return SpokenFigure(f"{year} ஆம் ஆண்டு")
         return SpokenFigure(f"{_YEAR_WORD[mix]} {year}".strip())
 
     scale_in, base_in = canonical_unit(unit)

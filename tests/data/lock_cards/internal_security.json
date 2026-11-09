@@ -1,0 +1,48 @@
+{
+  "topic": "internal_security",
+  "description": "SYNTHETIC TEST CARDS ONLY. Every statement is about the fictional country Exampleland and is invented for tests. Replace with real, sourced cards before any demo (see data/cards/README.md).",
+  "cards": [
+    {
+      "id": "test_security_affected_districts",
+      "statement": "TEST CARD: Exampleland lists 37 test-affected districts in 2024.",
+      "aliases": ["TEST CARD: Exampleland affected districts count"],
+      "kind": "numeric",
+      "value": 37,
+      "unit": "districts",
+      "year": 2024,
+      "source_title": "SYNTHETIC EXAMPLE (no source)",
+      "source_url": null,
+      "source_short": "Exampleland test data",
+      "as_of": null,
+      "synthetic_example": true
+    },
+    {
+      "id": "test_security_incident_decline",
+      "statement": "TEST CARD: Exampleland test incidents fell by 25 percent between 2020 and 2024.",
+      "aliases": ["TEST CARD: Exampleland incident decline", "Exampleland incidents 25 percent kam hue"],
+      "kind": "numeric",
+      "value": 25,
+      "unit": "percent",
+      "year": 2024,
+      "source_title": "SYNTHETIC EXAMPLE (no source)",
+      "source_url": null,
+      "source_short": "Exampleland test data",
+      "as_of": null,
+      "synthetic_example": true
+    },
+    {
+      "id": "test_security_budget",
+      "statement": "TEST CARD: Exampleland test security budget is 900 crore rupees in 2025.",
+      "aliases": ["TEST CARD: Exampleland security budget"],
+      "kind": "numeric",
+      "value": 900,
+      "unit": "crore inr",
+      "year": 2025,
+      "source_title": "SYNTHETIC EXAMPLE (no source)",
+      "source_url": null,
+      "source_short": "Exampleland test data",
+      "as_of": null,
+      "synthetic_example": true
+    }
+  ]
+}

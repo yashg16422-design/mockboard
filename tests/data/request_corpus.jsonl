@@ -1,0 +1,396 @@
+# corpus history (see docs/CTO_NOTES_09.md section 5). Every line is synthetic; recall here says nothing about real Prisma text.
+# d rows: written while tuning the rules. d208 onward come from the P1.1 review.
+# h rows (75, split dev, history earlier_holdout): by id and shape these are an EARLIER holdout, folded into dev after it was used. Their first-draw score was not recorded, so the only surviving number is the later t set. They are tuning data and prove nothing.
+# t rows (75, split spent_holdout, history p1_holdout_spent): the P1 holdout, written after the h set and mirroring it slot by slot, by the same author as the rules. Its P1 score is the honest P1 number. It has now been read in review and P1.1 was built knowing its misses, so it is SPENT and no longer unseen. Do not tune to it. The next unseen set is the orchestrator's third holdout (Ruling 54), kept out of this repo until scored.
+{"id": "d001", "text": "tourism ke alawa kisi aur topic pe baat karte hain", "expect": "change_topic", "lang": "hinglish", "split": "dev", "synthetic": true, "avoid": ["tourism"]}
+{"id": "d002", "text": "kisi aur topic pe baat karte hain", "expect": "change_topic", "lang": "hinglish", "split": "dev", "synthetic": true}
+{"id": "d003", "text": "sir kisi aur topic par baat karein", "expect": "change_topic", "lang": "hinglish", "split": "dev", "synthetic": true}
+{"id": "d004", "text": "agriculture ke alawa kuch aur puchiye", "expect": "change_topic", "lang": "hinglish", "split": "dev", "synthetic": true, "avoid": ["agriculture"]}
+{"id": "d005", "text": "chaliye aage badhte hain", "expect": "change_topic", "lang": "hinglish", "split": "dev", "synthetic": true}
+{"id": "d006", "text": "pata nahi, aage badhiye", "expect": "change_topic", "lang": "hinglish", "split": "dev", "synthetic": true}
+{"id": "d007", "text": "is topic ko chhodiye sir", "expect": "change_topic", "lang": "hinglish", "split": "dev", "synthetic": true}
+{"id": "d008", "text": "tourism ko chhod dete hain, kuch aur puchiye", "expect": "change_topic", "lang": "hinglish", "split": "dev", "synthetic": true, "avoid": ["tourism"]}
+{"id": "d009", "text": "koi dusra topic lijiye", "expect": "change_topic", "lang": "hinglish", "split": "dev", "synthetic": true}
+{"id": "d010", "text": "topic change kijiye please", "expect": "change_topic", "lang": "hinglish", "split": "dev", "synthetic": true}
+{"id": "d011", "text": "kya hum topic badal sakte hain", "expect": "change_topic", "lang": "hinglish", "split": "dev", "synthetic": true}
+{"id": "d012", "text": "mujhe tourism par baat nahi karni", "expect": "change_topic", "lang": "hinglish", "split": "dev", "synthetic": true, "avoid": ["tourism"]}
+{"id": "d013", "text": "agar ho sake to kisi aur cheez ke bare mein baat karte hain", "expect": "change_topic", "lang": "hinglish", "split": "dev", "synthetic": true}
+{"id": "d014", "text": "cricket ke alawa koi bhi topic", "expect": "change_topic", "lang": "hinglish", "split": "dev", "synthetic": true, "avoid": ["cricket"]}
+{"id": "d015", "text": "sir yeh topic skip kar dete hain", "expect": "change_topic", "lang": "hinglish", "split": "dev", "synthetic": true}
+{"id": "d016", "text": "can we move on", "expect": "change_topic", "lang": "english", "split": "dev", "synthetic": true}
+{"id": "d017", "text": "let's talk about something else", "expect": "change_topic", "lang": "english", "split": "dev", "synthetic": true}
+{"id": "d018", "text": "Can we move on to something else please?", "expect": "change_topic", "lang": "english", "split": "dev", "synthetic": true}
+{"id": "d019", "text": "I would like to talk about something else", "expect": "change_topic", "lang": "english", "split": "dev", "synthetic": true}
+{"id": "d020", "text": "could we discuss another topic", "expect": "change_topic", "lang": "english", "split": "dev", "synthetic": true}
+{"id": "d021", "text": "can we change the topic", "expect": "change_topic", "lang": "english", "split": "dev", "synthetic": true}
+{"id": "d022", "text": "other than tourism, can we talk about something else?", "expect": "change_topic", "lang": "english", "split": "dev", "synthetic": true, "avoid": ["tourism"]}
+{"id": "d023", "text": "apart from agriculture, let's discuss something different", "expect": "change_topic", "lang": "english", "split": "dev", "synthetic": true, "avoid": ["agriculture"]}
+{"id": "d024", "text": "please ask me about something else", "expect": "change_topic", "lang": "english", "split": "dev", "synthetic": true}
+{"id": "d025", "text": "can we move on from tourism", "expect": "change_topic", "lang": "english", "split": "dev", "synthetic": true, "avoid": ["tourism"]}
+{"id": "d026", "text": "let's move on", "expect": "change_topic", "lang": "english", "split": "dev", "synthetic": true}
+{"id": "d027", "text": "I don't want to talk about tourism", "expect": "change_topic", "lang": "english", "split": "dev", "synthetic": true, "avoid": ["tourism"]}
+{"id": "d028", "text": "enough about internal security", "expect": "change_topic", "lang": "english", "split": "dev", "synthetic": true, "avoid": ["internal security"]}
+{"id": "d029", "text": "anything other than tourism please", "expect": "change_topic", "lang": "english", "split": "dev", "synthetic": true, "avoid": ["tourism"]}
+{"id": "d030", "text": "I honestly have nothing to add on this and I have spoken about it in detail already, the sector is complicated and the data is thin, so can we move on", "expect": "change_topic", "lang": "english", "split": "dev", "synthetic": true}
+{"id": "d031", "text": "पर्यटन के अलावा किसी और विषय पर बात करते हैं", "expect": "change_topic", "lang": "devanagari", "split": "dev", "synthetic": true, "avoid": ["पर्यटन"]}
+{"id": "d032", "text": "किसी और टॉपिक पर बात करते हैं", "expect": "change_topic", "lang": "devanagari", "split": "dev", "synthetic": true}
+{"id": "d033", "text": "आगे बढ़ते हैं सर", "expect": "change_topic", "lang": "devanagari", "split": "dev", "synthetic": true}
+{"id": "d034", "text": "कोई दूसरा विषय लीजिए", "expect": "change_topic", "lang": "devanagari", "split": "dev", "synthetic": true}
+{"id": "d035", "text": "इस टॉपिक को छोड़िए", "expect": "change_topic", "lang": "devanagari", "split": "dev", "synthetic": true}
+{"id": "d036", "text": "कुछ और पूछिए", "expect": "change_topic", "lang": "devanagari", "split": "dev", "synthetic": true}
+{"id": "d037", "text": "पता नहीं, आगे बढ़िए", "expect": "change_topic", "lang": "devanagari", "split": "dev", "synthetic": true}
+{"id": "d038", "text": "tourism ke ilawa kisi or topik pe bat karte hai", "expect": "change_topic", "lang": "garbled", "split": "dev", "synthetic": true, "avoid": ["tourism"]}
+{"id": "d039", "text": "turism ke alava kisi aur vishay par baat kar te hain", "expect": "change_topic", "lang": "garbled", "split": "dev", "synthetic": true, "avoid": ["turism"]}
+{"id": "d040", "text": "kisiaur topic pe baatkarte hain", "expect": "change_topic", "lang": "garbled", "split": "dev", "synthetic": true}
+{"id": "d041", "text": "tourism ke a lava kisi aur topic pe baat karte hain", "expect": "change_topic", "lang": "garbled", "split": "dev", "synthetic": true, "avoid": ["tourism"]}
+{"id": "d042", "text": "lets talk about some thing else", "expect": "change_topic", "lang": "garbled", "split": "dev", "synthetic": true}
+{"id": "d043", "text": "can we move one", "expect": "change_topic", "lang": "garbled", "split": "dev", "synthetic": true}
+{"id": "d044", "text": "lets move one please", "expect": "change_topic", "lang": "garbled", "split": "dev", "synthetic": true}
+{"id": "d045", "text": "aage barhte hain sir", "expect": "change_topic", "lang": "garbled", "split": "dev", "synthetic": true}
+{"id": "d046", "text": "aagebadhte hain", "expect": "change_topic", "lang": "garbled", "split": "dev", "synthetic": true}
+{"id": "d047", "text": "kissi aur topicc pe baat karte hai", "expect": "change_topic", "lang": "garbled", "split": "dev", "synthetic": true}
+{"id": "d048", "text": "next question please", "expect": "skip", "lang": "english", "split": "dev", "synthetic": true}
+{"id": "d049", "text": "I'd rather not attempt this", "expect": "skip", "lang": "english", "split": "dev", "synthetic": true}
+{"id": "d050", "text": "I would rather not answer this question", "expect": "skip", "lang": "english", "split": "dev", "synthetic": true}
+{"id": "d051", "text": "skip this question", "expect": "skip", "lang": "english", "split": "dev", "synthetic": true}
+{"id": "d052", "text": "can we skip this one", "expect": "skip", "lang": "english", "split": "dev", "synthetic": true}
+{"id": "d053", "text": "I'll pass on this one", "expect": "skip", "lang": "english", "split": "dev", "synthetic": true}
+{"id": "d054", "text": "let's go to the next question", "expect": "skip", "lang": "english", "split": "dev", "synthetic": true}
+{"id": "d055", "text": "I do not want to attempt this question", "expect": "skip", "lang": "english", "split": "dev", "synthetic": true}
+{"id": "d056", "text": "pass", "expect": "skip", "lang": "english", "split": "dev", "synthetic": true}
+{"id": "d057", "text": "next", "expect": "skip", "lang": "english", "split": "dev", "synthetic": true}
+{"id": "d058", "text": "is sawal ko chhod dete hain", "expect": "skip", "lang": "hinglish", "split": "dev", "synthetic": true}
+{"id": "d059", "text": "agla sawal puchiye", "expect": "skip", "lang": "hinglish", "split": "dev", "synthetic": true}
+{"id": "d060", "text": "agle sawal par chalte hain", "expect": "skip", "lang": "hinglish", "split": "dev", "synthetic": true}
+{"id": "d061", "text": "yeh sawal skip kar dete hain", "expect": "skip", "lang": "hinglish", "split": "dev", "synthetic": true}
+{"id": "d062", "text": "is sawal ka jawab nahi dena chahta", "expect": "skip", "lang": "hinglish", "split": "dev", "synthetic": true}
+{"id": "d063", "text": "chhodiye sir", "expect": "skip", "lang": "hinglish", "split": "dev", "synthetic": true}
+{"id": "d064", "text": "is sawal ko attempt nahi karna", "expect": "skip", "lang": "hinglish", "split": "dev", "synthetic": true}
+{"id": "d065", "text": "इस सवाल को छोड़ देते हैं", "expect": "skip", "lang": "devanagari", "split": "dev", "synthetic": true}
+{"id": "d066", "text": "अगला सवाल पूछिए", "expect": "skip", "lang": "devanagari", "split": "dev", "synthetic": true}
+{"id": "d067", "text": "इस प्रश्न को छोड़ दीजिए", "expect": "skip", "lang": "devanagari", "split": "dev", "synthetic": true}
+{"id": "d068", "text": "अगला प्रश्न", "expect": "skip", "lang": "devanagari", "split": "dev", "synthetic": true}
+{"id": "d069", "text": "nekst question plz", "expect": "skip", "lang": "garbled", "split": "dev", "synthetic": true}
+{"id": "d070", "text": "is swal ko chod dete hai", "expect": "skip", "lang": "garbled", "split": "dev", "synthetic": true}
+{"id": "d071", "text": "nextquestion please", "expect": "skip", "lang": "garbled", "split": "dev", "synthetic": true}
+{"id": "d072", "text": "skip this kweschan", "expect": "skip", "lang": "garbled", "split": "dev", "synthetic": true}
+{"id": "d073", "text": "agla sawaal puchhiye", "expect": "skip", "lang": "garbled", "split": "dev", "synthetic": true}
+{"id": "d074", "text": "please repeat", "expect": "repeat", "lang": "english", "split": "dev", "synthetic": true}
+{"id": "d075", "text": "could you repeat the question", "expect": "repeat", "lang": "english", "split": "dev", "synthetic": true}
+{"id": "d076", "text": "can you say that again", "expect": "repeat", "lang": "english", "split": "dev", "synthetic": true}
+{"id": "d077", "text": "sorry, I didn't catch that", "expect": "repeat", "lang": "english", "split": "dev", "synthetic": true}
+{"id": "d078", "text": "pardon", "expect": "repeat", "lang": "english", "split": "dev", "synthetic": true}
+{"id": "d079", "text": "come again please", "expect": "repeat", "lang": "english", "split": "dev", "synthetic": true}
+{"id": "d080", "text": "what did you say", "expect": "repeat", "lang": "english", "split": "dev", "synthetic": true}
+{"id": "d081", "text": "repeat the question please sir", "expect": "repeat", "lang": "english", "split": "dev", "synthetic": true}
+{"id": "d082", "text": "phir se boliye", "expect": "repeat", "lang": "hinglish", "split": "dev", "synthetic": true}
+{"id": "d083", "text": "sawal dobara boliye", "expect": "repeat", "lang": "hinglish", "split": "dev", "synthetic": true}
+{"id": "d084", "text": "ek baar aur bataiye", "expect": "repeat", "lang": "hinglish", "split": "dev", "synthetic": true}
+{"id": "d085", "text": "sunai nahi diya sir", "expect": "repeat", "lang": "hinglish", "split": "dev", "synthetic": true}
+{"id": "d086", "text": "sawal repeat kijiye", "expect": "repeat", "lang": "hinglish", "split": "dev", "synthetic": true}
+{"id": "d087", "text": "aapne kya kaha", "expect": "repeat", "lang": "hinglish", "split": "dev", "synthetic": true}
+{"id": "d088", "text": "repeat kar dijiye please", "expect": "repeat", "lang": "hinglish", "split": "dev", "synthetic": true}
+{"id": "d089", "text": "फिर से बताइए", "expect": "repeat", "lang": "devanagari", "split": "dev", "synthetic": true}
+{"id": "d090", "text": "दोबारा बोलिए", "expect": "repeat", "lang": "devanagari", "split": "dev", "synthetic": true}
+{"id": "d091", "text": "सवाल फिर से पूछिए", "expect": "repeat", "lang": "devanagari", "split": "dev", "synthetic": true}
+{"id": "d092", "text": "सुनाई नहीं दिया", "expect": "repeat", "lang": "devanagari", "split": "dev", "synthetic": true}
+{"id": "d093", "text": "आपने क्या कहा", "expect": "repeat", "lang": "devanagari", "split": "dev", "synthetic": true}
+{"id": "d094", "text": "phirse boliye", "expect": "repeat", "lang": "garbled", "split": "dev", "synthetic": true}
+{"id": "d095", "text": "fir se bolie", "expect": "repeat", "lang": "garbled", "split": "dev", "synthetic": true}
+{"id": "d096", "text": "please repeet", "expect": "repeat", "lang": "garbled", "split": "dev", "synthetic": true}
+{"id": "d097", "text": "dubara bataye", "expect": "repeat", "lang": "garbled", "split": "dev", "synthetic": true}
+{"id": "d098", "text": "firse bataiye sir", "expect": "repeat", "lang": "garbled", "split": "dev", "synthetic": true}
+{"id": "d099", "text": "what do you mean", "expect": "clarify_question", "lang": "english", "split": "dev", "synthetic": true}
+{"id": "d100", "text": "what do you mean by that?", "expect": "clarify_question", "lang": "english", "split": "dev", "synthetic": true}
+{"id": "d101", "text": "I didn't understand the question", "expect": "clarify_question", "lang": "english", "split": "dev", "synthetic": true}
+{"id": "d102", "text": "could you rephrase that", "expect": "clarify_question", "lang": "english", "split": "dev", "synthetic": true}
+{"id": "d103", "text": "can you explain the question", "expect": "clarify_question", "lang": "english", "split": "dev", "synthetic": true}
+{"id": "d104", "text": "sorry, what exactly are you asking", "expect": "clarify_question", "lang": "english", "split": "dev", "synthetic": true}
+{"id": "d105", "text": "I am not sure I follow", "expect": "clarify_question", "lang": "english", "split": "dev", "synthetic": true}
+{"id": "d106", "text": "could you put it in simpler words", "expect": "clarify_question", "lang": "english", "split": "dev", "synthetic": true}
+{"id": "d107", "text": "what do you mean by inclusive growth", "expect": "clarify_question", "lang": "english", "split": "dev", "synthetic": true}
+{"id": "d108", "text": "sawal samajh nahi aaya", "expect": "clarify_question", "lang": "hinglish", "split": "dev", "synthetic": true}
+{"id": "d109", "text": "matlab?", "expect": "clarify_question", "lang": "hinglish", "split": "dev", "synthetic": true}
+{"id": "d110", "text": "kya matlab", "expect": "clarify_question", "lang": "hinglish", "split": "dev", "synthetic": true}
+{"id": "d111", "text": "aapka matlab kya hai", "expect": "clarify_question", "lang": "hinglish", "split": "dev", "synthetic": true}
+{"id": "d112", "text": "mujhe samajh nahi aaya sir", "expect": "clarify_question", "lang": "hinglish", "split": "dev", "synthetic": true}
+{"id": "d113", "text": "thoda samjhaiye", "expect": "clarify_question", "lang": "hinglish", "split": "dev", "synthetic": true}
+{"id": "d114", "text": "aasan shabdon mein bataiye", "expect": "clarify_question", "lang": "hinglish", "split": "dev", "synthetic": true}
+{"id": "d115", "text": "aap kya puchna chahte hain", "expect": "clarify_question", "lang": "hinglish", "split": "dev", "synthetic": true}
+{"id": "d116", "text": "सवाल समझ नहीं आया", "expect": "clarify_question", "lang": "devanagari", "split": "dev", "synthetic": true}
+{"id": "d117", "text": "मतलब?", "expect": "clarify_question", "lang": "devanagari", "split": "dev", "synthetic": true}
+{"id": "d118", "text": "आपका क्या मतलब है", "expect": "clarify_question", "lang": "devanagari", "split": "dev", "synthetic": true}
+{"id": "d119", "text": "थोड़ा समझाइए", "expect": "clarify_question", "lang": "devanagari", "split": "dev", "synthetic": true}
+{"id": "d120", "text": "swal samaj nahi aya", "expect": "clarify_question", "lang": "garbled", "split": "dev", "synthetic": true}
+{"id": "d121", "text": "aapka matalab kya hai", "expect": "clarify_question", "lang": "garbled", "split": "dev", "synthetic": true}
+{"id": "d122", "text": "sawaal samajh nhi aaya sir", "expect": "clarify_question", "lang": "garbled", "split": "dev", "synthetic": true}
+{"id": "d123", "text": "kya mutlab hai", "expect": "clarify_question", "lang": "garbled", "split": "dev", "synthetic": true}
+{"id": "d124", "text": "I want to end the interview", "expect": "end", "lang": "english", "split": "dev", "synthetic": true}
+{"id": "d125", "text": "can we stop the interview here", "expect": "end", "lang": "english", "split": "dev", "synthetic": true}
+{"id": "d126", "text": "please end this interview", "expect": "end", "lang": "english", "split": "dev", "synthetic": true}
+{"id": "d127", "text": "I would like to finish the session now", "expect": "end", "lang": "english", "split": "dev", "synthetic": true}
+{"id": "d128", "text": "let's end the interview", "expect": "end", "lang": "english", "split": "dev", "synthetic": true}
+{"id": "d129", "text": "interview yahin khatam karte hain", "expect": "end", "lang": "hinglish", "split": "dev", "synthetic": true}
+{"id": "d130", "text": "interview khatam kijiye please", "expect": "end", "lang": "hinglish", "split": "dev", "synthetic": true}
+{"id": "d131", "text": "main interview khatam karna chahta hoon", "expect": "end", "lang": "hinglish", "split": "dev", "synthetic": true}
+{"id": "d132", "text": "session band karte hain", "expect": "end", "lang": "hinglish", "split": "dev", "synthetic": true}
+{"id": "d133", "text": "इंटरव्यू यहीं खत्म करते हैं", "expect": "end", "lang": "devanagari", "split": "dev", "synthetic": true}
+{"id": "d134", "text": "इंटरव्यू समाप्त कीजिए", "expect": "end", "lang": "devanagari", "split": "dev", "synthetic": true}
+{"id": "d135", "text": "मैं इंटरव्यू खत्म करना चाहता हूँ", "expect": "end", "lang": "devanagari", "split": "dev", "synthetic": true}
+{"id": "d136", "text": "intervew yahin khatm karte hai", "expect": "end", "lang": "garbled", "split": "dev", "synthetic": true}
+{"id": "d137", "text": "inter view khatam kijiye", "expect": "end", "lang": "garbled", "split": "dev", "synthetic": true}
+{"id": "d138", "text": "i want to end the interveiw", "expect": "end", "lang": "garbled", "split": "dev", "synthetic": true}
+{"id": "d139", "text": "tourism ke alawa agriculture bhi important hai", "expect": "none", "lang": "hinglish", "split": "dev", "synthetic": true}
+{"id": "d140", "text": "tourism ke alawa kisi aur sector mein bhi rozgar hai", "expect": "none", "lang": "hinglish", "split": "dev", "synthetic": true}
+{"id": "d141", "text": "mere gaon mein kheti ke alawa kuch aur rozgar nahi hai", "expect": "none", "lang": "hinglish", "split": "dev", "synthetic": true}
+{"id": "d142", "text": "desh aage badh raha hai", "expect": "none", "lang": "hinglish", "split": "dev", "synthetic": true}
+{"id": "d143", "text": "bharat ko aage badhna chahiye", "expect": "none", "lang": "hinglish", "split": "dev", "synthetic": true}
+{"id": "d144", "text": "hum aage badhte hain to log bhi saath aate hain", "expect": "none", "lang": "hinglish", "split": "dev", "synthetic": true}
+{"id": "d145", "text": "log is sawal ko chhod dete hain kyunki mushkil hai", "expect": "none", "lang": "hinglish", "split": "dev", "synthetic": true}
+{"id": "d146", "text": "students exam mein aise sawal chhod dete hain", "expect": "none", "lang": "hinglish", "split": "dev", "synthetic": true}
+{"id": "d147", "text": "yuva gaon chhod dete hain naukri ke liye", "expect": "none", "lang": "hinglish", "split": "dev", "synthetic": true}
+{"id": "d148", "text": "kisanon ko yojana samajh nahi aayi", "expect": "none", "lang": "hinglish", "split": "dev", "synthetic": true}
+{"id": "d149", "text": "public ko samajh nahi aaya ki scheme kya hai", "expect": "none", "lang": "hinglish", "split": "dev", "synthetic": true}
+{"id": "d150", "text": "matlab yeh hai ki sarkar ko sochna chahiye", "expect": "none", "lang": "hinglish", "split": "dev", "synthetic": true}
+{"id": "d151", "text": "iska matlab hai ki kharcha badhega", "expect": "none", "lang": "hinglish", "split": "dev", "synthetic": true}
+{"id": "d152", "text": "garibi khatam karna chahte hain hum", "expect": "none", "lang": "hinglish", "split": "dev", "synthetic": true}
+{"id": "d153", "text": "main yahin khatam karta hoon sir", "expect": "none", "lang": "hinglish", "split": "dev", "synthetic": true}
+{"id": "d154", "text": "interview khatam hone ke baad main ghar gaya", "expect": "none", "lang": "hinglish", "split": "dev", "synthetic": true}
+{"id": "d155", "text": "pata nahi sir", "expect": "none", "lang": "hinglish", "split": "dev", "synthetic": true}
+{"id": "d156", "text": "mujhe is topic ke bare mein kuch nahi pata", "expect": "none", "lang": "hinglish", "split": "dev", "synthetic": true}
+{"id": "d157", "text": "mera dusra topic education hai", "expect": "none", "lang": "hinglish", "split": "dev", "synthetic": true}
+{"id": "d158", "text": "unhone kaha kisi aur topic pe baat karte hain", "expect": "none", "lang": "hinglish", "split": "dev", "synthetic": true}
+{"id": "d159", "text": "phir se bolna padega sarkar ko", "expect": "none", "lang": "hinglish", "split": "dev", "synthetic": true}
+{"id": "d160", "text": "dobara chunav hua tha", "expect": "none", "lang": "hinglish", "split": "dev", "synthetic": true}
+{"id": "d161", "text": "agla sawal yeh hai ki budget kitna hai", "expect": "none", "lang": "hinglish", "split": "dev", "synthetic": true}
+{"id": "d162", "text": "India must move on from coal", "expect": "none", "lang": "english", "split": "dev", "synthetic": true}
+{"id": "d163", "text": "we should move on from the colonial mindset", "expect": "none", "lang": "english", "split": "dev", "synthetic": true}
+{"id": "d164", "text": "Agriculture is one thing but tourism is something else entirely", "expect": "none", "lang": "english", "split": "dev", "synthetic": true}
+{"id": "d165", "text": "politicians talk about something else after elections", "expect": "none", "lang": "english", "split": "dev", "synthetic": true}
+{"id": "d166", "text": "I want to say something else about the budget", "expect": "none", "lang": "english", "split": "dev", "synthetic": true}
+{"id": "d167", "text": "the government tried to change the topic during the debate", "expect": "none", "lang": "english", "split": "dev", "synthetic": true}
+{"id": "d168", "text": "climate change is the topic of my thesis", "expect": "none", "lang": "english", "split": "dev", "synthetic": true}
+{"id": "d169", "text": "students skip this question in the exam", "expect": "none", "lang": "english", "split": "dev", "synthetic": true}
+{"id": "d170", "text": "the next question before the nation is water", "expect": "none", "lang": "english", "split": "dev", "synthetic": true}
+{"id": "d171", "text": "the bill will pass in the next session", "expect": "none", "lang": "english", "split": "dev", "synthetic": true}
+{"id": "d172", "text": "the president's pardon power is limited", "expect": "none", "lang": "english", "split": "dev", "synthetic": true}
+{"id": "d173", "text": "we must not repeat the mistakes of history", "expect": "none", "lang": "english", "split": "dev", "synthetic": true}
+{"id": "d174", "text": "history tends to repeat", "expect": "none", "lang": "english", "split": "dev", "synthetic": true}
+{"id": "d175", "text": "parliament should repeal that act", "expect": "none", "lang": "english", "split": "dev", "synthetic": true}
+{"id": "d176", "text": "I mean the policy needs money", "expect": "none", "lang": "english", "split": "dev", "synthetic": true}
+{"id": "d177", "text": "what do you mean by development is a question philosophers ask every generation", "expect": "none", "lang": "english", "split": "dev", "synthetic": true}
+{"id": "d178", "text": "they did not understand the question", "expect": "none", "lang": "english", "split": "dev", "synthetic": true}
+{"id": "d179", "text": "I do not understand why the government delayed the bill", "expect": "none", "lang": "english", "split": "dev", "synthetic": true}
+{"id": "d180", "text": "I am not sure", "expect": "none", "lang": "english", "split": "dev", "synthetic": true}
+{"id": "d181", "text": "I don't know", "expect": "none", "lang": "english", "split": "dev", "synthetic": true}
+{"id": "d182", "text": "I will explain", "expect": "none", "lang": "english", "split": "dev", "synthetic": true}
+{"id": "d183", "text": "the rule is not clear", "expect": "none", "lang": "english", "split": "dev", "synthetic": true}
+{"id": "d184", "text": "we must end poverty", "expect": "none", "lang": "english", "split": "dev", "synthetic": true}
+{"id": "d185", "text": "I want to end corruption", "expect": "none", "lang": "english", "split": "dev", "synthetic": true}
+{"id": "d186", "text": "let's end on a positive note", "expect": "none", "lang": "english", "split": "dev", "synthetic": true}
+{"id": "d187", "text": "I will stop here", "expect": "none", "lang": "english", "split": "dev", "synthetic": true}
+{"id": "d188", "text": "the interview ended well", "expect": "none", "lang": "english", "split": "dev", "synthetic": true}
+{"id": "d189", "text": "after the interview ends I will go home", "expect": "none", "lang": "english", "split": "dev", "synthetic": true}
+{"id": "d190", "text": "I want to end by saying that federalism matters", "expect": "none", "lang": "english", "split": "dev", "synthetic": true}
+{"id": "d191", "text": "my friend asked if we can move on", "expect": "none", "lang": "english", "split": "dev", "synthetic": true}
+{"id": "d192", "text": "please do not repeat that mistake again in the coming years", "expect": "none", "lang": "english", "split": "dev", "synthetic": true}
+{"id": "d193", "text": "don't move on", "expect": "none", "lang": "english", "split": "dev", "synthetic": true}
+{"id": "d194", "text": "I would rather not say the government failed entirely because the numbers are mixed", "expect": "none", "lang": "english", "split": "dev", "synthetic": true}
+{"id": "d195", "text": "Tourism creates jobs in the hills, and people often move on to something else when the season ends, but the state should plan for this by building roads and training guides across the district every single year", "expect": "none", "lang": "english", "split": "dev", "synthetic": true}
+{"id": "d196", "text": "Tropic of Cancer passes through eight states", "expect": "none", "lang": "english", "split": "dev", "synthetic": true}
+{"id": "d197", "text": "a long time ago my teacher told me to end the interview confidently and then leave the room quietly and thank the board because manners matter a lot", "expect": "none", "lang": "english", "split": "dev", "synthetic": true}
+{"id": "d198", "text": "पर्यटन के अलावा कृषि भी ज़रूरी है", "expect": "none", "lang": "devanagari", "split": "dev", "synthetic": true}
+{"id": "d199", "text": "देश आगे बढ़ रहा है", "expect": "none", "lang": "devanagari", "split": "dev", "synthetic": true}
+{"id": "d200", "text": "किसानों को योजना समझ नहीं आई", "expect": "none", "lang": "devanagari", "split": "dev", "synthetic": true}
+{"id": "d201", "text": "गरीबी खत्म करना चाहते हैं हम", "expect": "none", "lang": "devanagari", "split": "dev", "synthetic": true}
+{"id": "d202", "text": "मतलब यह है कि सरकार को सोचना चाहिए", "expect": "none", "lang": "devanagari", "split": "dev", "synthetic": true}
+{"id": "d203", "text": "मैं यहीं खत्म करता हूँ", "expect": "none", "lang": "devanagari", "split": "dev", "synthetic": true}
+{"id": "d204", "text": "tourism ke ilawa kheti bhi jaruri hai", "expect": "none", "lang": "garbled", "split": "dev", "synthetic": true}
+{"id": "d205", "text": "samaj mein badlav aa raha hai", "expect": "none", "lang": "garbled", "split": "dev", "synthetic": true}
+{"id": "d206", "text": "samaj nahi badla to desh nahi badlega", "expect": "none", "lang": "garbled", "split": "dev", "synthetic": true}
+{"id": "d207", "text": "sarkar ne topik par baat ki thi", "expect": "none", "lang": "garbled", "split": "dev", "synthetic": true}
+{"id": "h001", "text": "sir ab kisi dusre vishay par baat kar sakte hain kya", "expect": "change_topic", "lang": "hinglish", "split": "dev", "synthetic": true, "history": "earlier_holdout"}
+{"id": "h002", "text": "defence ke alawa kisi aur cheez pe baat karein", "expect": "change_topic", "lang": "hinglish", "split": "dev", "synthetic": true, "avoid": ["defence"], "history": "earlier_holdout"}
+{"id": "h003", "text": "yeh topic rehne dijiye", "expect": "change_topic", "lang": "hinglish", "split": "dev", "synthetic": true, "history": "earlier_holdout"}
+{"id": "h004", "text": "chaliye kuch aur baat karte hain", "expect": "change_topic", "lang": "hinglish", "split": "dev", "synthetic": true, "history": "earlier_holdout"}
+{"id": "h005", "text": "topic badal dete hain sir", "expect": "change_topic", "lang": "hinglish", "split": "dev", "synthetic": true, "history": "earlier_holdout"}
+{"id": "h006", "text": "could we please move on to another area", "expect": "change_topic", "lang": "english", "split": "dev", "synthetic": true, "history": "earlier_holdout"}
+{"id": "h007", "text": "I'd prefer to talk about something else", "expect": "change_topic", "lang": "english", "split": "dev", "synthetic": true, "history": "earlier_holdout"}
+{"id": "h008", "text": "instead of tourism, can we discuss education", "expect": "change_topic", "lang": "english", "split": "dev", "synthetic": true, "avoid": ["tourism"], "history": "earlier_holdout"}
+{"id": "h009", "text": "maybe we can switch topics now", "expect": "change_topic", "lang": "english", "split": "dev", "synthetic": true, "history": "earlier_holdout"}
+{"id": "h010", "text": "I have said enough on this, let's move on", "expect": "change_topic", "lang": "english", "split": "dev", "synthetic": true, "history": "earlier_holdout"}
+{"id": "h011", "text": "रक्षा के अलावा किसी और चीज़ पर बात करें", "expect": "change_topic", "lang": "devanagari", "split": "dev", "synthetic": true, "avoid": ["रक्षा"], "history": "earlier_holdout"}
+{"id": "h012", "text": "क्या हम विषय बदल सकते हैं", "expect": "change_topic", "lang": "devanagari", "split": "dev", "synthetic": true, "history": "earlier_holdout"}
+{"id": "h013", "text": "चलिए आगे चलते हैं", "expect": "change_topic", "lang": "devanagari", "split": "dev", "synthetic": true, "history": "earlier_holdout"}
+{"id": "h014", "text": "lets tock about something else", "expect": "change_topic", "lang": "garbled", "split": "dev", "synthetic": true, "history": "earlier_holdout"}
+{"id": "h015", "text": "tourism ke alwa kisi aur topic pe baat karte hain", "expect": "change_topic", "lang": "garbled", "split": "dev", "synthetic": true, "avoid": ["tourism"], "history": "earlier_holdout"}
+{"id": "h016", "text": "can we moov on", "expect": "change_topic", "lang": "garbled", "split": "dev", "synthetic": true, "history": "earlier_holdout"}
+{"id": "h017", "text": "can we go to the next one", "expect": "skip", "lang": "english", "split": "dev", "synthetic": true, "history": "earlier_holdout"}
+{"id": "h018", "text": "let's skip it", "expect": "skip", "lang": "english", "split": "dev", "synthetic": true, "history": "earlier_holdout"}
+{"id": "h019", "text": "I would prefer not to answer this", "expect": "skip", "lang": "english", "split": "dev", "synthetic": true, "history": "earlier_holdout"}
+{"id": "h020", "text": "sir yeh sawal chhod dijiye", "expect": "skip", "lang": "hinglish", "split": "dev", "synthetic": true, "history": "earlier_holdout"}
+{"id": "h021", "text": "agla sawal please", "expect": "skip", "lang": "hinglish", "split": "dev", "synthetic": true, "history": "earlier_holdout"}
+{"id": "h022", "text": "यह सवाल छोड़िए", "expect": "skip", "lang": "devanagari", "split": "dev", "synthetic": true, "history": "earlier_holdout"}
+{"id": "h023", "text": "अगले सवाल पर चलते हैं", "expect": "skip", "lang": "devanagari", "split": "dev", "synthetic": true, "history": "earlier_holdout"}
+{"id": "h024", "text": "sawl chod dijiye", "expect": "skip", "lang": "garbled", "split": "dev", "synthetic": true, "history": "earlier_holdout"}
+{"id": "h025", "text": "skip dis question", "expect": "skip", "lang": "garbled", "split": "dev", "synthetic": true, "history": "earlier_holdout"}
+{"id": "h026", "text": "could you say it once more", "expect": "repeat", "lang": "english", "split": "dev", "synthetic": true, "history": "earlier_holdout"}
+{"id": "h027", "text": "I could not hear the question", "expect": "repeat", "lang": "english", "split": "dev", "synthetic": true, "history": "earlier_holdout"}
+{"id": "h028", "text": "sorry can you repeat", "expect": "repeat", "lang": "english", "split": "dev", "synthetic": true, "history": "earlier_holdout"}
+{"id": "h029", "text": "ek baar phir boliye sir", "expect": "repeat", "lang": "hinglish", "split": "dev", "synthetic": true, "history": "earlier_holdout"}
+{"id": "h030", "text": "awaz nahi aayi", "expect": "repeat", "lang": "hinglish", "split": "dev", "synthetic": true, "history": "earlier_holdout"}
+{"id": "h031", "text": "कृपया दोहराइए", "expect": "repeat", "lang": "devanagari", "split": "dev", "synthetic": true, "history": "earlier_holdout"}
+{"id": "h032", "text": "एक बार और बताइए", "expect": "repeat", "lang": "devanagari", "split": "dev", "synthetic": true, "history": "earlier_holdout"}
+{"id": "h033", "text": "repit please", "expect": "repeat", "lang": "garbled", "split": "dev", "synthetic": true, "history": "earlier_holdout"}
+{"id": "h034", "text": "fir se puchiye sir", "expect": "repeat", "lang": "garbled", "split": "dev", "synthetic": true, "history": "earlier_holdout"}
+{"id": "h035", "text": "I don't get the question", "expect": "clarify_question", "lang": "english", "split": "dev", "synthetic": true, "history": "earlier_holdout"}
+{"id": "h036", "text": "can you simplify that", "expect": "clarify_question", "lang": "english", "split": "dev", "synthetic": true, "history": "earlier_holdout"}
+{"id": "h037", "text": "what does that mean", "expect": "clarify_question", "lang": "english", "split": "dev", "synthetic": true, "history": "earlier_holdout"}
+{"id": "h038", "text": "sawal clear nahi hai", "expect": "clarify_question", "lang": "hinglish", "split": "dev", "synthetic": true, "history": "earlier_holdout"}
+{"id": "h039", "text": "dusre tareeke se puchiye", "expect": "clarify_question", "lang": "hinglish", "split": "dev", "synthetic": true, "history": "earlier_holdout"}
+{"id": "h040", "text": "main samjha nahi sir", "expect": "clarify_question", "lang": "hinglish", "split": "dev", "synthetic": true, "history": "earlier_holdout"}
+{"id": "h041", "text": "सवाल स्पष्ट कीजिए", "expect": "clarify_question", "lang": "devanagari", "split": "dev", "synthetic": true, "history": "earlier_holdout"}
+{"id": "h042", "text": "मैं समझा नहीं", "expect": "clarify_question", "lang": "devanagari", "split": "dev", "synthetic": true, "history": "earlier_holdout"}
+{"id": "h043", "text": "samaj nhi aya", "expect": "clarify_question", "lang": "garbled", "split": "dev", "synthetic": true, "history": "earlier_holdout"}
+{"id": "h044", "text": "wat do you mean", "expect": "clarify_question", "lang": "garbled", "split": "dev", "synthetic": true, "history": "earlier_holdout"}
+{"id": "h045", "text": "I'd like to stop the interview now", "expect": "end", "lang": "english", "split": "dev", "synthetic": true, "history": "earlier_holdout"}
+{"id": "h046", "text": "can we conclude this session", "expect": "end", "lang": "english", "split": "dev", "synthetic": true, "history": "earlier_holdout"}
+{"id": "h047", "text": "interview band kar dijiye", "expect": "end", "lang": "hinglish", "split": "dev", "synthetic": true, "history": "earlier_holdout"}
+{"id": "h048", "text": "sir interview yahin khatam kar dete hain", "expect": "end", "lang": "hinglish", "split": "dev", "synthetic": true, "history": "earlier_holdout"}
+{"id": "h049", "text": "इंटरव्यू बंद कीजिए", "expect": "end", "lang": "devanagari", "split": "dev", "synthetic": true, "history": "earlier_holdout"}
+{"id": "h050", "text": "intervue khatam karte hain", "expect": "end", "lang": "garbled", "split": "dev", "synthetic": true, "history": "earlier_holdout"}
+{"id": "h051", "text": "education ke alawa health par bhi kharcha badhana hoga", "expect": "none", "lang": "hinglish", "split": "dev", "synthetic": true, "history": "earlier_holdout"}
+{"id": "h052", "text": "kisi aur desh se seekhna chahiye", "expect": "none", "lang": "hinglish", "split": "dev", "synthetic": true, "history": "earlier_holdout"}
+{"id": "h053", "text": "koi aur raasta nahi tha sarkar ke paas", "expect": "none", "lang": "hinglish", "split": "dev", "synthetic": true, "history": "earlier_holdout"}
+{"id": "h054", "text": "hum topic pe aate hain, bijli ka kharcha badha hai", "expect": "none", "lang": "hinglish", "split": "dev", "synthetic": true, "history": "earlier_holdout"}
+{"id": "h055", "text": "aage chalkar yeh kanoon bana", "expect": "none", "lang": "hinglish", "split": "dev", "synthetic": true, "history": "earlier_holdout"}
+{"id": "h056", "text": "gaon wale sawal puchte hain", "expect": "none", "lang": "hinglish", "split": "dev", "synthetic": true, "history": "earlier_holdout"}
+{"id": "h057", "text": "maine interview diya tha pichhle saal", "expect": "none", "lang": "hinglish", "split": "dev", "synthetic": true, "history": "earlier_holdout"}
+{"id": "h058", "text": "unhe samajh nahi aaya", "expect": "none", "lang": "hinglish", "split": "dev", "synthetic": true, "history": "earlier_holdout"}
+{"id": "h059", "text": "Moving on to the second reason, inflation hurts the poor", "expect": "none", "lang": "english", "split": "dev", "synthetic": true, "history": "earlier_holdout"}
+{"id": "h060", "text": "Next, I would talk about the fiscal deficit", "expect": "none", "lang": "english", "split": "dev", "synthetic": true, "history": "earlier_holdout"}
+{"id": "h061", "text": "another topic that matters is water", "expect": "none", "lang": "english", "split": "dev", "synthetic": true, "history": "earlier_holdout"}
+{"id": "h062", "text": "this question of federalism is old", "expect": "none", "lang": "english", "split": "dev", "synthetic": true, "history": "earlier_holdout"}
+{"id": "h063", "text": "I would like to end with a line from the Constitution", "expect": "none", "lang": "english", "split": "dev", "synthetic": true, "history": "earlier_holdout"}
+{"id": "h064", "text": "we should stop the war", "expect": "none", "lang": "english", "split": "dev", "synthetic": true, "history": "earlier_holdout"}
+{"id": "h065", "text": "the session ended at noon", "expect": "none", "lang": "english", "split": "dev", "synthetic": true, "history": "earlier_holdout"}
+{"id": "h066", "text": "the interview board has five members", "expect": "none", "lang": "english", "split": "dev", "synthetic": true, "history": "earlier_holdout"}
+{"id": "h067", "text": "I cannot explain every scheme but the main idea is welfare", "expect": "none", "lang": "english", "split": "dev", "synthetic": true, "history": "earlier_holdout"}
+{"id": "h068", "text": "Can we really say that growth helps everyone", "expect": "none", "lang": "english", "split": "dev", "synthetic": true, "history": "earlier_holdout"}
+{"id": "h069", "text": "Let us talk about the farmers first", "expect": "none", "lang": "english", "split": "dev", "synthetic": true, "history": "earlier_holdout"}
+{"id": "h070", "text": "you said repeat offenders get longer sentences", "expect": "none", "lang": "english", "split": "dev", "synthetic": true, "history": "earlier_holdout"}
+{"id": "h071", "text": "शिक्षा के अलावा स्वास्थ्य भी ज़रूरी है", "expect": "none", "lang": "devanagari", "split": "dev", "synthetic": true, "history": "earlier_holdout"}
+{"id": "h072", "text": "दूसरा कारण महंगाई है", "expect": "none", "lang": "devanagari", "split": "dev", "synthetic": true, "history": "earlier_holdout"}
+{"id": "h073", "text": "अगला कदम सुधार है", "expect": "none", "lang": "devanagari", "split": "dev", "synthetic": true, "history": "earlier_holdout"}
+{"id": "h074", "text": "tourism ke alawa kisi aur sector pe dhyan dena chahiye", "expect": "none", "lang": "garbled", "split": "dev", "synthetic": true, "history": "earlier_holdout"}
+{"id": "h075", "text": "sawal yeh hai ki paisa kahan se aayega", "expect": "none", "lang": "garbled", "split": "dev", "synthetic": true, "history": "earlier_holdout"}
+{"id": "t001", "text": "foreign policy ke alawa kisi aur vishay par baat karte hain", "expect": "change_topic", "lang": "hinglish", "split": "spent_holdout", "synthetic": true, "avoid": ["foreign policy"], "history": "p1_holdout_spent"}
+{"id": "t002", "text": "sir is par aur nahi bolna, aage badhte hain", "expect": "change_topic", "lang": "hinglish", "split": "spent_holdout", "synthetic": true, "history": "p1_holdout_spent"}
+{"id": "t003", "text": "kuch aur puchiye sir", "expect": "change_topic", "lang": "hinglish", "split": "spent_holdout", "synthetic": true, "history": "p1_holdout_spent"}
+{"id": "t004", "text": "hobbies ke alawa kuch bhi puchiye", "expect": "change_topic", "lang": "hinglish", "split": "spent_holdout", "synthetic": true, "avoid": ["hobbies"], "history": "p1_holdout_spent"}
+{"id": "t005", "text": "chaliye dusre topic par chalte hain", "expect": "change_topic", "lang": "hinglish", "split": "spent_holdout", "synthetic": true, "history": "p1_holdout_spent"}
+{"id": "t006", "text": "can we talk about my graduation subject instead", "expect": "change_topic", "lang": "english", "split": "spent_holdout", "synthetic": true, "history": "p1_holdout_spent"}
+{"id": "t007", "text": "I think we should change the topic", "expect": "change_topic", "lang": "english", "split": "spent_holdout", "synthetic": true, "history": "p1_holdout_spent"}
+{"id": "t008", "text": "could we leave this topic", "expect": "change_topic", "lang": "english", "split": "spent_holdout", "synthetic": true, "history": "p1_holdout_spent"}
+{"id": "t009", "text": "let's move on to the next topic", "expect": "change_topic", "lang": "english", "split": "spent_holdout", "synthetic": true, "history": "p1_holdout_spent"}
+{"id": "t010", "text": "besides cricket, could we discuss something else", "expect": "change_topic", "lang": "english", "split": "spent_holdout", "synthetic": true, "avoid": ["cricket"], "history": "p1_holdout_spent"}
+{"id": "t011", "text": "कृषि के अलावा कुछ और पूछिए", "expect": "change_topic", "lang": "devanagari", "split": "spent_holdout", "synthetic": true, "avoid": ["कृषि"], "history": "p1_holdout_spent"}
+{"id": "t012", "text": "अब किसी दूसरे विषय पर बात करें", "expect": "change_topic", "lang": "devanagari", "split": "spent_holdout", "synthetic": true, "history": "p1_holdout_spent"}
+{"id": "t013", "text": "यह टॉपिक छोड़ दीजिए", "expect": "change_topic", "lang": "devanagari", "split": "spent_holdout", "synthetic": true, "history": "p1_holdout_spent"}
+{"id": "t014", "text": "kisi or vishay par bat karein", "expect": "change_topic", "lang": "garbled", "split": "spent_holdout", "synthetic": true, "history": "p1_holdout_spent"}
+{"id": "t015", "text": "lets tolk about somthing else", "expect": "change_topic", "lang": "garbled", "split": "spent_holdout", "synthetic": true, "history": "p1_holdout_spent"}
+{"id": "t016", "text": "can we muve on", "expect": "change_topic", "lang": "garbled", "split": "spent_holdout", "synthetic": true, "history": "p1_holdout_spent"}
+{"id": "t017", "text": "next one please", "expect": "skip", "lang": "english", "split": "spent_holdout", "synthetic": true, "history": "p1_holdout_spent"}
+{"id": "t018", "text": "I'd like to skip this", "expect": "skip", "lang": "english", "split": "spent_holdout", "synthetic": true, "history": "p1_holdout_spent"}
+{"id": "t019", "text": "please move to the next question", "expect": "skip", "lang": "english", "split": "spent_holdout", "synthetic": true, "history": "p1_holdout_spent"}
+{"id": "t020", "text": "yeh sawal jaane dijiye", "expect": "skip", "lang": "hinglish", "split": "spent_holdout", "synthetic": true, "history": "p1_holdout_spent"}
+{"id": "t021", "text": "agla sawal kijiye", "expect": "skip", "lang": "hinglish", "split": "spent_holdout", "synthetic": true, "history": "p1_holdout_spent"}
+{"id": "t022", "text": "अगला सवाल कीजिए", "expect": "skip", "lang": "devanagari", "split": "spent_holdout", "synthetic": true, "history": "p1_holdout_spent"}
+{"id": "t023", "text": "इस सवाल को छोड़िए", "expect": "skip", "lang": "devanagari", "split": "spent_holdout", "synthetic": true, "history": "p1_holdout_spent"}
+{"id": "t024", "text": "nex question please", "expect": "skip", "lang": "garbled", "split": "spent_holdout", "synthetic": true, "history": "p1_holdout_spent"}
+{"id": "t025", "text": "is sawal ko skip kar dijiye plz", "expect": "skip", "lang": "garbled", "split": "spent_holdout", "synthetic": true, "history": "p1_holdout_spent"}
+{"id": "t026", "text": "could you please repeat that", "expect": "repeat", "lang": "english", "split": "spent_holdout", "synthetic": true, "history": "p1_holdout_spent"}
+{"id": "t027", "text": "I did not hear you clearly", "expect": "repeat", "lang": "english", "split": "spent_holdout", "synthetic": true, "history": "p1_holdout_spent"}
+{"id": "t028", "text": "say again", "expect": "repeat", "lang": "english", "split": "spent_holdout", "synthetic": true, "history": "p1_holdout_spent"}
+{"id": "t029", "text": "dobara puchiye sir", "expect": "repeat", "lang": "hinglish", "split": "spent_holdout", "synthetic": true, "history": "p1_holdout_spent"}
+{"id": "t030", "text": "thoda phir se bataiye", "expect": "repeat", "lang": "hinglish", "split": "spent_holdout", "synthetic": true, "history": "p1_holdout_spent"}
+{"id": "t031", "text": "दोबारा पूछिए", "expect": "repeat", "lang": "devanagari", "split": "spent_holdout", "synthetic": true, "history": "p1_holdout_spent"}
+{"id": "t032", "text": "सवाल दोहराइए", "expect": "repeat", "lang": "devanagari", "split": "spent_holdout", "synthetic": true, "history": "p1_holdout_spent"}
+{"id": "t033", "text": "sawal fir se bolye", "expect": "repeat", "lang": "garbled", "split": "spent_holdout", "synthetic": true, "history": "p1_holdout_spent"}
+{"id": "t034", "text": "plz repeet the question", "expect": "repeat", "lang": "garbled", "split": "spent_holdout", "synthetic": true, "history": "p1_holdout_spent"}
+{"id": "t035", "text": "what are you asking", "expect": "clarify_question", "lang": "english", "split": "spent_holdout", "synthetic": true, "history": "p1_holdout_spent"}
+{"id": "t036", "text": "I don't follow", "expect": "clarify_question", "lang": "english", "split": "spent_holdout", "synthetic": true, "history": "p1_holdout_spent"}
+{"id": "t037", "text": "could you explain that", "expect": "clarify_question", "lang": "english", "split": "spent_holdout", "synthetic": true, "history": "p1_holdout_spent"}
+{"id": "t038", "text": "sawal samajh nahi aa raha", "expect": "clarify_question", "lang": "hinglish", "split": "spent_holdout", "synthetic": true, "history": "p1_holdout_spent"}
+{"id": "t039", "text": "zara samjhaiye", "expect": "clarify_question", "lang": "hinglish", "split": "spent_holdout", "synthetic": true, "history": "p1_holdout_spent"}
+{"id": "t040", "text": "simple words mein bataiye", "expect": "clarify_question", "lang": "hinglish", "split": "spent_holdout", "synthetic": true, "history": "p1_holdout_spent"}
+{"id": "t041", "text": "आसान शब्दों में बताइए", "expect": "clarify_question", "lang": "devanagari", "split": "spent_holdout", "synthetic": true, "history": "p1_holdout_spent"}
+{"id": "t042", "text": "इसका क्या मतलब है", "expect": "clarify_question", "lang": "devanagari", "split": "spent_holdout", "synthetic": true, "history": "p1_holdout_spent"}
+{"id": "t043", "text": "sawal samjh nai aya", "expect": "clarify_question", "lang": "garbled", "split": "spent_holdout", "synthetic": true, "history": "p1_holdout_spent"}
+{"id": "t044", "text": "matlb kya hai", "expect": "clarify_question", "lang": "garbled", "split": "spent_holdout", "synthetic": true, "history": "p1_holdout_spent"}
+{"id": "t045", "text": "can we end the interview now", "expect": "end", "lang": "english", "split": "spent_holdout", "synthetic": true, "history": "p1_holdout_spent"}
+{"id": "t046", "text": "I wish to stop this interview", "expect": "end", "lang": "english", "split": "spent_holdout", "synthetic": true, "history": "p1_holdout_spent"}
+{"id": "t047", "text": "interview khatam kar dete hain", "expect": "end", "lang": "hinglish", "split": "spent_holdout", "synthetic": true, "history": "p1_holdout_spent"}
+{"id": "t048", "text": "mujhe interview band karna hai", "expect": "end", "lang": "hinglish", "split": "spent_holdout", "synthetic": true, "history": "p1_holdout_spent"}
+{"id": "t049", "text": "कृपया इंटरव्यू खत्म कीजिए", "expect": "end", "lang": "devanagari", "split": "spent_holdout", "synthetic": true, "history": "p1_holdout_spent"}
+{"id": "t050", "text": "intrview band karte hai", "expect": "end", "lang": "garbled", "split": "spent_holdout", "synthetic": true, "history": "p1_holdout_spent"}
+{"id": "t051", "text": "railways ke alawa kisi aur vibhag ki baat nahi hui", "expect": "none", "lang": "hinglish", "split": "spent_holdout", "synthetic": true, "history": "p1_holdout_spent"}
+{"id": "t052", "text": "koi dusra upay sochna hoga", "expect": "none", "lang": "hinglish", "split": "spent_holdout", "synthetic": true, "history": "p1_holdout_spent"}
+{"id": "t053", "text": "aage badhne ke liye shiksha zaroori hai", "expect": "none", "lang": "hinglish", "split": "spent_holdout", "synthetic": true, "history": "p1_holdout_spent"}
+{"id": "t054", "text": "maine sawal chhoda nahi tha", "expect": "none", "lang": "hinglish", "split": "spent_holdout", "synthetic": true, "history": "p1_holdout_spent"}
+{"id": "t055", "text": "interview mein sawal puchhe gaye", "expect": "none", "lang": "hinglish", "split": "spent_holdout", "synthetic": true, "history": "p1_holdout_spent"}
+{"id": "t056", "text": "kuch aur kehna chahta hoon is par", "expect": "none", "lang": "hinglish", "split": "spent_holdout", "synthetic": true, "history": "p1_holdout_spent"}
+{"id": "t057", "text": "unka matlab kuch aur tha", "expect": "none", "lang": "hinglish", "split": "spent_holdout", "synthetic": true, "history": "p1_holdout_spent"}
+{"id": "t058", "text": "let us take another example from Kerala", "expect": "none", "lang": "english", "split": "spent_holdout", "synthetic": true, "history": "p1_holdout_spent"}
+{"id": "t059", "text": "Let's talk about the other side of the argument", "expect": "none", "lang": "english", "split": "spent_holdout", "synthetic": true, "history": "p1_holdout_spent"}
+{"id": "t060", "text": "the topic of reform comes up every year", "expect": "none", "lang": "english", "split": "spent_holdout", "synthetic": true, "history": "p1_holdout_spent"}
+{"id": "t061", "text": "Skipping meals hurts children", "expect": "none", "lang": "english", "split": "spent_holdout", "synthetic": true, "history": "p1_holdout_spent"}
+{"id": "t062", "text": "my answer to that question is yes", "expect": "none", "lang": "english", "split": "spent_holdout", "synthetic": true, "history": "p1_holdout_spent"}
+{"id": "t063", "text": "I would like to add one more point", "expect": "none", "lang": "english", "split": "spent_holdout", "synthetic": true, "history": "p1_holdout_spent"}
+{"id": "t064", "text": "to stop the session of parliament is a serious matter", "expect": "none", "lang": "english", "split": "spent_holdout", "synthetic": true, "history": "p1_holdout_spent"}
+{"id": "t065", "text": "the policy ended the licence raj", "expect": "none", "lang": "english", "split": "spent_holdout", "synthetic": true, "history": "p1_holdout_spent"}
+{"id": "t066", "text": "what do you mean is not a phrase I use often", "expect": "none", "lang": "english", "split": "spent_holdout", "synthetic": true, "history": "p1_holdout_spent"}
+{"id": "t067", "text": "I passed the exam in my first attempt", "expect": "none", "lang": "english", "split": "spent_holdout", "synthetic": true, "history": "p1_holdout_spent"}
+{"id": "t068", "text": "Can we afford free electricity", "expect": "none", "lang": "english", "split": "spent_holdout", "synthetic": true, "history": "p1_holdout_spent"}
+{"id": "t069", "text": "we can change the law by amendment", "expect": "none", "lang": "english", "split": "spent_holdout", "synthetic": true, "history": "p1_holdout_spent"}
+{"id": "t070", "text": "I repeat, the state has no money", "expect": "none", "lang": "english", "split": "spent_holdout", "synthetic": true, "history": "p1_holdout_spent"}
+{"id": "t071", "text": "आगे बढ़ने के लिए शिक्षा ज़रूरी है", "expect": "none", "lang": "devanagari", "split": "spent_holdout", "synthetic": true, "history": "p1_holdout_spent"}
+{"id": "t072", "text": "दूसरा विषय शिक्षा का है", "expect": "none", "lang": "devanagari", "split": "spent_holdout", "synthetic": true, "history": "p1_holdout_spent"}
+{"id": "t073", "text": "इंटरव्यू में सवाल पूछे गए", "expect": "none", "lang": "devanagari", "split": "spent_holdout", "synthetic": true, "history": "p1_holdout_spent"}
+{"id": "t074", "text": "age badhne ke liye mehnat jaruri hai", "expect": "none", "lang": "garbled", "split": "spent_holdout", "synthetic": true, "history": "p1_holdout_spent"}
+{"id": "t075", "text": "samaj ko samajh nahi aaya", "expect": "none", "lang": "garbled", "split": "spent_holdout", "synthetic": true, "history": "p1_holdout_spent"}
+{"id": "d208", "text": "public administration ke alawa kisi aur topic pe baat karte hain", "expect": "change_topic", "lang": "hinglish", "split": "dev", "synthetic": true, "avoid": ["public administration"]}
+{"id": "d209", "text": "government ke alawa kisi aur topic pe baat karte hain", "expect": "change_topic", "lang": "hinglish", "split": "dev", "synthetic": true, "avoid": ["government"]}
+{"id": "d210", "text": "foreign ministers ke alawa kuch aur puchiye", "expect": "change_topic", "lang": "hinglish", "split": "dev", "synthetic": true, "avoid": ["foreign ministers"]}
+{"id": "d211", "text": "campus placements mein hum interview khatam karte hain", "expect": "none", "lang": "hinglish", "split": "dev", "synthetic": true}
+{"id": "d212", "text": "company mein hum interview band kar dete hain", "expect": "none", "lang": "hinglish", "split": "dev", "synthetic": true}
+{"id": "d213", "text": "hamare yahan interview band karte hain", "expect": "none", "lang": "hinglish", "split": "dev", "synthetic": true}
+{"id": "d214", "text": "pradhan mantri ka interview band kijiye", "expect": "none", "lang": "hinglish", "split": "dev", "synthetic": true}
+{"id": "d215", "text": "parliament ka session band karo", "expect": "none", "lang": "hinglish", "split": "dev", "synthetic": true}
+{"id": "d216", "text": "sansad ka session khatam karte hain", "expect": "none", "lang": "hinglish", "split": "dev", "synthetic": true}
+{"id": "d217", "text": "we want to end the session", "expect": "none", "lang": "english", "split": "dev", "synthetic": true}
+{"id": "d218", "text": "as the opposition we want to end the session", "expect": "none", "lang": "english", "split": "dev", "synthetic": true}
+{"id": "d219", "text": "corruption ko chhodiye asli samasya gareebi hai", "expect": "none", "lang": "hinglish", "split": "dev", "synthetic": true}
+{"id": "d220", "text": "reservation ko chhod dete hain to bhi samasya rahegi", "expect": "none", "lang": "hinglish", "split": "dev", "synthetic": true}
+{"id": "d221", "text": "tambaku ko chhod dijiye sehat ke liye", "expect": "none", "lang": "hinglish", "split": "dev", "synthetic": true}
+{"id": "d222", "text": "भ्रष्टाचार को छोड़िए असली समस्या गरीबी है", "expect": "none", "lang": "devanagari", "split": "dev", "synthetic": true}
+{"id": "d223", "text": "gaon ke bachche aage badhte hain", "expect": "none", "lang": "hinglish", "split": "dev", "synthetic": true}
+{"id": "d224", "text": "bharat aur china aage badhte hain", "expect": "none", "lang": "hinglish", "split": "dev", "synthetic": true}
+{"id": "d225", "text": "देश आगे बढ़ते हैं", "expect": "none", "lang": "devanagari", "split": "dev", "synthetic": true}
+{"id": "d226", "text": "aage chalte hain aur phir dekhte hain ki kya hota hai", "expect": "none", "lang": "hinglish", "split": "dev", "synthetic": true}
+{"id": "d227", "text": "padhai se hi samaj badalta hai aur kisan ko sahi daam milta hai tab jaakar desh mazboot hota hai aur shehar bhi tarakki karte hain aur isi tarah gaon ke bachche aage badhte hain", "expect": "none", "lang": "hinglish", "split": "dev", "synthetic": true}
+{"id": "d228", "text": "agla sawal puch lijiye", "expect": "skip", "lang": "hinglish", "split": "dev", "synthetic": true}
+{"id": "d229", "text": "agla sawal bata dijiye", "expect": "skip", "lang": "hinglish", "split": "dev", "synthetic": true}
+{"id": "d230", "text": "next sawal puch lijiye", "expect": "skip", "lang": "hinglish", "split": "dev", "synthetic": true}
+{"id": "d231", "text": "kuch aur sawal puchiye", "expect": "change_topic", "lang": "hinglish", "split": "dev", "synthetic": true}
+{"id": "d232", "text": "kisi aur topic ka sawal puchiye", "expect": "change_topic", "lang": "hinglish", "split": "dev", "synthetic": true}
+{"id": "d233", "text": "is sawal ko chhodiye kisi aur topic pe baat karte hain", "expect": "change_topic", "lang": "hinglish", "split": "dev", "synthetic": true}
+{"id": "d234", "text": "sawal chhodiye, tourism ke alawa kuch aur puchiye", "expect": "change_topic", "lang": "hinglish", "split": "dev", "synthetic": true, "avoid": ["tourism"]}
+{"id": "d235", "text": "can we move on, next question please", "expect": "skip", "lang": "english", "split": "dev", "synthetic": true}
+{"id": "d236", "text": "can we move on from coal by 2050", "expect": "none", "lang": "english", "split": "dev", "synthetic": true}
+{"id": "d237", "text": "can we move on from the colonial mindset", "expect": "none", "lang": "english", "split": "dev", "synthetic": true}
+{"id": "d238", "text": "we can change the topic of the debate in parliament", "expect": "none", "lang": "english", "split": "dev", "synthetic": true}
+{"id": "d239", "text": "kuch aur baat karte hain kisanon ki", "expect": "none", "lang": "hinglish", "split": "dev", "synthetic": true}
+{"id": "d240", "text": "kisi aur tarah ki baat karte hain sir", "expect": "none", "lang": "hinglish", "split": "dev", "synthetic": true}
+{"id": "d241", "text": "dusri baat karte hain ki gaon mein paani nahi hai", "expect": "none", "lang": "hinglish", "split": "dev", "synthetic": true}
+{"id": "d242", "text": "koi aur upay par baat karte hain", "expect": "none", "lang": "hinglish", "split": "dev", "synthetic": true}

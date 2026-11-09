@@ -78,6 +78,10 @@ PRESSURE: dict[Move, int] = {
     Move.cross_question: 2,
     Move.concede_point: 0,
     Move.redirect: 1,
+    # Panel director (CTO_NOTES_06 §7).
+    Move.repeat_question: 0,
+    Move.rephrase_question: 0,
+    Move.next_question: 1,
 }
 THIN_ANSWER_WORDS = 25
 _STRENGTH_ORDER = [PointStrength.weak, PointStrength.adequate, PointStrength.strong]
@@ -149,6 +153,13 @@ def merge_analyses(analyses: Sequence[Analysis]) -> Analysis:
             (a.question_to_opponent for a in reversed(analyses) if a.question_to_opponent), ""
         ),
         concedes_point=any(a.concedes_point for a in analyses),
+        # Panel: the last request a healthy listener heard in the turn (CTO_NOTES_06 §3).
+        candidate_request=next(
+            (a.candidate_request for a in reversed(analyses)
+             if a.candidate_request != "none" and not a.is_fallback),
+            "none",
+        ),
+        any_fallback=any(a.is_fallback for a in analyses),
         point_strength=max(strengths, key=_STRENGTH_ORDER.index) if strengths else None,
         off_limits=any(a.off_limits for a in analyses),
     )

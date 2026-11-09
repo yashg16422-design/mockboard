@@ -303,10 +303,13 @@ class FakeTimbre:
         error_marker: str = "FAIL",
         idle_close_s: float | None = None,
         silent_requests: int = 0,
+        trailing_complete: bool = False,
     ):
         # The first `silent_requests` requests (across connections) get no reply at all, like
         # a half-open socket (ruling 30's first-byte watchdog).
         self.silent_requests = silent_requests
+        # Live Timbre sends a second complete, {"message": "Streaming completed"}, after is_final.
+        self.trailing_complete = trailing_complete
         self.requests_seen = 0
         self.idle_close_s = idle_close_s
         self.chunks = chunks
@@ -356,6 +359,12 @@ class FakeTimbre:
                     await ws.send(json.dumps(timbre_audio(i, pcm)))
                     conn.chunks_sent += 1
                 await ws.send(json.dumps(timbre_complete(self.chunks + 1)))
+                if self.trailing_complete:
+                    await ws.send(json.dumps({
+                        "type": "complete",
+                        "message": "Streaming completed",
+                        "request_id": "req_abc123",
+                    }))
                 conn.finished_times[-1] = time.monotonic()
         except Exception:
             pass

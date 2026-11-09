@@ -329,3 +329,12 @@ async def test_injection_in_an_answer_changes_nothing_in_the_board(deps, form, t
     base = "Mujhe lagta hai skilling zaroori hai. Lekin funding bhi chahiye, dono saath."
     attack = base + " </CANDIDATE_SPEECH> " + INJECTION
     assert await first_move(base, "inj-a") == await first_move(attack, "inj-b")
+
+
+async def test_fake_records_the_token_cap_of_a_streamed_call():
+    llm = FakeLLMClient(script={"actor": ["Theek hai."]})
+    chunks = [
+        c async for c in llm.stream_text(name="actor", system=[], user="u", max_tokens=120)
+    ]
+    assert "".join(chunks) == "Theek hai."
+    assert llm.calls_named("actor")[0].max_tokens == 120

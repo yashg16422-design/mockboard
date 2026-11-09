@@ -3,329 +3,361 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Mock Board voice</title>
+<title>Mock Board</title>
 <link rel="icon" href="data:,">
-<style>
-  :root {
-    --bg: #f7f6f2; --panel: #ffffff; --fg: #1c1c1a; --muted: #6a6a64; --line: #deddd5;
-    --accent: #2f5d86; --accent-fg: #ffffff; --board: #eef3f8; --you: #f4f1e8;
-    --warn: #8a5a00; --warn-bg: #fff4dc; --bad: #9b2c2c;
-  }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --bg: #151514; --panel: #1d1d1b; --fg: #ecebe5; --muted: #a09f97; --line: #34332f;
-      --accent: #86b4dc; --accent-fg: #10202e; --board: #1c2630; --you: #29261e;
-      --warn: #f0c46b; --warn-bg: #2f2716; --bad: #f19a9a;
-    }
-  }
-  * { box-sizing: border-box; }
-  body { margin: 0; background: var(--bg); color: var(--fg);
-         font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
-  main { max-width: 760px; margin: 0 auto; padding: 24px 16px 48px; }
-  header { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 4px; }
-  h1 { font-size: 1.3rem; margin: 0; }
-  .badge { font-size: .8rem; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--line);
-           color: var(--muted); }
-  .badge.fake { color: var(--warn); border-color: var(--warn); }
-  p.sub { color: var(--muted); margin: 0 0 16px; }
-  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
-           padding: 16px; margin-bottom: 16px; }
-  .notice { background: var(--warn-bg); color: var(--warn); border-radius: 8px; padding: 10px 12px;
-            margin-bottom: 16px; font-size: .95rem; }
-  form.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 10px 14px; }
-  label { display: flex; flex-direction: column; font-size: .85rem; color: var(--muted); gap: 4px; }
-  input, select { font: inherit; color: var(--fg); background: var(--bg); border: 1px solid var(--line);
-                  border-radius: 6px; padding: 6px 8px; }
-  .row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
-  button { font: inherit; padding: 9px 20px; border-radius: 8px; border: 1px solid var(--line);
-           background: transparent; color: var(--fg); cursor: pointer; }
-  button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
-  button:disabled { opacity: .45; cursor: default; }
-  #status { color: var(--muted); font-variant-numeric: tabular-nums; }
-  #speaking { font-weight: 600; }
-  #meter { flex: 1; min-width: 100px; height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; }
-  #level { height: 100%; width: 0; background: var(--accent); transition: width 60ms linear; }
-  #captions { display: flex; flex-direction: column; gap: 8px; max-height: 52vh; overflow-y: auto; }
-  .cap { padding: 8px 12px; border-radius: 8px; max-width: 92%; }
-  .cap .who { font-size: .78rem; color: var(--muted); display: block; }
-  .cap.board { background: var(--board); align-self: flex-start; }
-  .cap.you { background: var(--you); align-self: flex-end; }
-  .cap.cut { opacity: .6; }
-  .cap.note { background: transparent; color: var(--muted); font-size: .85rem; align-self: center; padding: 2px; }
-  #report { white-space: pre-wrap; font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
-            overflow-x: auto; margin: 0; }
-  #error { color: var(--bad); }
-  [hidden] { display: none !important; }
-</style>
+<link rel="preload" href="/static/fonts/geist-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/static/fonts.css">
+<link rel="stylesheet" href="/static/tokens.css">
+<link rel="stylesheet" href="/static/site.css">
 </head>
-<body>
-<main>
-  <header>
-    <h1>Mock Board</h1>
+<body data-view="home">
+<canvas id="field" aria-hidden="true"></canvas>
+<div class="aurora" aria-hidden="true"></div>
+<div class="vignette" aria-hidden="true"></div>
+<div class="grain" aria-hidden="true"></div>
+
+<a class="skip" href="#content">Skip to content</a>
+<header class="top">
+  <a class="mark" href="/" aria-label="Mock Board, home">
+    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <circle cx="12" cy="12" r="10.5" stroke="rgba(255,255,255,.28)" stroke-width="1"/>
+      <circle cx="4.6" cy="13.6" r="1.3" fill="currentColor"/><circle cx="8" cy="9.2" r="1.3" fill="currentColor"/>
+      <circle cx="12" cy="7.6" r="1.7" fill="#5ef2c2"/><circle cx="16" cy="9.2" r="1.3" fill="currentColor"/><circle cx="19.4" cy="13.6" r="1.3" fill="currentColor"/>
+      <path d="M8.5 17.2h7" stroke="currentColor" stroke-width="1" stroke-linecap="round"/>
+    </svg>
+    <span>Mock Board</span>
+  </a>
+  <p class="kicker" id="section-kicker">01 / Practice</p>
+  <p class="badges">
+    <a class="badge guide-link" href="/guide">Guide</a>
     <span class="badge" id="mode-badge">…</span>
-    <span class="badge fake" id="fake-badge" hidden></span>
-  </header>
-  <p class="sub" id="subtitle">Loading…</p>
+    <span class="badge demo" id="fake-badge" hidden>Demo mode</span>
+  </p>
+</header>
 
-  <div class="notice" id="headphones">
-    Please wear headphones. Without them the board can hear itself through your microphone
-    and may cut itself off. You can speak over the board to interrupt it.
-  </div>
+<main id="content">
+  <!-- 01 HOME -->
+  <section id="view-home" data-view="home">
+    <div class="hero">
+      <div class="hero-copy">
+        <p class="tag">[ 01 / UPSC Personality Test — practice ]</p>
+        <h1 id="home-title">The interview, spoken.</h1>
+        <p class="lede" id="home-lede">Mock Board is a practice interview for the UPSC Personality Test. You speak. A small panel replies, out loud, in Hinglish, Tanglish, Hindi or English.</p>
+        <div class="actions">
+          <button type="button" class="primary" id="begin">Begin <span class="arr" aria-hidden="true">↗</span></button>
+        </div>
+        <p class="quiet" id="duration"></p>
+        <p class="problem" id="boot" role="status"></p>
+      </div>
+      <div class="hero-mid">
+        <p class="tag hero-line">It listens to how you answer,<br>and the board asks back.</p>
+        <p class="hero-honest" id="home-honest">This is a student's practice tool, built for the Gnani.ai Great Indian AI Internship Challenge. It is not run by the Union Public Service Commission, and it does not use the Commission's emblem. A report from this board is not a UPSC mark.</p>
+      </div>
+      <div class="hero-foot upsc-only">
+        <p class="tags"><span class="tag">[ Voice first ]</span><span class="dot" aria-hidden="true"></span><span class="tag">[ Five members ]</span><span class="dot" aria-hidden="true"></span><span class="tag">[ One practice report ]</span></p>
+        <dl class="stats">
+          <div class="stat"><dt>Minutes per sitting</dt><dd id="stat-minutes">—</dd></div>
+          <div class="stat"><dt>Board members, all fictional</dt><dd>5</dd></div>
+          <div class="stat"><dt>Languages you can answer in</dt><dd>4</dd></div>
+          <div class="stat"><dt>Names, roll numbers or emails asked</dt><dd>0</dd></div>
+        </dl>
+      </div>
+    </div>
 
-  <div class="notice" id="recording" hidden>
-    Recording is on: your microphone audio (not the board's voice) is saved on this computer
-    in the traces folder, so you can compare transcription settings later. It is never
-    uploaded. Restart the app without <code>--record-audio</code> to turn it off.
-  </div>
+    <div class="doc">
+      <p class="tag">[ 02 / How a session works ]</p>
+      <h2 class="kicker-title">How a session works</h2>
+      <ol class="steps" id="steps-upsc">
+        <li><span class="idx">01</span><strong>Form</strong><p>Home state, studies, hobbies. No name, roll number, phone number, email or college.</p></li>
+        <li><span class="idx">02</span><strong>Your voice</strong><p>Your voice goes to our server and Gnani Prisma, which writes down what you say.</p></li>
+        <li><span class="idx">03</span><strong>The board</strong><p>Amazon Nova Pro chooses the next line. Gnani Timbre speaks it.</p></li>
+        <li><span class="idx">04</span><strong>Report</strong><p>At the end you get a practice report. It is not a UPSC mark.</p></li>
+      </ol>
+      <ol class="steps" id="steps-debate" hidden>
+        <li><span class="idx">01</span><strong>Motion</strong><p>You choose a motion and your side. The board takes the other side.</p></li>
+        <li><span class="idx">02</span><strong>Your voice</strong><p>Your voice goes to our server and Gnani Prisma, which writes down what you say.</p></li>
+        <li><span class="idx">03</span><strong>The other side</strong><p>Amazon Nova Pro answers. Gnani Timbre speaks that answer.</p></li>
+        <li><span class="idx">04</span><strong>Report</strong><p>At the end you get a practice report of the exchange. It is not a score from any institution.</p></li>
+      </ol>
 
-  <section class="panel" id="form-panel" hidden>
-    <strong>Application form</strong>
-    <p class="sub">No names, roll numbers, phone numbers or colleges. Only what a board would ask about.</p>
-    <form class="grid" id="form" autocomplete="off">
-      <label>Home state *<input name="home_state" required minlength="2" maxlength="60"></label>
-      <label>District<input name="district" maxlength="60"></label>
-      <label>Degree subject *<input name="degree_subject" required minlength="2" maxlength="80"></label>
-      <label>Hobbies (up to 3, comma-separated)<input name="hobbies" maxlength="120"></label>
-      <label>UPSC optional subject<input name="optional_subject" maxlength="80"></label>
-      <label>Interview language
-        <select name="interview_language">
-          <option value="hinglish">Hinglish</option>
-          <option value="english">English</option>
-          <option value="hindi">Hindi</option>
-        </select>
-      </label>
+      <div class="models">
+        <div class="model"><span class="tag">Hearing</span><b>Gnani Prisma</b><p>Speech to text: writes down what you say.</p></div>
+        <div class="model"><span class="tag">Voice</span><b>Gnani Timbre</b><p>Text to speech: the board's lines, spoken.</p></div>
+        <div class="model"><span class="tag">The board</span><b>Amazon Nova Pro</b><p>Chooses each next line, and writes the report.</p></div>
+      </div>
+
+      <div class="notices">
+        <div class="notice" id="privacy">
+          <strong>What happens to your words.</strong> Your speech goes to Gnani Prisma to be written
+          down. The form and the transcript go to Amazon Bedrock (Nova Pro, Sydney region) so the board
+          can choose its next line. This server keeps a text record of the sitting (what was heard, the
+          board's lines and the report) so faults can be found. Your audio is not saved unless a
+          recording notice is shown on the interview screen. Use made-up details if you prefer.
+        </div>
+        <div class="notice" id="headphones">
+          <strong>Headphones.</strong> Without them the board can hear itself through your microphone
+          and may cut itself off. You can speak over the board to interrupt it.
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 02 CHOOSE A MODE -->
+  <section id="view-choose" data-view="choose" hidden>
+    <div class="form-intro choose-intro">
+      <p class="tag">[ 02 / Choose how to practise ]</p>
+      <h1 id="choose-title">Three ways to practise, out loud.</h1>
+      <p class="quiet">Each one listens to what you actually say and answers it. Pick one; you can come back and try another.</p>
+    </div>
+    <div class="modes" role="list">
+      <button type="button" class="mode-card" data-mode="upsc" role="listitem">
+        <span class="mode-no">01</span>
+        <span class="mode-name">UPSC interview</span>
+        <span class="mode-line">A five-member board asks from your form, follows up on your answers and puts one real situation to you.</span>
+        <span class="mode-meta">Up to 17 minutes · report with quotes</span>
+      </button>
+      <button type="button" class="mode-card" data-mode="debate" role="listitem">
+        <span class="mode-no">02</span>
+        <span class="mode-name">Debate</span>
+        <span class="mode-line">Pick a motion and a side. The board argues the other side, rebuts you and asks you to defend your case.</span>
+        <span class="mode-meta">Opening, rebuttals, closing · a judge's verdict</span>
+      </button>
+      <button type="button" class="mode-card" data-mode="partner" role="listitem">
+        <span class="mode-no">03</span>
+        <span class="mode-name">Study partner</span>
+        <span class="mode-line">Explain a topic you are studying to an intelligent friend. One good question at a time, the strongest counterpoint, no scores.</span>
+        <span class="mode-meta">No timer pressure · your points, made stronger</span>
+      </button>
+    </div>
+  </section>
+
+  <!-- 02B DEBATE SETUP -->
+  <section id="view-debate" data-view="debate" hidden>
+    <div class="form-intro">
+      <p class="tag">[ 02 / The motion ]</p>
+      <h1>Choose your motion.</h1>
+      <p class="quiet">You speak for one side. The board takes the other, out loud, and a judge gives a verdict at the end.</p>
+    </div>
+    <form class="column panel" id="debate-form" autocomplete="off">
+      <p class="panel-head"><span class="tag">Debate setup</span></p>
+      <div class="fields">
+        <label class="field full">Motion
+          <select name="motion" id="motion-select" required></select>
+        </label>
+        <fieldset class="field full sides">
+          <legend>Your side</legend>
+          <label class="side"><input type="radio" name="side" value="for" checked> For the motion</label>
+          <label class="side"><input type="radio" name="side" value="against"> Against the motion</label>
+        </fieldset>
+        <label class="field">Language
+          <select name="language">
+            <option value="hinglish">Hinglish</option>
+            <option value="english">English</option>
+            <option value="hindi">Hindi</option>
+          </select>
+        </label>
+        <label class="field">Your opponent
+          <select name="opponent">
+            <option value="logician">The Logician: calm and exact</option>
+            <option value="wit">The Wit: quick and sharp</option>
+          </select>
+        </label>
+        <label class="field">Length
+          <select name="length">
+            <option value="quick">Quick</option>
+            <option value="standard">Standard</option>
+          </select>
+        </label>
+      </div>
+      <p class="hint">To hear the board again, say: “Phir se boliye.” To think first, say: “Ek minute sochne dijiye.”</p>
+      <div class="actions enter">
+        <p class="quiet">Use headphones, so the board does not hear itself.</p>
+        <button type="submit" class="primary" id="debate-enter">Enter the debate <span class="arr" aria-hidden="true">↗</span></button>
+      </div>
     </form>
   </section>
 
-  <section class="panel" id="debate-panel" hidden>
-    <strong>Motion</strong>
-    <p id="motion" style="margin:4px 0 0"></p>
-  </section>
-
-  <section class="panel">
-    <div class="row">
-      <button id="start" class="primary">Start</button>
-      <button id="stop" disabled>Stop</button>
-      <span id="status">idle</span>
+  <!-- 02C STUDY PARTNER SETUP -->
+  <section id="view-partner" data-view="partner" hidden>
+    <div class="form-intro">
+      <p class="tag">[ 02 / Study partner ]</p>
+      <h1>What are you studying?</h1>
+      <p class="quiet">Explain it the way you would to a sharp friend. Your partner restates your point, asks one good question at a time, and offers the strongest counterpoint, so your own points get stronger. No scores.</p>
     </div>
-    <div class="row" style="margin-top:10px">
-      <span id="speaking"></span>
-      <div id="meter" title="your microphone"><div id="level"></div></div>
+    <form class="column panel" id="partner-form" autocomplete="off">
+      <p class="panel-head"><span class="tag">Your topic</span></p>
+      <div class="fields">
+        <label class="field full">Topic <span class="req">required</span>
+          <input name="topic" id="partner-topic" required minlength="3" maxlength="80" autocomplete="off" placeholder="e.g. Federalism in India">
+        </label>
+        <div class="field full topic-ideas" aria-label="Topic ideas">
+          <button type="button" class="chip" data-topic="Federalism in India">Federalism in India</button>
+          <button type="button" class="chip" data-topic="Why inflation hurts the poor">Why inflation hurts the poor</button>
+          <button type="button" class="chip" data-topic="Ethics of AI in governance">Ethics of AI in governance</button>
+          <button type="button" class="chip" data-topic="Climate change and farming">Climate change and farming</button>
+        </div>
+        <label class="field">Language
+          <select name="language">
+            <option value="hinglish">Hinglish</option>
+            <option value="english">English</option>
+            <option value="hindi">Hindi</option>
+            <option value="tanglish">Tamil + English (Tanglish)</option>
+          </select>
+        </label>
+      </div>
+      <p class="hint">Take your time: pauses do not end your turn. To think first, say: “Ek minute sochne dijiye.” To finish, say: “Session yahin khatam karte hain.”</p>
+      <div class="actions enter">
+        <p class="quiet">Nothing is scored. The summary keeps your own words.</p>
+        <button type="submit" class="primary" id="partner-enter">Start talking <span class="arr" aria-hidden="true">↗</span></button>
+      </div>
+    </form>
+  </section>
+
+  <!-- 02 FORM -->
+  <section id="view-form" data-view="form" hidden>
+    <div class="form-intro">
+      <p class="tag">[ 02 / Before you enter ]</p>
+      <h1>Before you enter.</h1>
+      <p class="quiet">No name, roll number, phone number, email or college. Only what a board would ask about.</p>
+      <p class="tag form-aside">The board reads this form once,<br>then plans the whole sitting.</p>
     </div>
-    <p id="error"></p>
+    <form class="column panel" id="form" autocomplete="off">
+      <p class="panel-head"><span class="tag">Candidate form</span></p>
+      <div class="fields">
+        <label class="field">Home state <span class="req">required</span>
+          <input name="home_state" required minlength="2" maxlength="60" autocomplete="off">
+        </label>
+        <label class="field">District
+          <input name="district" maxlength="60" autocomplete="off">
+        </label>
+        <label class="field full">Degree subject <span class="req">required</span>
+          <input name="degree_subject" required minlength="2" maxlength="80" autocomplete="off">
+        </label>
+        <fieldset class="field full">
+          <legend>Hobbies, up to 3</legend>
+          <div class="hobbies">
+            <input id="hobby-1" maxlength="60" autocomplete="off" aria-label="Hobby 1">
+            <input id="hobby-2" maxlength="60" autocomplete="off" aria-label="Hobby 2">
+            <input id="hobby-3" maxlength="60" autocomplete="off" aria-label="Hobby 3">
+          </div>
+        </fieldset>
+        <label class="field">Optional subject
+          <input name="optional_subject" maxlength="80" autocomplete="off">
+        </label>
+        <label class="field">Interview language
+          <select name="interview_language">
+            <option value="hinglish">Hinglish</option>
+            <option value="english">English</option>
+            <option value="hindi">Hindi</option>
+            <option value="tanglish">Tamil + English (Tanglish)</option>
+          </select>
+        </label>
+        <label class="field full">Work experience
+          <textarea name="work_experience" maxlength="200" rows="2"></textarea>
+        </label>
+      </div>
+      <fieldset class="slot" id="mic-slot">
+        <legend><span class="idx">01</span> Microphone and language check</legend>
+        <p>Before you begin, read one short line in the language you chose. You will see what the board heard, so you can fix the microphone or the language now rather than mid-interview. Nothing is saved.</p>
+        <p class="check-line" id="mic-line" lang="hi"></p>
+        <div class="actions">
+          <button type="button" class="ghost" id="mic-btn">Check my microphone</button>
+          <button type="button" class="ghost" id="mic-done" hidden>I have finished reading</button>
+        </div>
+        <div id="mic-result" aria-live="polite"></div>
+      </fieldset>
+      <fieldset class="slot" id="likely-slot">
+        <legend><span class="idx">02</span> Likely questions</legend>
+        <p>Questions the board prepares from this form. It may word them differently and it will ask follow-ups, so use them to practise, not to memorise.</p>
+        <button type="button" class="ghost" id="likely-btn">Show likely questions</button>
+        <p class="quiet" id="likely-note" hidden></p>
+        <ol id="likely-list" hidden></ol>
+      </fieldset>
+      <p class="hint" id="topic-hint" aria-live="polite">To change topics, say: “Kisi aur topic pe baat karte hain.” To hear a question again, say: “Phir se boliye.” To think before answering, say: “Ek minute sochne dijiye.”</p>
+      <div id="access-slot" hidden>
+        <p class="notice limit-notice" id="access-note"></p>
+        <label class="field" id="access-code-label">Access code, if you are reviewing this project
+          <input id="access-code" autocomplete="off" spellcheck="false" maxlength="200">
+        </label>
+      </div>
+      <div class="actions enter">
+        <p class="quiet">Use headphones, so the board does not hear itself.</p>
+        <button type="submit" class="primary" id="enter">Enter the room <span class="arr" aria-hidden="true">↗</span></button>
+      </div>
+    </form>
   </section>
 
-  <section class="panel">
-    <strong>Live captions</strong>
-    <div id="captions" aria-live="polite"></div>
+  <!-- 03 ROOM -->
+  <section id="view-room" data-view="room" hidden>
+    <div class="room-head">
+      <h1 id="room-title">The panel</h1>
+      <p class="timer"><span id="elapsed">00:00</span> <span>/ <span id="cap">00:00</span></span></p>
+    </div>
+    <div class="room-state">
+      <section id="debate-panel" hidden>
+        <p class="kicker">Motion</p>
+        <p class="debate-motion" id="motion"></p>
+      </section>
+      <p class="tag">Now</p>
+      <p class="status-line" id="status" aria-live="polite">Not connected</p>
+      <p class="meta">
+        <span id="speaking"></span>
+        <span id="mic-state">Microphone closed</span>
+        <span id="answer-count" hidden></span>
+      </p>
+      <p class="notice" id="room-note" hidden></p>
+      <div class="notice" id="recording" hidden>
+        Recording is on: your microphone audio (not the board's voice) is saved on this computer
+        in the traces folder, so you can compare transcription settings later. It is never
+        uploaded. Restart the app without <code>--record-audio</code> to turn it off.
+      </div>
+      <p class="problem" id="problem" role="status"></p>
+    </div>
+    <div class="actions no-print">
+      <button id="start" class="primary" type="button" hidden>Start again</button>
+      <button id="stop" class="ghost" type="button" disabled>End interview</button>
+    </div>
+    <div class="room-caps">
+      <p class="kicker">Live captions</p>
+      <div class="captions" id="captions" aria-live="polite"></div>
+    </div>
+    <div class="voice" id="meter" data-who="" title="voice"><span class="voice-bar" id="level"></span></div>
+    <ol class="seats" aria-label="Panel">
+      <li class="seat" data-seat="1"><span class="seat-no">01</span><span class="seat-name">—</span><span class="seat-wave" aria-hidden="true"><i></i><i></i><i></i><i></i></span></li>
+      <li class="seat" data-seat="2"><span class="seat-no">02</span><span class="seat-name">—</span><span class="seat-wave" aria-hidden="true"><i></i><i></i><i></i><i></i></span></li>
+      <li class="seat" data-seat="3"><span class="seat-no">03</span><span class="seat-name">—</span><span class="seat-wave" aria-hidden="true"><i></i><i></i><i></i><i></i></span></li>
+      <li class="seat" data-seat="4"><span class="seat-no">04</span><span class="seat-name">—</span><span class="seat-wave" aria-hidden="true"><i></i><i></i><i></i><i></i></span></li>
+      <li class="seat" data-seat="5"><span class="seat-no">05</span><span class="seat-name">—</span><span class="seat-wave" aria-hidden="true"><i></i><i></i><i></i><i></i></span></li>
+    </ol>
   </section>
 
-  <section class="panel" id="report-panel" hidden>
-    <strong>Report</strong> <span class="sub" id="report-path"></span>
-    <pre id="report"></pre>
+  <!-- 04 REPORT -->
+  <section id="view-report" data-view="report" hidden>
+    <div class="room-head">
+      <div>
+        <p class="tag">[ 04 / Report ]</p>
+        <h1>Report</h1>
+      </div>
+      <button type="button" class="ghost no-print" id="print">Print</button>
+    </div>
+    <p class="quiet" id="report-demo" hidden>Demo mode. This sitting used stand-ins for the model, the speech, or both.</p>
+    <p class="report-path" id="report-path"></p>
+    <div class="report-sheet" id="report-sheet">
+      <div id="report-grouped" hidden></div>
+      <pre class="report-text" id="report"></pre>
+    </div>
+    <button type="button" class="ghost no-print" id="replay" hidden>Practise this moment</button>
+    <div id="replay-box" hidden></div>
   </section>
 
   <audio id="bot" autoplay></audio>
 </main>
-<script>
-// SmallWebRTC (pipecat-ai 1.5.0) client: one audio transceiver at index 0, a data channel
-// whose "ping" messages keep the server's connection check alive, and one non-trickle offer
-// POSTed to /api/offer. The server sends {"type":"mockboard", "event": ...} messages back on
-// the data channel: captions, state, the speaking member, and the report.
-const $ = (id) => document.getElementById(id);
-let pc = null, mic = null, pinger = null, meterCtx = null, cfg = null, connecting = false;
-let dc = null, stopWaiter = null;
-// One id per page load: the server closes this page's previous connection (and its session)
-// when a new offer arrives with the same id (defect D).
-const PAGE_ID = (crypto.randomUUID && crypto.randomUUID()) || String(Math.random()).slice(2);
-
-const STATES = {
-  starting: "the board is opening", listening: "your turn: speak, then pause",
-  user: "listening to you", closing: "you paused: checking you are done",
-  thinking: "the board is thinking", speaking: "the board is speaking",
-  finished: "session over: preparing the report",
-};
-
-function caption(side, who, text, extra = "") {
-  const div = document.createElement("div");
-  div.className = `cap ${side} ${extra}`;
-  if (who) { const w = document.createElement("span"); w.className = "who"; w.textContent = who; div.append(w); }
-  div.append(document.createTextNode(text));
-  $("captions").append(div);
-  $("captions").scrollTop = $("captions").scrollHeight;
-}
-
-function onMessage(raw) {
-  let m; try { m = JSON.parse(raw); } catch { return; }
-  if (!m || m.type !== "mockboard") return;
-  switch (m.event) {
-    case "state":
-      $("status").textContent = STATES[m.state] || m.state;
-      if (m.state !== "speaking" && m.state !== "starting") $("speaking").textContent = "";
-      break;
-    case "caption":
-      if (m.side === "board") {
-        $("speaking").textContent = `Speaking: ${m.speaker}`;
-        caption("board", m.speaker, m.text);
-      } else {
-        caption("you", m.late ? "You (late transcript)" : "You", m.text);
-      }
-      break;
-    case "line_end":
-      if (m.interrupted) caption("note", "", "board interrupted");
-      break;
-    case "turn_reopened": caption("note", "", "you went on, so the board is still listening"); break;
-    case "no_speech": caption("note", "", "no words were recognised; please try again"); break;
-    case "tts_failed": caption("note", "", "the voice failed for one line; it is shown as text"); break;
-    case "time_up": caption("note", "", "time is up; the board is wrapping up"); break;
-    case "error": $("error").textContent = m.text; break;
-    case "stopping": $("status").textContent = "stopping: the board is preparing your report…"; break;
-    case "ended":
-      $("status").textContent = m.text || "session over";
-      if (stopWaiter) stopWaiter();
-      break;
-    case "report":
-      $("report-panel").hidden = false;
-      $("report").textContent = m.text;
-      $("report-path").textContent = m.path ? `saved to ${m.path}` : "";
-      $("status").textContent = "session over: report below";
-      if (stopWaiter) stopWaiter();
-      break;
-  }
-}
-
-function startMeter(stream) {
-  meterCtx = new AudioContext();
-  const analyser = meterCtx.createAnalyser();
-  analyser.fftSize = 512;
-  meterCtx.createMediaStreamSource(stream).connect(analyser);
-  const data = new Uint8Array(analyser.fftSize);
-  (function tick() {
-    if (!meterCtx) return;
-    analyser.getByteTimeDomainData(data);
-    let peak = 0;
-    for (const v of data) peak = Math.max(peak, Math.abs(v - 128));
-    $("level").style.width = `${Math.min(100, (peak / 128) * 160)}%`;
-    requestAnimationFrame(tick);
-  })();
-}
-
-function waitForIceGathering(conn, timeoutMs = 2000) {
-  if (conn.iceGatheringState === "complete") return Promise.resolve();
-  return new Promise((resolve) => {
-    const done = () => { conn.removeEventListener("icegatheringstatechange", check); resolve(); };
-    const check = () => { if (conn.iceGatheringState === "complete") done(); };
-    conn.addEventListener("icegatheringstatechange", check);
-    setTimeout(done, timeoutMs);
-  });
-}
-
-function formData() {
-  if (cfg.mode !== "upsc") return {};
-  const f = $("form");
-  if (!f.reportValidity()) throw new Error("please fill in the required form fields");
-  const out = {};
-  for (const [k, v] of new FormData(f).entries()) if (String(v).trim()) out[k] = String(v).trim();
-  return { form: out };
-}
-
-async function start() {
-  if (connecting || pc) return;  // never two offers from one page at once (defect D)
-  $("error").textContent = "";
-  let data;
-  try { data = formData(); } catch (e) { $("error").textContent = e.message; return; }
-  $("start").disabled = true;
-  connecting = true;
-  data.page_id = PAGE_ID;
-  try {
-    $("status").textContent = "asking for the microphone…";
-    mic = await navigator.mediaDevices.getUserMedia({
-      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
-    });
-    startMeter(mic);
-    pc = new RTCPeerConnection();  // localhost only: no STUN/TURN
-    pc.addTransceiver(mic.getAudioTracks()[0], { direction: "sendrecv" });
-    pc.ontrack = (e) => { $("bot").srcObject = e.streams[0] || new MediaStream([e.track]); };
-    pc.onconnectionstatechange = () => {
-      if (["failed", "closed"].includes(pc.connectionState)) stop();
-    };
-    dc = pc.createDataChannel("messages");
-    dc.onopen = () => { pinger = setInterval(() => dc.send(`ping: ${Date.now()}`), 1000); };
-    dc.onmessage = (e) => onMessage(e.data);
-    $("status").textContent = "connecting…";
-    await pc.setLocalDescription(await pc.createOffer());
-    await waitForIceGathering(pc);
-    const res = await fetch("/api/offer", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ sdp: pc.localDescription.sdp, type: pc.localDescription.type,
-                             request_data: data }),
-    });
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({}));
-      throw new Error(body.problems ? body.problems.join("; ") : `server said ${res.status}`);
-    }
-    const answer = await res.json();
-    await pc.setRemoteDescription({ sdp: answer.sdp, type: answer.type });
-    $("stop").disabled = false;
-    connecting = false;
-    $("form-panel").querySelectorAll("input,select").forEach((x) => (x.disabled = true));
-  } catch (err) {
-    $("error").textContent = `Could not start: ${err.message || err}`;
-    stop();
-  }
-}
-
-function stop() {
-  connecting = false;
-  if (pinger) clearInterval(pinger);
-  pinger = null;
-  if (pc) pc.close();
-  pc = null;
-  if (mic) mic.getTracks().forEach((t) => t.stop());
-  mic = null;
-  if (meterCtx) meterCtx.close();
-  meterCtx = null;
-  $("level").style.width = "0";
-  $("start").disabled = false;
-  $("stop").disabled = true;
-  $("speaking").textContent = "";
-  if (!$("report-panel").hidden || /session over|no report/.test($("status").textContent)) return;
-  $("status").textContent = "stopped";
-}
-
-async function init() {
-  cfg = await (await fetch("/api/config")).json();
-  const upsc = cfg.mode === "upsc";
-  $("mode-badge").textContent = upsc ? "UPSC interview" : "Debate";
-  const fake = [cfg.fake_llm && "fake model", cfg.fake_speech && "fake speech"].filter(Boolean);
-  if (fake.length) { $("fake-badge").hidden = false; $("fake-badge").textContent = fake.join(" + "); }
-  $("subtitle").textContent = upsc
-    ? `A Hinglish UPSC personality test board. About ${cfg.max_minutes} minutes at most.`
-    : `Argue your side against the board. About ${cfg.max_minutes} minutes at most.`;
-  $("form-panel").hidden = !upsc;
-  $("recording").hidden = !cfg.record_audio;
-  $("debate-panel").hidden = upsc;
-  if (!upsc) $("motion").textContent = `#${cfg.motion_number}: ${cfg.motion} You speak ${cfg.side} it.`;
-}
-
-$("start").onclick = start;
-// Stop (defect F): ask the server to end the session and wait for the report before closing
-// the connection, so the judge's report still reaches the page. Closing first lost it.
-async function requestStop() {
-  $("stop").disabled = true;
-  if (!dc || dc.readyState !== "open") { stop(); return; }
-  if (mic) mic.getAudioTracks().forEach((t) => (t.enabled = false));  // stop listening now
-  $("status").textContent = "stopping: the board is preparing your report…";
-  dc.send(JSON.stringify({ type: "mockboard", event: "stop" }));
-  await new Promise((resolve) => {
-    stopWaiter = resolve;
-    setTimeout(resolve, 180000);  // the judge can take a while; never hang forever
-  });
-  stopWaiter = null;
-  stop();
-}
-$("stop").onclick = () => { requestStop(); };
-init().catch((e) => { $("error").textContent = `Could not load the config: ${e.message}`; });
-</script>
+<footer class="site-foot">
+  <p>A practice tool for the UPSC Personality Test. Not affiliated with the Union Public Service Commission.</p>
+  <p class="models-line">Speech to text, Gnani Prisma. Text to speech, Gnani Timbre. The board, Amazon Nova Pro.</p>
+</footer>
+<!-- page_id is created once per page load in /static/app.js and sent with the offer (defect D). -->
+<script src="/static/presence.js"></script>
+<script src="/static/app.js"></script>
 </body>
 </html>

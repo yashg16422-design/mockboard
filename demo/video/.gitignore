@@ -1,0 +1,9 @@
+# Demo video build: dependencies, recordings and renders stay local.
+node_modules/
+.venv/
+media/
+out/
+runs/
+*.wav
+*.webm
+*.mp4

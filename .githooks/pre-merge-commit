@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# `git merge` does not run pre-commit, so a red branch could merge unchecked (Ruling 67). A merge
+# is never docs-only, whatever its paths.
+MOCKBOARD_HOOK_FULL=1 exec "$(dirname "$0")/pre-commit"

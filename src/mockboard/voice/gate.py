@@ -67,6 +67,7 @@ class PageSessions:
     started: list[str] = field(default_factory=list)  # pc ids whose session was built
     abandoned: list[str] = field(default_factory=list)  # pc ids closed without a session
     replaced: list[str] = field(default_factory=list)  # pc ids closed by a newer offer
+    on_unstarted: Callable[[str], None] | None = None  # a connection ended with no session
 
     async def offer(self, connection: Any, page_id: str | None) -> None:
         """Called with each new SmallWebRTC connection (the offer's callback). Never blocks."""
@@ -78,8 +79,14 @@ class PageSessions:
         entry.task = asyncio.create_task(self._gate(entry, page_id))
         self.tasks.add(entry.task)
         entry.task.add_done_callback(self.tasks.discard)
+        # A done callback also fires for a task cancelled before its first step.
+        entry.task.add_done_callback(lambda _task: self._finished(entry))
         if page_id:
             self.pages[page_id] = entry
+
+    def _finished(self, entry: _Entry) -> None:
+        if not entry.started and self.on_unstarted is not None:
+            self.on_unstarted(entry.connection.pc_id)
 
     async def _gate(self, entry: _Entry, page_id: str | None) -> None:
         conn = entry.connection

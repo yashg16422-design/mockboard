@@ -5,7 +5,12 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from mockboard.brain.cards import builtin_test_cards, load_cards, load_cards_or_builtin
+from mockboard.brain.cards import (
+    builtin_test_cards,
+    card_files,
+    load_cards,
+    load_cards_or_builtin,
+)
 from mockboard.brain.llm import ToolSpec, assert_flat_schema
 from mockboard.brain.schemas import CandidateForm, FactCard
 from mockboard.brain.tools import ALL_TOOLS, ListenerOutput
@@ -45,8 +50,12 @@ def test_form_collects_no_identifiers():
 def test_form_limits():
     with pytest.raises(ValidationError):
         CandidateForm(home_state="UP", degree_subject="Physics", hobbies=["a", "b", "c", "d"])
+    form = CandidateForm(
+        home_state="Tamil Nadu", degree_subject="Physics", interview_language="tanglish"
+    )
+    assert form.interview_language == "tanglish"
     with pytest.raises(ValidationError):
-        CandidateForm(home_state="UP", degree_subject="Physics", interview_language="tamil")
+        CandidateForm(home_state="UP", degree_subject="Physics", interview_language="kannada")
 
 
 @pytest.mark.parametrize("name", sorted(ALL_TOOLS))
@@ -86,15 +95,43 @@ def test_listener_blank_optional_fields_become_none():
 def test_data_cards_load_if_present():
     """Builder 2's data/cards/*.json must validate (schema.json + FactCard)."""
     cards_dir = REPO_ROOT / "data" / "cards"
-    topics = ["tourism", "internal_security"]
-    if not all((cards_dir / f"{t}.json").exists() for t in topics):
+    if not card_files(cards_dir):
         pytest.skip("data/cards not present")
-    cs = load_cards(cards_dir, topics)
+    cs = load_cards(cards_dir)
     assert cs.cards
     for card in cs.cards.values():
         assert card.synthetic_example or card.source_url
 
 
 def test_load_cards_or_builtin_falls_back(tmp_path):
-    cs, origin = load_cards_or_builtin(tmp_path, ["tourism"])
+    cs, origin = load_cards_or_builtin(tmp_path)
     assert origin == "builtin-test-cards" and cs.all_synthetic
+
+
+def test_cards_are_discovered_from_the_folder_not_from_a_topic_list():
+    """P7: no hard-coded topics. The frozen folder holds tourism and internal_security, and a
+    third file would be a third topic. `schema.json` is never a topic."""
+    from conftest import LOCK_CARDS_DIR
+
+    files = card_files(LOCK_CARDS_DIR)
+    assert [p.stem for p in files] == ["internal_security", "tourism"]
+    cs = load_cards(LOCK_CARDS_DIR)
+    assert {c.topic for c in cs.cards.values()} == {"internal_security", "tourism"}
+
+
+def test_a_new_topic_file_is_loaded_without_any_code_change(tmp_path):
+    import json
+    import shutil
+
+    from conftest import LOCK_CARDS_DIR
+
+    for name in ("schema.json", "tourism.json"):
+        shutil.copy(LOCK_CARDS_DIR / name, tmp_path / name)
+    doc = json.loads((LOCK_CARDS_DIR / "tourism.json").read_text(encoding="utf-8"))
+    doc["topic"] = "monuments"
+    for n, card in enumerate(doc["cards"]):
+        card["id"] = f"test_monuments_{n}"
+    (tmp_path / "monuments.json").write_text(json.dumps(doc), encoding="utf-8")
+    cs, origin = load_cards_or_builtin(tmp_path)
+    assert origin == f"data:{tmp_path}"
+    assert {c.topic for c in cs.cards.values()} == {"tourism", "monuments"}

@@ -37,6 +37,7 @@ NEVER_FOR_HONESTY = {Move.pressure, Move.clarify, Move.counter, Move.fact_challe
     ("Abhi yaad nahi aa raha.", True),
     ("मुझे इसका सही आँकड़ा नहीं पता।", True),
     ("पता नहीं, सर।", True),
+    ("எனக்குத் தெரியாது.", True),
     ("Haan kuchh badh mein", True),  # the owner's run: "kuch baad mein", short deflection
     ("Is par main baad mein bataunga, abhi poori jaankari nahi hai mere paas sir.", True),
     ("इस पर मैं बाद में बताऊँगा।", True),
@@ -75,8 +76,7 @@ async def test_misread_deflection_gets_reassure_or_move_on_never_pressure(
     s = InterviewSession(deps=deps, form=form, recorder=TraceRecorder(tmp_path, "r37"),
                          analyzer=TurnAnalyzer(deps), session_id="r37")
     await s.open()
-    await answer(s, BACKGROUND)  # the one-question background topic: move on to tourism
-    out = await answer(s, deflection)
+    out = await answer(s, deflection)  # the first answer: not a segment's last question
     assert out.move.move in (Move.reassure, Move.move_on), out.move
     assert out.move.move not in NEVER_FOR_HONESTY
     assert out.move.rule_id in ("R3", "R3b")

@@ -362,6 +362,7 @@ def _make_listener(max_attempts: int, late: LateListens) -> Callable:
         ctx = state.get("ctx")
         rt = deps.mode(ctx.mode if ctx is not None else None)  # ADR-009
         mode_kwargs: dict[str, Any] = {}
+        kit = rt.kit
         if rt.profile.listener_tool is not None:
             tool, output_model = rt.profile.listener_tool
             mode_kwargs = {
@@ -375,7 +376,7 @@ def _make_listener(max_attempts: int, late: LateListens) -> Callable:
         call = asyncio.ensure_future(
             analyse_segment(
                 deps.llm,
-                rt.kit,
+                kit,
                 segment=seg,
                 question=state.get("question", ""),
                 turn_id=turn_id,

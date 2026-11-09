@@ -20,7 +20,7 @@ A mode is a **profile**, a piece of configuration that the same engine reads:
 
 ## Consequences
 
-- The UPSC transcript of `make cli-fake` is byte-identical before and after the change. `tests/test_modes.py` locks it with a golden file, so a later mode cannot change it by accident.
+- The UPSC transcript of `make cli-fake` is byte-identical before and after the change. `tests/test_modes.py` locks it with a golden file, so a later mode cannot change it by accident. **Ended on purpose at P7 (ADR-010):** UPSC became the five-member panel and its golden was replaced once, with the debate golden and hashes left as they were.
 - Adding a mode means adding a profile module, prompt files, personas and tests; no `if mode == ...` branches in the UPSC code paths. Where a mode needs genuinely new session behaviour (debate's rounds and case file, DB5), the session asks a mode hook rather than branching on the UPSC path.
 - The voice loop calls the same three session methods in every mode.
 - A rule table that emits a move outside its profile's `allowed_moves` is a bug; each mode has a test for it (DB3).

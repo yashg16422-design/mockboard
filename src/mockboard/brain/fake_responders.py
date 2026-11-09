@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import re
+import zlib
 from collections.abc import Callable
 from typing import Any
 
@@ -177,6 +178,63 @@ def extract_claims(text: str) -> list[dict[str, Any]]:
     return claims
 
 
+# The panel listener stand-in (listener.v4). Its word lists are deliberately NOT the detector's:
+# they are the "wider openers" Ruling 57 keeps out of `brain/requests.py`, which a real listener is
+# there to catch. A word list, not understanding.
+_WIDE_ASK = r"(?:why (?:don'?t|do not) we|should we|shall we|how about|what about|maybe we " \
+    r"(?:can|could)|i think we should|can we|could we|let'?s|kya hum)"
+_WIDE_CHANGE = re.compile(
+    rf"\b{_WIDE_ASK}\b[^.?!]{{0,40}}\b(?:something (?:else|different)|(?:another|a different|"
+    r"different) (?:topic|area|subject|direction)|shift|kuch aur|alag)\b",
+    re.IGNORECASE,
+)
+_WIDE_SKIP = re.compile(
+    r"\bi(?:'d| would) rather not (?:answer|attempt|say)\b|\bpass on this one\b", re.IGNORECASE
+)
+_WIDE_REPEAT = re.compile(
+    r"\b(?:could|can|would) you (?:please )?(?:say|ask|repeat) (?:that|it|the question) "
+    r"(?:again|once more)\b",
+    re.IGNORECASE,
+)
+_WIDE_CLARIFY = re.compile(
+    r"\b(?:could|can) you (?:put|say|explain) (?:that|it|the question) (?:more )?(?:simply|"
+    r"differently)\b",
+    re.IGNORECASE,
+)
+_NOTE_STOP = {
+    "which", "their", "there", "these", "those", "about", "would", "could", "should", "because",
+    "being", "where", "while", "after", "before", "other", "using",
+}  # fmt: skip
+
+
+def _fake_request(speech: str) -> str:
+    """What a stand-in listener hears the candidate ask, for a turn of at most 30 words."""
+    if len(speech.split()) > 30:
+        return "none"
+    for kind, pattern in (
+        ("change_topic", _WIDE_CHANGE),
+        ("skip", _WIDE_SKIP),
+        ("repeat", _WIDE_REPEAT),
+        ("clarify_question", _WIDE_CLARIFY),
+    ):
+        if pattern.search(speech):
+            return kind
+    return "none"
+
+
+def _fake_note(speech: str) -> str:
+    """A stand-in for the listener's English paraphrase: the longest few Latin words, never a run of
+    the transcript, so the memory notes of a fake session read like notes and not like a copy."""
+    seen: list[str] = []
+    for word in re.findall(r"[A-Za-z]{5,}", speech):
+        low = word.lower()
+        if low not in seen and low not in _NOTE_STOP:
+            seen.append(low)
+    top = sorted(seen, key=lambda w: (-len(w), seen.index(w)))[:3]
+    top.sort(key=seen.index)
+    return f"Candidate spoke about {', '.join(top)}." if top else ""
+
+
 def listener_responder(system: str, user: str) -> dict[str, Any]:
     speech = to_ascii_digits(nfc(_tag(user, "candidate_speech")))
     low = speech.lower()
@@ -196,6 +254,9 @@ def listener_responder(system: str, user: str) -> dict[str, Any]:
     context = _tag(user, "debate_context")
     if context:  # debate mode (listener_debate.v1): add the optional debate fields
         out.update(_debate_fields(speech, json.loads(context), garbled))
+    if "candidate_request" in system:  # the panel listener (listener.v4 names the field)
+        out["candidate_request"] = _fake_request(speech)
+        out["stance"] = "" if garbled else _fake_note(speech)
     return out
 
 
@@ -396,10 +457,138 @@ def _debate_actor_line(board: dict[str, Any], user: str) -> str:
     return "Ek minute, main beech mein rokta hoon. Apne mukhya point par aaiye."
 
 
-def actor_responder(system: str, user: str) -> str:
+
+# Panel stand-in (actor.v4, opener.v2): several wordings per move, so a scripted session does not
+# repeat itself, none of them quoting the candidate. A stand-in, not a model: it cannot rephrase.
+_PANEL_WORDINGS: dict[str, tuple[str, ...]] = {
+    Move.probe.value: (
+        "Achha. Is baat ke peeche aapka sabse bada karan kya hai?",
+        "Theek hai. Isse jude logon par iska asar aap kaise dekhte hain?",
+        "Ji. Agar aap khud is sthiti mein hote, to pehla qadam kya uthate, aur kyun?",
+        "Achha. Is par aapko sabse badi dikkat kahan dikhti hai?",
+        "Theek hai. Is soch ko zameen par utarne mein kaunsi rukawat aa sakti hai?",
+        "Ji. Is baat ko aap kisi aam nagrik ko kaise samjhayenge?",
+        "Achha. Is par aapko kis tarah ki madad ya jaankari chahiye hogi?",
+        "Theek hai. Isse sabse zyada kiska fayda ya nuksaan hoga, aapke hisaab se?",
+    ),
+    Move.counter.value: (
+        "Samajh mein aata hai. Lekin doosra paksh kehta hai ki isse nuksaan bhi ho sakta hai. "
+        "Aap use kaise tolenge?",
+        "Theek hai. Jo log isse sahmat nahi, unka sabse mazboot tark kya hoga, aur aap use "
+        "kaise dekhte hain?",
+        "Achha. Maan lijiye koi kahe ki yeh tareeka sabke liye theek nahi, to aapka jawab kya "
+        "hoga?",
+        "Ji. Is soch ke khilaaf sabse vazandar baat kya ho sakti hai, aur uska aap kya karenge?",
+        "Samajh mein aata hai. Agar yeh tareeka na chale, to aapka doosra raasta kya hoga?",
+        "Theek hai. Kya is soch ki koi keemat bhi hai, jise aap nazar-andaaz nahi karenge?",
+    ),
+    Move.steelman.value: (
+        "Achha. Ab doosre paksh ki jagah baithiye: unka sabse mazboot tark kya hoga?",
+        "Theek hai. Jis paksh se aap sahmat nahi, uska sabse achha tark aap kaise rakhenge?",
+        "Ji. Agar aapko doosri taraf se bolna pade, to aap kaunsi baat sabse pehle rakhenge?",
+    ),
+    Move.pressure.value: (
+        "Aapki baat mein dum hai. Koi ek thos udaharan dijiye, jisse yeh aur saaf ho.",
+        "Theek hai. Ise ek asli sthiti se samjhaiye, jo aapne khud dekhi ya suni ho.",
+        "Achha. Is baat ke samarthan mein aap kaunsa ek kaaran sabse pehle rakhenge?",
+    ),
+    # `{topic}` is what the segment is about (`_segment_topic`), so a reassure after silence says
+    # what it is reassuring about and never "is vishay" with nothing before it (Ruling 76 item 4).
+    Move.reassure.value: (
+        "Koi baat nahi, aaram se sochiye. Aap {topic} ke baare mein apne anubhav se kya kehna "
+        "chahenge?",
+        "Jaldi nahi hai. Ek aasaan shuruaat kijiye: {topic} ke baare mein aapko sabse pehle kya "
+        "laga tha?",
+        "Koi baat nahi. Chaliye ise aasaan karte hain: {topic} par aapka pehla khayal kya aata "
+        "hai?",
+    ),
+    Move.interrupt.value: (
+        "Ek minute, kripya seedhe mukhya baat par aaiye.",
+    ),
+    Move.rephrase_question.value: (
+        "Chaliye, ise saral tareeke se rakhte hain: is vishay par aap apne anubhav se kya "
+        "sochte hain, aur kyun?",
+    ),
+}
+# What each segment is about, in the words a member would use, keyed by the start of the segment's
+# title (`agenda._TITLES`; a title may carry ": detail" after it). Unknown: the question itself.
+_SEGMENT_TOPICS = (
+    ("The candidate's form", "civil services ki taraf aapke safar"),
+    ("Home state", "apne zile"),
+    ("Degree subject", "apni padhai"),
+    ("Hobbies", "apne shauk aur optional vishay"),
+    ("Current affairs", "is mudde"),
+)
+
+
+def _segment_topic(title: str) -> str:
+    return next((t for head, t in _SEGMENT_TOPICS if title.startswith(head)), "is sawal")
+
+
+_PANEL_OPENINGS = ("Achha.", "Theek hai.", "Ji.")
+_PANEL_THANKS = ("Ji, shukriya.", "Aabhaar.", "Ji, dhanyavaad.")
+
+
+def _panel_actor_line(user: str, used: set[str] | None = None) -> str | None:
+    ctx = json.loads(_tag(user, "board_context") or "{}")
+    item = json.loads(_tag(user, "agenda_item") or "{}")
+    move = ctx.get("move", Move.probe.value)
+    last_question = _tag(user, "last_question")
+    # One step per answered turn (the summary has a line for each), so successive lines differ.
+    turn_no = len(_tag(user, "conversation_summary").splitlines())
+    pick = turn_no + zlib.crc32(_tag(user, "candidate_speech").encode("utf-8")) % 3
+    if move == Move.next_question.value:
+        seed = item.get("seed") or "Is vishay par aap apne anubhav se kya kehna chahenge, aur kyun?"
+        if ctx.get("after_handoff"):
+            if ctx.get("first_handoff"):  # actor.v5: the one place a member greets the candidate
+                return f"Shukriya. Namaste. {seed}"
+            # Later hand-offs: a short thanks in words the Chairperson has not just used.
+            heard = " ".join(ctx.get("preface_already_spoken") or ()).lower()
+            thanks = [t for t in _PANEL_THANKS if t.split()[-1].rstrip(".,").lower() not in heard]
+            return f"{thanks[pick % len(thanks)]} {seed}"
+        if ctx.get("preface_already_spoken"):
+            return seed
+        return f"{_PANEL_OPENINGS[pick % len(_PANEL_OPENINGS)]} {seed}"
+    wordings = _PANEL_WORDINGS.get(move)
+    if not wordings:
+        return None  # fact_challenge and anything else: the UPSC stand-in below
+    topic = _segment_topic(str(item.get("segment", "")))
+    wordings = tuple(w.replace("{topic}", topic) for w in wordings)
+    said = {last_question, *re.findall(r"- Question: (.+)", _tag(user, "recent_exchanges"))}
+    # `used` is what this stand-in said earlier in the session; `said` is what the panel just asked.
+    for fresh_only in (True, False):
+        for step in range(len(wordings)):
+            line = wordings[(pick + step) % len(wordings)]
+            if any(q and q in line for q in said) or (fresh_only and used and line in used):
+                continue
+            if used is not None:
+                used.add(line)
+            return line
+    return wordings[pick % len(wordings)]
+
+
+def make_actor_responder() -> Callable[[str, str], str]:
+    """An actor stand-in with a memory of its own panel lines, so one fake session never repeats a
+    wording while an unused one is left. One per fake client, so sessions do not share it."""
+    used: set[str] = set()
+
+    def respond(system: str, user: str) -> str:
+        return actor_responder(system, user, used)
+
+    return respond
+
+
+def actor_responder(system: str, user: str, used: set[str] | None = None) -> str:
+    partner = _tag(user, "partner_board")
+    if partner:  # the study partner (partner_actor.v1)
+        return _partner_actor_line(json.loads(partner), user)
     debate = _tag(user, "debate_board")
     if debate:
         return _debate_actor_line(json.loads(debate), user)
+    if _tag(user, "agenda_item"):
+        line = _panel_actor_line(user, used)
+        if line is not None:
+            return line
     ctx = json.loads(_tag(user, "board_context") or "{}")
     move = ctx.get("move", Move.probe.value)
     if move == Move.fact_challenge.value:
@@ -424,7 +613,93 @@ def actor_responder(system: str, user: str) -> str:
     return _ACTOR_LINES.get(move, _ACTOR_LINES[Move.probe.value])
 
 
+# ---------------------------------------------------------------------------
+# Study partner (partner_actor.v1, partner_summary.v1)
+# ---------------------------------------------------------------------------
+
+_NOTE_WORDS = re.compile(r"spoke about ([^.;]+)")
+_PARTNER_AND = {"hi-en": " aur ", "en": " and ", "hi": " और ", "ta-en": ", "}
+_PARTNER_RESTATE = {
+    "hi-en": ("Achha, aapki baat {kw} ke baare mein hai.", "Achha, samajh raha hoon."),
+    "en": ("So your point is about {kw}.", "I see what you mean."),
+    "hi": ("अच्छा, आपकी बात {kw} के बारे में है।", "अच्छा, समझ रहा हूँ।"),
+    "ta-en": ("சரி, உங்கள் point {kw} பற்றியது.", "சரி, புரிகிறது."),
+}
+_PARTNER_RECAP = {
+    "hi-en": "Theek hai, ab tak aapne {kw} par apni baat rakhi.",
+    "en": "All right, so far you have made your case on {kw}.",
+    "hi": "ठीक है, अब तक आपने {kw} पर अपनी बात रखी।",
+    "ta-en": "சரி, இதுவரை நீங்கள் {kw} பற்றி உங்கள் கருத்தைச் சொன்னீர்கள்.",
+}
+_PARTNER_CLOSE = {
+    "hi-en": "Aaj aapne {kw} par apne points rakhe. Aapke notes taiyaar hain, shukriya!",
+    "en": "Today you made your points on {kw}. Your notes are ready, thank you!",
+    "hi": "आज आपने {kw} पर अपने पॉइंट रखे। आपके नोट्स तैयार हैं, शुक्रिया!",
+    "ta-en": "இன்று நீங்கள் {kw} பற்றி உங்கள் points சொன்னீர்கள். உங்கள் notes தயார், நன்றி!",
+}
+
+
+def _note_keywords(text: str, limit: int = 2) -> list[str]:
+    """The words of the fake listener's notes ("Candidate spoke about a, b, c.")."""
+    words: list[str] = []
+    for line in text.splitlines():
+        m = _NOTE_WORDS.search(line.strip().lstrip("- "))
+        if m:
+            words.extend(w.strip() for w in m.group(1).split(",") if w.strip())
+    return list(dict.fromkeys(words))[:limit]
+
+
+def _partner_actor_line(board: dict[str, Any], user: str) -> str:
+    """A stand-in for Mitra: a restating sentence built from the listener's note, then the move's
+    own fixed question (from the partner's templates)."""
+    from mockboard.modes.partner.lines import CLOSE_TARGET, RECAP_TARGET, template_line
+    from mockboard.modes.partner.lines import template_question as partner_question
+
+    mix = board.get("language_mix", "hi-en")
+    mix = mix if mix in _PARTNER_RESTATE else "hi-en"
+    move = Move(board.get("move", "probe"))
+    joiner = _PARTNER_AND[mix]
+    if move == Move.move_on:
+        kws = _note_keywords(_tag(user, "points_so_far"), 3) or _note_keywords(
+            _tag(user, "listener_note"), 3)
+        kw = joiner.join(kws) or {"hi-en": "is vishay", "en": "this topic", "hi": "इस विषय",
+                                  "ta-en": "இந்த விஷயம்"}[mix]
+        if not board.get("ask_a_question", True):
+            return _PARTNER_CLOSE[mix].format(kw=kw)
+        return f"{_PARTNER_RECAP[mix].format(kw=kw)} {partner_question(move, RECAP_TARGET, mix)}"
+    if move == Move.reassure:
+        return template_line(move, None, mix)
+    kws = _note_keywords(_tag(user, "listener_note"))
+    with_kw, plain = _PARTNER_RESTATE[mix]
+    first = with_kw.format(kw=joiner.join(kws)) if kws else plain
+    question = partner_question(move, None, mix) or template_line(move, CLOSE_TARGET, mix)
+    return f"{first} {question}"
+
+
+def partner_summary_responder(system: str, user: str) -> dict[str, Any]:
+    """A stand-in for the note writer: the code draft as it came, plus one practice suggestion per
+    gap. It quotes nothing new, so the quote check passes on the fake path."""
+    drafts = json.loads(_tag(user, "draft_points") or "[]")
+    points = [
+        {k: str(d.get(k, "")) for k in ("point", "reason", "example", "counterpoint", "answer",
+                                        "open")}
+        for d in drafts if isinstance(d, dict)
+    ]
+    steps = []
+    if any(not p["reason"] for p in points):
+        steps.append("Say each point again with the reason behind it, in two sentences.")
+    if any(not p["example"] for p in points):
+        steps.append("Find one example you know well for each point and practise it aloud.")
+    if any(p["counterpoint"] and not p["answer"] for p in points):
+        steps.append("Give a one-line reply to the counterpoint you left open.")
+    steps.append("Explain the whole topic once more in two minutes, point by point.")
+    return {"points": points, "next_steps": steps[:3]}
+
+
 def opener_responder(system: str, user: str) -> str:
+    seed = json.loads(_tag(user, "agenda_item") or "{}").get("seed")
+    if seed:  # opener.v2: the ritual greeting is said by code, so the question only
+        return str(seed)
     form = dict(
         line.split(": ", 1) for line in _tag(user, "application_form").splitlines() if ": " in line
     )
@@ -434,6 +709,139 @@ def opener_responder(system: str, user: str) -> str:
         f"Namaste, baithiye. Aap {place} se hain aur {subject} padha hai. Aapke hisaab se "
         f"{subject} ki samajh {place} ki kis ek samasya ko suljhane mein kaise madad kar sakti hai?"
     )
+
+
+# ---------------------------------------------------------------------------
+# Agenda planner (agenda_plan.v2: never names the district or the state)
+# ---------------------------------------------------------------------------
+
+_PLAN_SEEDS: dict[str, dict[str, tuple[str, ...]]] = {
+    "hi-en": {
+        "form_hr": (
+            "{degree} padhne ke baad, aapko civil services kyun sahi raasta laga?",
+            "Agar civil services ka sapna poora na ho, to aap samaj ke liye kaunsa kaam chunenge, "
+            "aur kyun?",
+        ),
+        "home_district": (
+            "Apne zile mein rehkar aapne logon ki kaunsi dikkat kareeb se dekhi, aur use door "
+            "karne ke liye aap kya karenge?",
+            "Agar aap apne zile ke prashasan mein hote, to sabse pehle kis ek cheez ko badalna "
+            "chahenge, aur kyun?",
+            "Apne rajya mein gaon aur shehar ke beech aapko kaunsa antar khatakta hai, aur kyun?",
+        ),
+        "degree": (
+            "{degree} padhte hue aapne kaunsa ek vichar seekha jo aam logon ki zindagi se jud "
+            "sakta hai, aur kaise?",
+            "{degree} ki kaunsi samajh aapko prashasan ke kisi faisle mein kaam aa sakti hai, aur "
+            "kyun?",
+            "Agar aapko {degree} ko kisi gaon ki samasya par lagana ho, to aap kahan se shuru "
+            "karenge, aur kyun?",
+        ),
+        "interests": (
+            "{hobby} ne aapke sochne ki aadat ko kaise badla, aur woh aapke kaam mein kaise "
+            "dikhegi?",
+            "{hobby2} mein aapko kya kathin laga, aur usse aapne dhairya ke baare mein kaise "
+            "seekha?",
+            "{optional} ko optional vishay chunne ke peeche aapka kya vichar tha, aur kyun?",
+        ),
+    },
+    "en": {
+        "form_hr": (
+            "Studying {degree}, why did the civil services feel like the right path for you?",
+            "If the civil services do not work out, which work would you choose for society, and "
+            "why?",
+        ),
+        "home_district": (
+            "Living in your district, which difficulty of ordinary people have you seen up "
+            "close, and what would you do about it?",
+            "If you were in the administration of your district, which one thing would you "
+            "change first, and why?",
+            "Between the villages and the towns of your home state, which gap troubles you, and "
+            "why?",
+        ),
+        "degree": (
+            "While studying {degree}, which one idea did you learn that touches ordinary lives, "
+            "and how?",
+            "Which part of your understanding of {degree} could help in a decision of "
+            "government, and why?",
+            "If you had to apply {degree} to the problem of a village, where would you begin, "
+            "and why?",
+        ),
+        "interests": (
+            "How has {hobby} changed the way you think, and how will that show in your work?",
+            "What did you find hard in {hobby2}, and what did it teach you about patience?",
+            "What was your thinking in choosing {optional} as your optional, and do you still "
+            "agree with it?",
+        ),
+    },
+}
+_PLAN_GENERIC = {
+    "hi-en": {
+        "hobby": "Padhai ke bahar aapka sabse pasandida kaam",
+        "hobby2": "Khaali samay ka aapka koi doosra shauk",
+        "optional": "Aapka optional vishay",
+    },
+    "en": {
+        "hobby": "Your favourite pastime outside studies",
+        "hobby2": "Your other pastime",
+        "optional": "your optional subject",
+    },
+}
+
+
+def agenda_plan_responder(system: str, user: str) -> dict[str, Any]:
+    """A stand-in for Nova's `record_agenda`: the same four lists, phrased from the form's own
+    words. Word lists, not a model: it exists so the planner, the validator and the late-plan paths
+    run offline. A term the form lacks falls back to a plain phrase, and a question that then
+    fails the validator is replaced by its template, as a real plan's would be."""
+    from mockboard.brain.agenda import _term
+
+    form = dict(
+        line.split(": ", 1) for line in _tag(user, "application_form").splitlines() if ": " in line
+    )
+    language = form.get("interview_language")
+    mix = {"english": "en", "hindi": "hi", "tanglish": "ta-en"}.get(language, "hi-en")
+    hobbies = [t for t in (_term(h) for h in form.get("hobbies", "").split(",")) if t]
+    terms = {
+        "place": _term(form.get("district")) or _term(form.get("home_state")) or "aapka ilaaka",
+        "state": _term(form.get("home_state")) or _term(form.get("district")) or "aapka rajya",
+        "degree": _term(form.get("degree_subject")) or "aapka vishay",
+        "hobby": hobbies[0] if hobbies else _PLAN_GENERIC[mix]["hobby"],
+        "hobby2": hobbies[1] if len(hobbies) > 1 else _PLAN_GENERIC[mix]["hobby2"],
+        "optional": _term(form.get("optional_subject")) or _PLAN_GENERIC[mix]["optional"],
+    }
+
+    def fill(text: str) -> str:
+        out = text.format(**terms)
+        return out[0].upper() + out[1:]
+
+    return {
+        f"{segment}_seeds": [fill(t) for t in texts] for segment, texts in _PLAN_SEEDS[mix].items()
+    }
+
+
+# ---------------------------------------------------------------------------
+# Likely-question hints (summary.v1)
+# ---------------------------------------------------------------------------
+
+
+def summary_responder(system: str, user: str) -> dict[str, Any]:
+    """A stand-in for Nova's `record_hints`: one hint per question, taken from the template hints
+    but shifted by one place, so a test can tell the model's hints from the templates' own. Word
+    lists, not a model."""
+    from mockboard.brain.likely_questions import TEMPLATE_HINTS
+
+    rows = json.loads(_tag(user, "questions") or "[]")
+    seen: dict[str, int] = {}
+    hints = []
+    for row in rows:
+        part = row.get("part", "")
+        options = TEMPLATE_HINTS.get(part) or TEMPLATE_HINTS["form_hr"]
+        if part == "form_hr":
+            options = options[:2]  # the third is the work-experience question's own hint
+        k = seen[part] = seen.get(part, -1) + 1
+        hints.append(options[(k + 1) % len(options)])
+    return {"hints": hints}
 
 
 # ---------------------------------------------------------------------------
@@ -679,12 +1087,16 @@ def fake_responders(
     return {
         "listener": listener_responder,
         "librarian": make_librarian_responder(cards, tolerance),
-        "actor": actor_responder,
+        "actor": make_actor_responder(),
         "opener": opener_responder,
+        "plan_agenda": agenda_plan_responder,
+        "summary": summary_responder,
+        "repair": lambda system, user: {"repairs": []},  # offline: no word is claimed misheard
         "judge": judge_responder,
         "judge_debate": debate_judge_responder,
         "motion_screen": motion_screen_responder,
         "case_file": case_file_responder,
+        "partner_summary": partner_summary_responder,
     }
 
 

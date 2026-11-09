@@ -58,8 +58,9 @@ class Balance(StrEnum):
 
 
 class Move(StrEnum):
-    """Every board move. The UPSC board uses the first nine (PLAN_v2_DELTA §7); debate mode
-    adds six (CTO_NOTES_04 §2). Each mode's profile lists the moves its rule table may emit
+    """Every board move. The UPSC board uses the first nine (PLAN_v2_DELTA §7) plus the three
+    panel moves at the end, which only the director emits (CTO_NOTES_06 §7); debate mode adds
+    six (CTO_NOTES_04 §2). Each mode's profile lists the moves its rule table may emit
     (`ModeProfile.allowed_moves`), and a test checks every table against its own set."""
 
     probe = "probe"
@@ -78,6 +79,10 @@ class Move(StrEnum):
     cross_question = "cross_question"
     concede_point = "concede_point"
     redirect = "redirect"
+    # Panel director only (`brain/director.py`).
+    repeat_question = "repeat_question"
+    rephrase_question = "rephrase_question"
+    next_question = "next_question"
 
 
 class PointStrength(StrEnum):
@@ -241,6 +246,13 @@ class Analysis(_Model):
     concedes_point: bool = False  # the user grants one of the opponent's points
     point_strength: PointStrength | None = None
     off_limits: bool = False  # parties, leaders, elections, or attacks on groups
+    # Panel mode only (P5, CTO_NOTES_06 §3): what the panel listener heard the candidate ask of the
+    # board, one of `tools.CANDIDATE_REQUESTS`. A vote, never a decision: the director weighs it.
+    candidate_request: str = "none"
+    # True when any segment of the turn got no analysis (a merged turn is `is_fallback` only when
+    # all did). A listener that failed on a segment has not said "none" about it, so the weak-
+    # pattern veto must not count its silence (Ruling 56).
+    any_fallback: bool = False
 
     @property
     def is_strong(self) -> bool:
@@ -364,6 +376,14 @@ class Persona(_Model):
     voice_candidates: list[str] = Field(default_factory=list)
     language: str = "hi-en"
     style: str
+    # The member's field, in plain words, for the panel actor's agenda item (CTO_NOTES_06 §6).
+    # Empty for the old UPSC board and debate personas; `render_persona_pack` does not print it.
+    domain: str = ""
+    # How this member holds the room (actor.v7). Empty on the old board and on debate.
+    # quiet: few words, view stays hidden. pressing: one consequence, then stop.
+    # personal: what this means for the candidate. steady: the district, nothing else.
+    # chair: open, hand over, close. Does not ask a member's question.
+    manner: str = ""
     # Short acknowledgements for the voice loop's masking filler (played if the actor's first
     # sentence is late). Not used in text mode yet.
     filler_lines: list[str] = Field(default_factory=list)
@@ -371,6 +391,14 @@ class Persona(_Model):
     # fails or misses its budget ("Ek minute... aap apni baat jaari rakhiye"). Data, so they
     # can be synthesised once and cached as audio.
     fallback_lines: list[str] = Field(default_factory=list)
+
+    @field_validator("manner")
+    @classmethod
+    def _manner(cls, v: str) -> str:
+        allowed = {"", "quiet", "pressing", "personal", "steady", "chair"}
+        if v not in allowed:
+            raise ValueError(f"manner must be one of {sorted(allowed)}")
+        return v
 
 
 class CandidateForm(_Model):
@@ -386,7 +414,9 @@ class CandidateForm(_Model):
     hobbies: list[str] = Field(default_factory=list, max_length=3)
     optional_subject: str | None = Field(default=None, max_length=80)
     work_experience: str | None = Field(default=None, max_length=200)
-    interview_language: str = Field(default="hinglish", pattern=r"^(hinglish|hindi|english)$")
+    interview_language: str = Field(
+        default="hinglish", pattern=r"^(hinglish|hindi|english|tanglish)$"
+    )
 
     @field_validator("hobbies")
     @classmethod
@@ -408,6 +438,65 @@ class CandidateForm(_Model):
             lines.append(f"work_experience: {self.work_experience}")
         lines.append(f"interview_language: {self.interview_language}")
         return "\n".join(lines)
+
+
+class AgendaSeed(_Model):
+    """One open-ended question a member can open from (CTO_NOTES_06 §4). `must_ask` marks the
+    DM/SP situation, which must be asked once unless a request or wrap-up says otherwise."""
+
+    text: str = Field(min_length=1)
+    must_ask: bool = False
+
+
+class AgendaSegment(_Model):
+    """One part of the panel. Named `AgendaSegment` because `Segment` already means a transcript
+    segment in this module (CTO_NOTES_09 §9 calls this type `Segment`).
+
+    `budget` is data on purpose: a capped session passes smaller budgets (Rulings 47, 49), so no
+    code may assume the design's numbers. `aliases` are other spoken forms of the topic, in any
+    script, for the cross-script avoid list (P4); missing aliases are allowed.
+    """
+
+    id: str = Field(min_length=1)
+    member: str = Field(min_length=1)  # persona id
+    title: str = Field(min_length=1)
+    budget: int = Field(ge=1)  # questions, before the panel moves on
+    seeds: list[AgendaSeed] = Field(min_length=1)
+    aliases: tuple[str, ...] = Field(default=(), max_length=5)
+
+
+class Agenda(_Model):
+    """The ordered panel for one session. Stored in order, and replaced whole.
+
+    One segment is legal (the replay agenda of CTO_NOTES_06 §8), so this type does not insist on
+    five. `brain/agenda.py` holds the content rules.
+    """
+
+    segments: list[AgendaSegment] = Field(min_length=1)
+    source: Literal["template", "nova"] = "template"
+
+    @field_validator("segments")
+    @classmethod
+    def _unique_ids(cls, v: list[AgendaSegment]) -> list[AgendaSegment]:
+        ids = [s.id for s in v]
+        if len(ids) != len(set(ids)):
+            raise ValueError("duplicate segment id in agenda")
+        return v
+
+    @property
+    def topics(self) -> list[str]:
+        """The value for `SessionState.topics`: segment ids, in order."""
+        return [s.id for s in self.segments]
+
+    @property
+    def total_budget(self) -> int:
+        return sum(s.budget for s in self.segments)
+
+    def segment(self, segment_id: str) -> AgendaSegment:
+        for segment in self.segments:
+            if segment.id == segment_id:
+                return segment
+        raise KeyError(segment_id)
 
 
 class BoardLine(_Model):
@@ -441,6 +530,166 @@ class SessionState(_Model):
     @property
     def topic(self) -> str:
         return self.topics[min(self.topic_index, len(self.topics) - 1)]
+
+
+# ---------------------------------------------------------------------------
+# Panel director (`brain/director.py`). These live here so `_serde_types` allow-lists them.
+# ---------------------------------------------------------------------------
+
+# Requests and transcription faults a session forgives before they count as answers
+# (Ruling 61, CTO_NOTES_12 §9.3). 0 gives the strict reading of "messages", with no other change.
+PANEL_FREE_TURNS = 4
+
+CloseReason = Literal["agenda", "end_request", "time", "answers", "ceiling"]
+DirectorNode = Literal["handle_request", "handoff", "next_question", "close"]
+
+
+class PrefacePart(_Model):
+    """One fixed line and who says it. A preface can have two speakers (CTO_NOTES_14 §7.6)."""
+
+    member: str  # persona id
+    text: str
+    # The fixed-line table this text came from (`panel_lines.LineSet.id`), so a fold can count how
+    # often each table has been used and pick the next wording (Ruling 73 item 3). "" for any text
+    # that is not from a table, a question for instance.
+    kind: str = ""
+
+
+class TurnNote(_Model):
+    """One answered question, for the panel's memory. `gist` comes from the listener's English
+    stance and reasons, never from raw text, and is empty for a fallback (CTO_NOTES_06 §5)."""
+
+    segment_id: str
+    member: str
+    question: str
+    gist: str = ""
+
+
+class PanelRequest(_Model):
+    """One detected candidate request, for the session report (Ruling 51)."""
+
+    turn_id: str
+    kind: str
+    source: str
+    pattern_id: str = ""
+    avoid_terms: tuple[str, ...] = ()
+
+
+class PanelMemory(_Model):
+    """What the director remembers. Changes only when a finished turn is folded, so re-deciding
+    a reopened turn cannot move any of it (Ruling 31, CTO_NOTES_06 §2)."""
+
+    asked_seeds: dict[str, list[int]] = Field(default_factory=dict)  # segment id -> seed indexes
+    last_question: str = ""  # the question itself: no preface, ack, repeat prefix or fallback
+    pending_end: bool = False  # the board has asked "end here?" (Ruling 52)
+    probes_on_seed: int = 0  # R8 probes since the last seed was asked
+    # R1 "please say that again" on this question. A second unclear hearing asks the next
+    # question instead of another repeat. Any other folded turn resets it.
+    unclear_hearings: int = 0
+    # As spoken and unfiltered. P4 applies CTO_NOTES_09 §9 before any of it reaches a prompt.
+    avoid_terms: list[str] = Field(default_factory=list)
+    notes: list[TurnNote] = Field(default_factory=list)
+    committed_turns: list[str] = Field(default_factory=list)  # what makes the fold idempotent
+    # How often each fixed-line table has been used (`PrefacePart.kind`), counted when a turn is
+    # folded. The next use takes wording number `uses % len(variants)`, so no table repeats a
+    # wording back to back. `line_uses["handoff"] == 0` means the first hand-off is still to come.
+    line_uses: dict[str, int] = Field(default_factory=dict)
+
+
+class PanelContext(_Model):
+    """What the actor needs to know about the agenda for this line."""
+
+    segment_id: str
+    segment_title: str
+    member: str
+    seed: str | None = None
+    avoid_terms: tuple[str, ...] = ()
+    # True on the first hand-off of the session only: the one place a member says "Namaste" to the
+    # candidate (Ruling 73 item 4). Every later hand-off is a plain thanks.
+    first_handoff: bool = False
+
+
+class PanelSettings(_Model):
+    """One session's fixed facts for the director. `names` holds `persona.name` by persona id."""
+
+    chairman: str
+    names: dict[str, str]
+    mix: str = "hi-en"
+    max_answers: int | None = None
+    free_turns: int = Field(default=PANEL_FREE_TURNS, ge=0)
+
+
+class DirectorTurn(_Model):
+    """The per-invoke input. Counters come from the session side; only `hooks.apply` moves them."""
+
+    ctx: StrategyContext
+    base_move: BoardMove
+    analysis: Analysis
+    raw_text: str = ""  # the turn's joined transcript, punctuation kept (CTO_NOTES_11 §8)
+    answers_used: int = 0
+    free_used: int = 0
+    wrap_up_due: bool = False
+
+
+class TurnUnderstanding(_Model):
+    """What this turn is and what it costs, before any plan is built."""
+
+    node: DirectorNode
+    request_kind: str | None = None
+    request_source: str = "none"
+    request_pattern: str = ""
+    avoid_terms: tuple[str, ...] = ()
+    free_kind: str | None = None  # why this turn may be free, whether or not one is left
+    counted: bool = False
+    free: bool = False
+    close_reason: CloseReason | None = None
+    change_is_weak: bool = False  # a rule hit was one of the seven weak patterns (Ruling 56)
+    request_disagree: bool = False  # a healthy listener said something else than the rules
+
+
+class PanelDecision(_Model):
+    """The director's output for one turn. Applying it is the session side's job."""
+
+    turn_id: str
+    move: BoardMove
+    node: str  # the graph node that planned it, or "base" for the last-resort fallback
+    # Fixed lines spoken before the question, in order.
+    preface: tuple[PrefacePart, ...] = ()
+    repeat_text: str | None = None  # said verbatim, with no model call
+    seed: str | None = None  # the seed this line asks
+    seed_segment: str | None = None
+    seed_index: int | None = None
+    # True when the preface and `repeat_text` are the whole line, so the actor must not speak.
+    line_complete: bool = False
+    panel: PanelContext
+    answered_segment: str
+    answered_member: str
+    counted: bool = False  # `hooks.apply` adds these, never `decide_turn` (CTO_NOTES_12 §9.5)
+    free: bool = False
+    close_reason: CloseReason | None = None
+    finished: bool = False
+    pending_end: bool = False  # the value after this turn
+    # The candidate asked for a moment to think: the next turn is a long one (think_time).
+    thinking: bool = False
+    request_kind: str | None = None
+    request_source: str = "none"
+    request_pattern: str = ""
+    request_disagree: bool = False  # trace only (CTO_NOTES_06 §3, Ruling 53)
+    avoid_terms: tuple[str, ...] = ()
+    director_error: str | None = None
+
+
+class CompletedTurn(_Model):
+    """A turn `hooks.apply` really finished, queued for the next invoke to fold."""
+
+    analysis: Analysis
+    decision: PanelDecision
+    # The question the board actually put after this turn. None for a fixed line or a fallback
+    # line, so `repeat` can never replay one.
+    asked: str | None = None
+    # The turn's joined transcript, used only to keep a copied run of it out of the memory note
+    # (`director.copies_speech`). It is never written into a note.
+    raw: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -487,6 +736,60 @@ class ComposureMoment(_Model):
     note: str
 
 
+class MemberReport(_Model):
+    """One panel member's block in the session report (P10, WEB_REQUESTS.md). Built by code."""
+
+    name: str
+    segment: str = ""
+    notes: str = ""
+    questions: list[str] = Field(default_factory=list)
+    weakest_question: str = ""
+    outline: list[str] = Field(default_factory=list)
+    evidence: list[str] = Field(default_factory=list)
+
+
+class WeakestMoment(_Model):
+    """The turn chosen as weakest, by code, never by the model (CTO_NOTES_06 §8)."""
+
+    turn_id: str
+    segment: str
+    member: str = ""
+    question: str
+    answer: str = ""
+    outline: list[str] = Field(default_factory=list)
+    score: int = 0
+
+
+class HeardTurn(_Model):
+    """One answer as the board heard it: the transcript, the listener's note and what came next.
+
+    Built by code from the session state (`report_panel.heard_turns`), never by the judge. It lets
+    the candidate see a misrecognition or a misunderstanding instead of guessing at it."""
+
+    turn_id: str
+    member: str = ""
+    question: str = ""
+    said: str = ""  # the speech-to-text transcript, trimmed
+    understood: str = ""  # the listener's own-words note, English; empty when there is none
+    status: str = "answer"  # answer | request | unclear | silence | not_analysed | honest_unknown
+    request: str = ""  # plain words, e.g. "change the topic"; empty when none
+    request_source: str = ""  # plain words, e.g. "the board's rules"
+    next_step: str = ""  # what the board did next, in plain words
+    # Likely-misheard words, as {"heard", "likely"}: shown beside the transcript, never applied.
+    likely: list[dict[str, str]] = Field(default_factory=list)
+
+
+class PracticeCompare(_Model):
+    """Text-only replay comparison (Ruling 48). No audio."""
+
+    before_words: int
+    after_words: int
+    before_balance: str = ""
+    after_balance: str = ""
+    after_reasons: list[str] = Field(default_factory=list)
+    word_gain: int = 0
+
+
 class SessionReport(_Model):
     session_id: str
     created_at: str = Field(default_factory=lambda: datetime.now(UTC).isoformat())
@@ -503,6 +806,18 @@ class SessionReport(_Model):
     notes: list[str] = Field(default_factory=list)
     feature_flags: dict[str, bool] = Field(default_factory=dict)
     prompt_versions: dict[str, int] = Field(default_factory=dict)
+    # The panel's detected candidate requests and how each was found (Ruling 51). Empty for the
+    # old board, so its report is unchanged.
+    requests: list[PanelRequest] = Field(default_factory=list)
+    # P10: empty defaults keep debate and fallback reports in the old shape.
+    by_member: list[MemberReport] = Field(default_factory=list)
+    weakest: WeakestMoment | None = None
+    practice_plan: list[str] = Field(default_factory=list)
+    form: CandidateForm | None = None
+    # The members' closing talk, built from their notes and the plan. Empty for debate.
+    discussion: list[str] = Field(default_factory=list)
+    # How the board heard each answer (transcript, listener note, next step). Empty for debate.
+    heard: list[HeardTurn] = Field(default_factory=list)
 
     @field_validator("scores")
     @classmethod

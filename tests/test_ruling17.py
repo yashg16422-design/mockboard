@@ -131,9 +131,8 @@ async def test_session_speak_filler_played_gives_the_template_and_traces_it(deps
     llm = make_fake_llm(deps.cards)
     session = new_session(deps, form, tmp_path, llm, "r17a")
     await session.open()
-    await voice_turn(session, "Kanpur mein repair shops bahut hain. Training kam hai.")
-    llm.push("actor", LLMTransientError("throttled"))
-    out = await voice_turn(session, "Tourism se rozgaar badhta hai, lekin pollution bhi.",
+    llm.push("actor", LLMTransientError("throttled"))  # the first answer's line fails
+    out = await voice_turn(session, "Kanpur mein repair shops bahut hain. Training kam hai.",
                            filler_played=True)
     assert out.move.move not in (Move.move_on, Move.fact_challenge)
     assert out.line.text.endswith(FILLER_TEMPLATES[out.move.move])
@@ -142,7 +141,7 @@ async def test_session_speak_filler_played_gives_the_template_and_traces_it(deps
     assert out.trace["filler_played"] is True
     assert out.trace["actor_fallback_kind"] == "move_template"
     # The flag belongs to one turn: the next turn starts without it.
-    after = await voice_turn(session, "Homestays se gaon ki aamdani badh sakti hai.")
+    after = await voice_turn(session, "Tourism se rozgaar badhta hai, lekin pollution bhi.")
     assert after.trace["filler_played"] is False and not after.trace["actor_fallback"]
     await session.finish()
 
@@ -151,14 +150,13 @@ async def test_mark_filler_played_during_speak_is_honoured(deps, form, tmp_path)
     llm = make_fake_llm(deps.cards)
     session = new_session(deps, form, tmp_path, llm, "r17b")
     await session.open()
-    await voice_turn(session, "Kanpur mein repair shops bahut hain. Training kam hai.")
 
     def filler_then_fail(system: str, user: str):
         session.mark_filler_played()  # Pipecat's masking filler starts mid-call
         raise LLMTransientError("throttled")
 
     llm.push("actor", filler_then_fail)
-    out = await voice_turn(session, "Tourism se rozgaar badhta hai, lekin pollution bhi.")
+    out = await voice_turn(session, "Kanpur mein repair shops bahut hain. Training kam hai.")
     assert out.trace["filler_played"] is True
     assert out.line.text.endswith(FILLER_TEMPLATES[out.move.move])
     await session.finish()

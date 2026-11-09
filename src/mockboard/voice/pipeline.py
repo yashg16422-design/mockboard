@@ -88,13 +88,15 @@ def build_voice_pipeline(
     on_listen=None,
     autostart: bool = True,
     mic_recorder: FrameProcessor | None = None,
+    voice_for=None,
 ) -> VoicePipeline:
     brain_ref: list[BrainProcessor] = []
     vad, user_turn, start, stop, tuner = build_turn_taking(settings, session, brain_ref)
+    wrap_up_s, hard_stop_s = session.time_limits()
     brain = BrainProcessor(
         session, stt=stt, ledger=ledger, tuner=tuner, report_dir=report_dir,
-        session_max_s=settings.voice_session_max_s, on_report=on_report, on_listen=on_listen,
-        autostart=autostart,
+        session_max_s=hard_stop_s, wrap_up_s=wrap_up_s, on_report=on_report, on_listen=on_listen,
+        autostart=autostart, voice_for=voice_for,
         tts_idle_cap_s=settings.tts_first_byte_timeout_s * 2 + 3,
     )
     brain_ref.append(brain)

@@ -7,7 +7,7 @@ A unit test checks that every schema and its model agree on field names.
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -95,6 +95,46 @@ LISTENER_TOOL = ToolSpec(
             "concedes_error",
             "garbled",
         ],
+    },
+)
+
+
+# Panel listener (P5, CTO_NOTES_06 §3): the UPSC fields plus the candidate's request to the board,
+# as the model heard it. A separate tool and model, so `LISTENER_TOOL` (which the debate tool
+# spreads) is not touched. The code decides what the vote is worth (`brain/director.py`).
+
+CANDIDATE_REQUESTS = ("none", "change_topic", "repeat", "clarify_question", "skip", "end")
+
+
+class PanelListenerOutput(ListenerOutput):
+    candidate_request: str = "none"
+
+    @field_validator("candidate_request", mode="before")
+    @classmethod
+    def _known_request(cls, v: object) -> str:
+        """An unknown or odd value is no request, never an error: a request must be one of the five
+        kinds the director knows, and everything else is `none`."""
+        word = v.strip().lower().replace("-", "_").replace(" ", "_") if isinstance(v, str) else ""
+        return word if word in CANDIDATE_REQUESTS else "none"
+
+
+PANEL_LISTENER_TOOL = ToolSpec(
+    name="record_panel_analysis",
+    description=(
+        "Record the structured analysis of one segment of the candidate's answer, and whether "
+        "the candidate is asking the board to do something."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            **LISTENER_TOOL.input_schema["properties"],
+            "candidate_request": {
+                "type": "string",
+                "enum": list(CANDIDATE_REQUESTS),
+                "description": "What the candidate asks the board to do, or 'none'.",
+            },
+        },
+        "required": [*LISTENER_TOOL.input_schema["required"], "candidate_request"],
     },
 )
 
@@ -429,6 +469,139 @@ DEBATE_JUDGE_TOOL = ToolSpec(
 )
 
 # ---------------------------------------------------------------------------
+# Panel agenda planning (P6, CTO_NOTES_12 §7, §8)
+# ---------------------------------------------------------------------------
+
+# The segments Nova may write questions for. `current_affairs` is not among them (CTO_NOTES_12
+# §8: the candidate chooses that issue, and Nova's knowledge may be stale), and a Hindi interview
+# is not planned at all. Flat on purpose: one list of strings per segment, no nesting.
+PLANNED_SEGMENTS = ("form_hr", "home_district", "degree", "interests")
+
+
+class AgendaOutput(_ToolModel):
+    form_hr_seeds: list[str] = Field(default_factory=list)
+    home_district_seeds: list[str] = Field(default_factory=list)
+    degree_seeds: list[str] = Field(default_factory=list)
+    interests_seeds: list[str] = Field(default_factory=list)
+
+    @field_validator("*", mode="before")
+    @classmethod
+    def _lists_of_text(cls, v: object) -> list[str]:
+        """Anything but a list of strings is an empty list: the segment then keeps its template
+        questions. (A wrong type is the model's slip, not a reason to stop the interview.)"""
+        if not isinstance(v, list):
+            return []
+        return [x for x in v if isinstance(x, str)]
+
+    def seeds_for(self, segment_id: str) -> list[str]:
+        return list(getattr(self, f"{segment_id}_seeds"))
+
+
+AGENDA_TOOL = ToolSpec(
+    name="record_agenda",
+    description=(
+        "Record the interview questions for four parts of a mock UPSC interview, written from "
+        "the candidate's application form."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            f"{segment}_seeds": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "One open-ended question each, in the order to ask them.",
+            }
+            for segment in PLANNED_SEGMENTS
+        },
+        "required": [f"{segment}_seeds" for segment in PLANNED_SEGMENTS],
+    },
+)
+
+
+# ---------------------------------------------------------------------------
+# Likely questions: one short hint per question (P9, `summary.v1`)
+# ---------------------------------------------------------------------------
+
+
+class HintsOutput(_ToolModel):
+    """One hint per question, in the order the questions were given. Anything but a list of
+    strings is an empty list, and a missing or unfit hint is replaced by its template hint."""
+
+    hints: list[str] = Field(default_factory=list)
+
+    @field_validator("hints", mode="before")
+    @classmethod
+    def _list_of_text(cls, v: object) -> list[str]:
+        if not isinstance(v, list):
+            return []
+        return [x if isinstance(x, str) else "" for x in v]
+
+
+HINTS_TOOL = ToolSpec(
+    name="record_hints",
+    description=(
+        "Record one short hint for each practice question, in the same order: how to organise the "
+        "answer, never a fact."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "hints": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "One sentence per question, in the order the questions were given.",
+            },
+        },
+        "required": ["hints"],
+    },
+)
+
+class RepairPair(_ToolModel):
+    answer: int = 0
+    heard: str = ""
+    likely: str = ""
+    why: str = ""
+
+
+class RepairsOutput(_ToolModel):
+    """Likely mis-hearings (repair.v1). Anything malformed is dropped; code checks each pair."""
+
+    repairs: list[RepairPair] = Field(default_factory=list)
+
+    @field_validator("repairs", mode="before")
+    @classmethod
+    def _list_only(cls, v: Any) -> Any:
+        return v if isinstance(v, list) else []
+
+
+REPAIR_TOOL = ToolSpec(
+    name="record_repairs",
+    description=(
+        "Record words the speech recogniser most likely misheard, each with the word the "
+        "candidate most likely said. An empty list when nothing is clearly misheard."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "repairs": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "answer": {"type": "integer", "description": "The answer's number."},
+                        "heard": {"type": "string", "description": "Copied exactly from it."},
+                        "likely": {"type": "string", "description": "What was most likely said."},
+                        "why": {"type": "string", "description": "Twelve words at most."},
+                    },
+                    "required": ["answer", "heard", "likely"],
+                },
+            },
+        },
+        "required": ["repairs"],
+    },
+)
+
+# ---------------------------------------------------------------------------
 # Debate mode: motion screen and custom case file (CTO_NOTES_04 §5, §2)
 # ---------------------------------------------------------------------------
 
@@ -503,12 +676,97 @@ CASE_FILE_TOOL = ToolSpec(
     },
 )
 
+# ---------------------------------------------------------------------------
+# Study partner: the notes at the end ("Your points, made stronger", partner_summary.v1)
+# ---------------------------------------------------------------------------
+
+
+class PartnerSummaryPoint(_ToolModel):
+    point: str = ""
+    reason: str = ""
+    example: str = ""
+    counterpoint: str = ""
+    answer: str = ""
+    open: str = ""
+
+    @field_validator("*", mode="before")
+    @classmethod
+    def _text(cls, v: object) -> str:
+        return v.strip() if isinstance(v, str) else ""
+
+
+class PartnerSummaryOutput(_ToolModel):
+    """The speaker's points in their own words. Anything malformed becomes empty; code checks
+    every quote against the transcript (`modes/partner/report.py`)."""
+
+    points: list[PartnerSummaryPoint] = Field(default_factory=list)
+    next_steps: list[str] = Field(default_factory=list)
+
+    @field_validator("points", mode="before")
+    @classmethod
+    def _points(cls, v: object) -> list:
+        if not isinstance(v, list):
+            return []
+        return [x for x in v if isinstance(x, dict | PartnerSummaryPoint)]
+
+    @field_validator("next_steps", mode="before")
+    @classmethod
+    def _steps(cls, v: object) -> list[str]:
+        return [x for x in v if isinstance(x, str)] if isinstance(v, list) else []
+
+
+_QUOTE = "Copied exactly from the speaker's own words in <session_turns>, or empty."
+PARTNER_SUMMARY_TOOL = ToolSpec(
+    name="record_partner_notes",
+    description=(
+        "Record the speaker's points from a study conversation, each in their own words, and up "
+        "to three practice suggestions. No scores or grades."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "points": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "point": {"type": "string", "description": _QUOTE},
+                        "reason": {"type": "string", "description": _QUOTE},
+                        "example": {"type": "string", "description": _QUOTE},
+                        "counterpoint": {
+                            "type": "string",
+                            "description": "Copied exactly from Mitra's line in <partner_lines>, "
+                            "or empty.",
+                        },
+                        "answer": {"type": "string", "description": _QUOTE},
+                        "open": {
+                            "type": "string",
+                            "description": "What is still open on this point, one short line.",
+                        },
+                    },
+                    "required": ["point", "reason", "example", "counterpoint", "answer", "open"],
+                },
+            },
+            "next_steps": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "At most three practice suggestions, one sentence each.",
+            },
+        },
+        "required": ["points", "next_steps"],
+    },
+)
+
 ALL_TOOLS: dict[str, tuple[ToolSpec, type[BaseModel]]] = {
     "listener": (LISTENER_TOOL, ListenerOutput),
+    "listener_panel": (PANEL_LISTENER_TOOL, PanelListenerOutput),
+    "agenda_plan": (AGENDA_TOOL, AgendaOutput),
+    "summary": (HINTS_TOOL, HintsOutput),
     "listener_debate": (DEBATE_LISTENER_TOOL, DebateListenerOutput),
     "librarian": (LIBRARIAN_TOOL, LibrarianOutput),
     "judge": (JUDGE_TOOL, JudgeOutput),
     "judge_debate": (DEBATE_JUDGE_TOOL, DebateJudgeOutput),
     "motion_screen": (MOTION_SCREEN_TOOL, MotionScreenOutput),
     "case_file": (CASE_FILE_TOOL, CaseFileOutput),
+    "partner_summary": (PARTNER_SUMMARY_TOOL, PartnerSummaryOutput),
 }

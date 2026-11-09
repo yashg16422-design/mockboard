@@ -18,12 +18,24 @@ from botocore.exceptions import ClientError, ReadTimeoutError
 
 from mockboard.brain.cards import CardSet
 from mockboard.brain.fake_responders import fake_responders
-from mockboard.brain.tools import JUDGE_TOOL, LIBRARIAN_TOOL, LISTENER_TOOL
+from mockboard.brain.tools import (
+    AGENDA_TOOL,
+    JUDGE_TOOL,
+    LIBRARIAN_TOOL,
+    LISTENER_TOOL,
+    PANEL_LISTENER_TOOL,
+    PARTNER_SUMMARY_TOOL,
+    REPAIR_TOOL,
+)
 
 TOOL_TO_CALL = {
     LISTENER_TOOL.name: "listener",
+    PANEL_LISTENER_TOOL.name: "listener",
+    AGENDA_TOOL.name: "plan_agenda",
     LIBRARIAN_TOOL.name: "librarian",
     JUDGE_TOOL.name: "judge",
+    REPAIR_TOOL.name: "repair",  # likely-misheard words, once at the report (repair.v1)
+    PARTNER_SUMMARY_TOOL.name: "partner_summary",  # the study partner's notes (partner_summary.v1)
 }
 MIDSTREAM = "midstream-throttle"  # a fault value: the stream starts, then Bedrock throttles
 
@@ -121,7 +133,8 @@ class FakeBedrockRuntime:
 
     def converse_stream(self, **request: Any) -> dict[str, Any]:
         system, user = self._texts(request)
-        name = "opener" if "Say the opening line now." in user else "actor"
+        opening = "Say the opening line now." in user or "Say the opening question now." in user
+        name = "opener" if opening else "actor"
         call, fault = self._begin(name, user)
         if isinstance(fault, BaseException):
             call.end = time.monotonic()

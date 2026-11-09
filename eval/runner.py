@@ -65,13 +65,13 @@ def pick_cards(
     """`auto` uses data/cards when it covers every card id the items cite, else the built-in
     synthetic set if that covers them (the shipped examples cite built-in cards)."""
     if mode == "builtin":
-        return builtin_test_cards(settings.topics), "builtin-test-cards"
+        return builtin_test_cards(), "builtin-test-cards"
     if mode == "data":
-        return load_cards(settings.cards_dir, settings.topics), f"data:{settings.cards_dir}"
-    cards, origin = load_cards_or_builtin(settings.cards_dir, settings.topics)
+        return load_cards(settings.cards_dir), f"data:{settings.cards_dir}"
+    cards, origin = load_cards_or_builtin(settings.cards_dir)
     cited = {c.card_id for i in items or [] for c in i.expected_claims if c.card_id}
     if cited - set(cards.cards):
-        builtin = builtin_test_cards(settings.topics)
+        builtin = builtin_test_cards()
         if not cited - set(builtin.cards):
             return builtin, "builtin-test-cards (auto: items cite built-in cards)"
         raise ValueError(f"items cite unknown card ids: {sorted(cited - set(cards.cards))}")

@@ -48,7 +48,7 @@ import time
 import zlib
 from collections.abc import AsyncIterator, Callable
 from contextvars import ContextVar
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 
 from mockboard.brain.cards import CardSet
 from mockboard.brain.llm import LLMClient, LLMError, LLMThrottledError, PromptBlock
@@ -111,6 +111,7 @@ ACKNOWLEDGE_LINES: dict[str, str] = {
     "hi-en": "Theek hai, yeh maanna achhi baat hai.",
     "en": "Fair enough, it is good that you say so.",
     "hi": "ठीक है, यह मानना अच्छी बात है।",
+    "ta-en": "சரி, இதை ஒப்புக்கொண்டது நல்லது.",
 }
 
 
@@ -121,7 +122,20 @@ def language_mix(persona: Persona, form: CandidateForm) -> str:
         return "en"
     if form.interview_language == "hindi":
         return "hi"
+    if form.interview_language == "tanglish":
+        return "ta-en"
     return persona.language if persona.language in ACKNOWLEDGE_LINES else "hi-en"
+
+
+# Output tokens per word are far higher in Tamil and Devanagari script than in Latin script. With
+# the Latin-sized budget a Tamil line was cut mid-word on a real Nova sitting (Nov 6): "... அப்படி
+# என்ற". The word cap still sets the length; this only lets a line of that length finish.
+TOKEN_SCALE_BY_MIX = {"ta-en": 4, "hi": 3}
+
+
+def token_budget(max_tokens: int, mix: str) -> int:
+    """The actor's output-token budget for a line in this language mix."""
+    return max_tokens * TOKEN_SCALE_BY_MIX.get(mix, 1)
 
 
 def preface_text(move: BoardMove, mix: str) -> str:
@@ -207,6 +221,8 @@ async def _gated(words: AsyncIterator[str], gate: SentenceGate) -> AsyncIterator
             while (m := _SENTENCE_BREAK.search(buf)) is not None:
                 sentence, buf = buf[: m.end()], buf[m.end():]
                 if not gate.ok(sentence.strip()):
+                    if gate.stopped is None:  # dropped, not stopped (`skip_quotes`)
+                        continue
                     return
                 ACTOR_TEXT_SINK.reset(token)
                 _to_sink(sentence)
@@ -296,6 +312,11 @@ class SentenceGate:
     check_quotes: bool = True
     stopped: str | None = None
     reason: str = ""
+    # The study partner: a sentence that copies the speaker is dropped and the line goes on, so
+    # Mitra's own question survives a restatement that leaned on their words (Nov 9: 3 of 8
+    # real partner lines were lost to the stop). A quiz question still stops the line.
+    skip_quotes: bool = False
+    skipped: list[str] = field(default_factory=list)
 
     def ok(self, sentence: str) -> bool:
         if self.stopped is not None:
@@ -303,6 +324,10 @@ class SentenceGate:
         if quiz_question(sentence):
             self.stopped, self.reason = sentence, "quiz_question"
         elif self.check_quotes and quotes_answer(sentence, self.answer):
+            if self.skip_quotes:
+                self.skipped.append(sentence)
+                self.reason = "quotes_answer"
+                return False
             self.stopped, self.reason = sentence, "quotes_answer"
         return self.stopped is None
 
@@ -366,6 +391,14 @@ def persona_fallback_line(persona: Persona, turn_id: str) -> str:
     return lines[zlib.crc32(turn_id.encode("utf-8")) % len(lines)]
 
 
+def _mixed_filler(move: Move, mix: str) -> str:
+    """Hinglish keeps FILLER_TEMPLATES (what the debate and old board always said); other mixes
+    use their own language."""
+    if mix in ("en", "hi", "ta-en"):
+        return filler_for(move, mix)
+    return FILLER_TEMPLATES.get(move, FILLER_TEMPLATES[Move.probe])
+
+
 def actor_fallback(
     move: BoardMove,
     persona: Persona,
@@ -386,10 +419,10 @@ def actor_fallback(
     if move.move == Move.fact_challenge and claim and card:
         text, kind = fact_challenge_template(claim, card, mix), "challenge_template"
     elif move.move == Move.move_on:
-        text, kind = FILLER_TEMPLATES[Move.move_on], "move_template"
-    elif filler_played:
-        text = FILLER_TEMPLATES.get(move.move, FILLER_TEMPLATES[Move.probe])
-        kind = "move_template"
+        text, kind = _mixed_filler(Move.move_on, mix), "move_template"
+    elif filler_played or mix in ("en", "hi", "ta-en"):
+        # The persona's cached lines are Hinglish: another language hears its own template.
+        text, kind = _mixed_filler(move.move, mix), "move_template"
     else:
         text, kind = persona_fallback_line(persona, turn_id), "persona_line"
     return LineResult(text, is_fallback=True, guard=guard, fallback_kind=kind, error=error)
@@ -471,6 +504,12 @@ def fact_challenge_template(claim: Claim, card: FactCard, mix: str = "hi-en") ->
 
 def opener_template(form: CandidateForm) -> str:
     place = form.district or form.home_state
+    if form.interview_language == "tanglish":
+        return (
+            f"வணக்கம், அமருங்கள். நீங்கள் {place} பகுதியைச் சேர்ந்தவர்; "
+            f"{form.degree_subject} படித்திருக்கிறீர்கள். "
+            "உங்கள் பகுதியில் நீங்கள் நெருக்கமாகக் கவனித்த ஒரு பிரச்சினை என்ன, அதை எப்படி தீர்ப்பீர்கள்?"
+        )
     return (
         f"Namaste, baithiye. Aap {place} se hain aur {form.degree_subject} padha hai. "
         f"Wahan rehte hue aapne kaunsi ek samasya dekhi, aur use kaise suljhayenge?"
@@ -489,6 +528,63 @@ FILLER_TEMPLATES: dict[Move, str] = {
     Move.clarify: "Maaf kijiye, main theek se sun nahi paaya. Kya aap phir se bata sakte hain?",
     Move.interrupt: "Ek minute, main beech mein rokta hoon. Seedhe mukhya baat par aaiye.",
 }
+_TAMIL_FILLERS = {
+    Move.probe: "சரி. இதில் உங்களுக்கு முக்கியமாகத் தோன்றுவது என்ன?",
+    Move.counter: "மறுபக்கத்தையும் பார்க்கும்போது, அதற்கு உங்கள் பதில் என்ன?",
+    Move.steelman: "மறுபக்கத்தின் வலுவான கருத்தை நீங்கள் எப்படி விளக்குவீர்கள்?",
+    Move.pressure: "உங்கள் கருத்தைத் தெளிவாக்கும் ஒரு உதாரணம் சொல்ல முடியுமா?",
+    Move.reassure: "பரவாயில்லை, நிதானமாக யோசிக்கலாம். எளிய இடத்திலிருந்து தொடங்குங்கள்.",
+    Move.move_on: "சரி, நன்றி. இப்போது அடுத்த தலைப்புக்குச் செல்வோம்.",
+    Move.clarify: "மன்னிக்கவும், தெளிவாகக் கேட்கவில்லை. மீண்டும் சொல்ல முடியுமா?",
+    Move.interrupt: "ஒரு நிமிடம், முக்கியமான கருத்துக்கு நேராக வர முடியுமா?",
+}
+for _move, _line in _TAMIL_FILLERS.items():
+    FILLER_TEMPLATES.setdefault(_move, _line)
+_ENGLISH_FILLERS = {
+    Move.probe: "I see. Could you say a little more about why?",
+    Move.counter: "There is another side to this. What would you say to it?",
+    Move.steelman: "All right. What would be the strongest argument on the other side?",
+    Move.pressure: "Could you give one concrete example that makes your point clear?",
+    Move.reassure: "No hurry, take a moment. Let us start from a simpler point.",
+    Move.move_on: "Thank you. Let us move to a new subject.",
+    Move.clarify: "Sorry, I could not hear that clearly. Could you say it again?",
+    Move.interrupt: "One moment, please. Could you come to your main point?",
+}
+_HINDI_FILLERS = {
+    Move.probe: "अच्छा। इस पर थोड़ा और विस्तार से बताइए, ऐसा क्यों?",
+    Move.counter: "लेकिन दूसरा पक्ष भी है। उसके बारे में आप क्या कहेंगे?",
+    Move.steelman: "ठीक है। अब दूसरे पक्ष का सबसे मज़बूत तर्क क्या होगा?",
+    Move.pressure: "कोई एक ठोस उदाहरण दीजिए, जिससे आपकी बात साफ़ हो।",
+    Move.reassure: "कोई बात नहीं, आराम से सोचिए। चलिए, एक आसान बात से शुरू करते हैं।",
+    Move.move_on: "ठीक है, धन्यवाद। अब एक नए विषय पर आते हैं।",
+    Move.clarify: "माफ़ कीजिए, आपकी बात ठीक से सुनाई नहीं दी। क्या आप फिर से बता सकते हैं?",
+    Move.interrupt: "एक क्षण, कृपया सीधे मुख्य बात पर आइए।",
+}
+# The panel has women members, so its Hinglish fallbacks avoid the masculine first person of
+# FILLER_TEMPLATES' clarify and interrupt ("sun nahi paaya", "rokta hoon"). FILLER_TEMPLATES
+# itself is unchanged for anything else that reads it.
+_PANEL_HINGLISH_FILLERS = {
+    **FILLER_TEMPLATES,
+    Move.clarify: (
+        "Maaf kijiye, aapki baat theek se sunai nahi di. Kya aap phir se bata sakte hain?"
+    ),
+    Move.interrupt: "Ek minute, kripya seedhe mukhya baat par aaiye.",
+}
+_FILLERS_BY_MIX: dict[str, dict[Move, str]] = {
+    "hi-en": _PANEL_HINGLISH_FILLERS,
+    "en": _ENGLISH_FILLERS,
+    "hi": _HINDI_FILLERS,
+    "ta-en": _TAMIL_FILLERS,
+}
+
+
+def filler_for(move: Move, mix: str = "hi-en") -> str:
+    """The move's fixed fallback question in the sitting's language (Hinglish when unknown).
+
+    Before this, English, Hindi and Tanglish sittings heard the Hinglish template whenever the
+    model line failed or a guard cut it."""
+    table = _FILLERS_BY_MIX.get(mix, _PANEL_HINGLISH_FILLERS)
+    return table.get(move, table[Move.probe])
 
 
 # Ruling 37: the generic request to repeat, by language mix. "sun nahi paaya" (I could not
@@ -497,6 +593,7 @@ CLARIFY_LINES: dict[str, str] = {
     "hi-en": "Maaf kijiye, main theek se sun nahi paaya. Kya aap phir se bata sakte hain?",
     "en": "Sorry, I could not hear that clearly. Could you say it again?",
     "hi": "माफ़ कीजिए, मैं ठीक से सुन नहीं पाया। क्या आप फिर से बता सकते हैं?",
+    "ta-en": "மன்னிக்கவும், தெளிவாகக் கேட்கவில்லை. இன்னொரு முறை சொல்ல முடியுமா?",
 }
 
 # Moves whose model lines are checked for repeating the candidate's words (ruling 37 names
@@ -507,13 +604,28 @@ QUOTE_CHECKED_MOVES = frozenset(
 )
 
 
-def guard_question(move: BoardMove, topic: str) -> str:
+def guard_question(move: BoardMove, topic: str, mix: str = "hi-en") -> str:
     """The fixed open-ended question that finishes a line a guard cut short."""
     if move.move == Move.move_on and move.target and move.target != "close":
+        if mix == "ta-en":
+            return "அடுத்த தலைப்புக்கு வருவோம். இதில் உங்களுக்கு முக்கியமான சவால் எது, ஏன்?"
+        if mix == "en":
+            return ("Let us move on. In this area, which challenge seems most pressing to you, "
+                    "and why?")
+        if mix == "hi":
+            return "अब अगले विषय पर आते हैं। इस क्षेत्र में आपको कौन-सी चुनौती सबसे ज़रूरी लगती है, और क्यों?"
         return (f"Ab {move.target.replace('_', ' ')} par aate hain: is kshetra mein aapko "
                 "kaunsi chunauti sabse zaroori lagti hai, aur kyun?")
     if move.move == Move.move_on:
+        if mix == "ta-en":
+            return "இன்னும் ஏதாவது சேர்க்க விரும்புகிறீர்களா?"
+        if mix == "en":
+            return "Would you like to add anything else?"
+        if mix == "hi":
+            return "क्या आप कुछ और कहना चाहेंगे?"
         return "Kya aap kuch aur kehna chahenge?"
+    if mix in ("ta-en", "en", "hi"):
+        return filler_for(move.move, mix)
     return FILLER_TEMPLATES.get(move.move, FILLER_TEMPLATES[Move.probe])
 
 
@@ -747,7 +859,7 @@ async def _compose_move_line(
     if gate is not None and gate.stopped is not None and not text.rstrip().endswith("?"):
         # A refused sentence cut the line before its question: finish with the move's fixed,
         # open-ended question (voice mode appends the same one, `is_fallback` tells it to).
-        question = guard_question(move, topic)
+        question = guard_question(move, topic, mix)
         return LineResult(f"{text} {question}".strip(), is_fallback=True, guard=gate.reason,
                           fallback_kind="move_template", retried=retried)
     return LineResult(text, retried=retried, guard=gate.reason if gate and gate.stopped else "")
@@ -821,7 +933,7 @@ async def call_actor(
                 error=f"{type(exc).__name__}: {exc}"[:300], guard="actor_failed", retried=retried
             )
     text = cap_words(text, max_words)
-    if not text and gate is not None and gate.stopped is not None:
+    if not text and gate is not None and (gate.stopped is not None or gate.skipped):
         return ActorCall(text="", guard=gate.reason, retried=retried)  # every sentence refused
     if not text:
         return ActorCall(error="empty line", guard="actor_failed", retried=retried)

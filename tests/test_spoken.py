@@ -43,7 +43,8 @@ def test_different_base_units_never_share_a_scale():
 
 @pytest.mark.parametrize(
     "mix, expected",
-    [("hi-en", "saal 2019"), ("en", "2019"), ("hi", "साल 2019")],
+    [("hi-en", "saal 2019"), ("en", "2019"), ("hi", "साल 2019"),
+     ("ta-en", "2019 ஆம் ஆண்டு")],
 )
 def test_dates_are_spoken_as_years(mix, expected):
     assert spoken_figure(2019, "year", is_date=True, mix=mix) == expected
@@ -51,7 +52,8 @@ def test_dates_are_spoken_as_years(mix, expected):
 
 @pytest.mark.parametrize(
     "mix, expected",
-    [("hi-en", "15 lakh visitors"), ("en", "15 lakh visitors"), ("hi", "15 लाख visitors")],
+    [("hi-en", "15 lakh visitors"), ("en", "15 lakh visitors"),
+     ("hi", "15 लाख visitors"), ("ta-en", "15 லட்சம் visitors")],
 )
 def test_scale_words_follow_the_language_mix(mix, expected):
     assert spoken_figure(15, "lakh visitors", like="lakh visitors", mix=mix) == expected

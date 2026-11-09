@@ -1,0 +1,33 @@
+# Briefing every member has read. Not the subject of the interview.
+# No digit in `line`, `field` or `words`. The URL stays in this file and never in the prompt.
+# A member may use one clause only after the candidate has brought that subject up.
+# Replace a note when it goes stale. Sources read on 2026-11-03.
+- id: siang-consent-2026-11-02
+  as_of: "2026-11-02"
+  field: governance
+  words: ["Siang", "Upper Siang", "Arunachal Pradesh", "dam", "public consent"]
+  line: >
+    People in Upper Siang have been protesting a proposed dam on the Siang, and the
+    chief minister has said that no construction decision has been taken and that
+    public consent would be needed.
+  source: "India Today North East, 2 November 2026"
+  source_url: "https://www.indiatodayne.in/arunachal-pradesh/story/no-decision-on-siang-dam-construction-public-consent-essential-arunachal-cm-pema-khandu-1470669-2026-11-02"
+- id: gig-boards-2026-11-02
+  as_of: "2026-11-02"
+  field: economy
+  words: ["gig", "platform workers", "unorganised", "social security"]
+  line: >
+    The Union government has announced national social-security boards for unorganised
+    workers and for gig and platform workers, and the public argument is that income
+    is still uncertain and protection is still thin.
+  source: "The Hindu, 31 October 2026, as summarised by Drishti IAS on 2 November 2026"
+  source_url: "https://www.drishtiias.com/current-affairs-news-analysis-editorials/news-editorials/02-11-2026"
+- id: decent-work-2026-11-02
+  as_of: "2026-11-02"
+  field: work
+  words: ["decent work", "unemployment", "wages"]
+  line: >
+    A fall in unemployment is in the papers, and so is the question of whether the
+    work is decent work, with fair pay and some security.
+  source: "The Hindu, 2 November 2026, headline as listed by NEXT IAS"
+  source_url: "https://www.nextias.com/ca/headlines-of-the-day/02-11-2026/87788"

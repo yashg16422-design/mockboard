@@ -16,6 +16,26 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
+# P8: placeholder voices for the five panel members, one table per Timbre model. They use only
+# voices the voice lab already offers (`voice/lab.py` VOICES, from Gnani's available-voices.md):
+# v2.5 has three of them for five members, so voices repeat, but never between the Chairperson (who
+# speaks every hand-off) and a member, and never between two neighbouring members. Which voice
+# suits which member is the owner's choice by ear from `make voice-lab` (Milestone E, Ruling 39);
+# until then these are stand-ins. Persona ids, not names: the names live in the persona files.
+# UNVERIFIED: that any of these voices sounds right for its member, and Poorvi on a male-titled
+# member ("Shri Rathore"): v2.5 offers one verified male voice here, which the Chairperson has.
+DEFAULT_PANEL_VOICES: dict[str, dict[str, str]] = {
+    "timbre-v2.5": {
+        "chairman": "Vikrant", "administrator": "Urmila", "economist": "Poorvi",
+        "humanities": "Urmila", "ips_officer": "Poorvi",
+    },
+    "timbre-v3.0": {
+        "chairman": "Avinash", "administrator": "Vasudha", "economist": "Yashraj",
+        "humanities": "Vasudha", "ips_officer": "Yashraj",
+    },
+}
+
+
 class Settings(BaseSettings):
     """Application settings. Field names map to upper-case environment variables."""
 
@@ -50,6 +70,13 @@ class Settings(BaseSettings):
     # detected speech; a candidate thinking or a long board turn can hit that. 300 s is our
     # choice (documented range 5-900). UNVERIFIED: whether board audio echo counts as speech.
     stt_idle_timeout_s: int = Field(default=300, ge=5, le=900)
+    # Prisma closes a stream at 15 minutes, so the service moves to a fresh socket before that: at
+    # `stt_rotate_after_s` when the candidate is not speaking, and at `stt_rotate_hard_s` whatever
+    # they are doing. The panel's 17-minute interview (P7) is the first session long enough to need
+    # it. Lower both in `.env` to watch a rotation in a short session. UNVERIFIED: rotation has
+    # only run against our fake Prisma server, never a live one.
+    stt_rotate_after_s: float = Field(default=12 * 60.0, gt=0, lt=900)
+    stt_rotate_hard_s: float = Field(default=14 * 60.0, gt=0, lt=900)
     # Per-topic context for Prisma v3.0 (`keyterms`, `topic`); ignored on v2.5, where the
     # docs offer only single-word boosting, which stays off unless STT_BIAS_SCORE > 0
     # (probe rule P6: do not rely on boosting until `settings_updated` is seen).
@@ -89,6 +116,11 @@ class Settings(BaseSettings):
     # The board's single Timbre voice for the local voice app (persona voice ids are still
     # placeholders until the owner picks them by ear, CTO_NOTES_03 T4).
     tts_voice: str = "Poorvi"
+    # P8 (CTO_NOTES_06 section 6): the panel's voices, persona id -> Timbre voice, as JSON in
+    # TTS_PANEL_VOICES. Unset: the placeholder table for TTS_MODEL (`DEFAULT_PANEL_VOICES`, below).
+    # `{}`: every member speaks with TTS_VOICE, as before P8. A member left out of the table also
+    # uses TTS_VOICE. Every voice is checked against the model's catalog before a session starts.
+    tts_panel_voices: dict[str, str] | None = None
     # Ruling 30 (CTO_NOTES_05 should-fix 5): if a Timbre request gives no audio within this
     # time, reconnect and resend once, then show the line as text only. UNVERIFIED (T1/T2).
     tts_first_byte_timeout_s: float = Field(default=3.0, gt=0)
@@ -118,8 +150,26 @@ class Settings(BaseSettings):
     # shorter threshold (ruling 31). UNVERIFIED: both are our choice until live runs.
     voice_barge_in_min_speech_ms: int = Field(default=500, ge=0)
     voice_resume_min_speech_ms: int = Field(default=150, ge=0)
-    # A hard stop per voice session, under Prisma's 15-minute cap (CTO_NOTES_03 V6).
-    voice_session_max_s: float = Field(default=600.0, gt=0)
+    # The UPSC panel's interview limit is 17 minutes (owner's decision, Ruling 47). At the wrap-up
+    # the session asks the director to close with the next finished turn (an in-flight question
+    # stands); at the hard stop it ends, with the Chairperson's time line if no close was spoken.
+    # Prisma's 15-minute cap is per socket, not per session: the stream rotates to a fresh socket
+    # at 12 to 14 minutes (`PrismaSTTService`), which this longer session now reaches.
+    # UNVERIFIED: rotation has never run in a live session.
+    voice_wrap_up_s: float = Field(default=960.0, gt=0)
+    voice_hard_stop_s: float = Field(default=1020.0, gt=0)
+    # P9: at the hard stop a candidate who is in the middle of speaking is given this long to finish
+    # the sentence before the turn is closed for them; the Chairperson's close then follows their
+    # answer. 0 closes at once, as P7 did. Our choice, unmeasured.
+    voice_hard_stop_grace_s: float = Field(default=20.0, ge=0)
+    # P9: how long the likely-questions route waits for Nova's hints before it shows the standard
+    # ones. A guess until an approved real run.
+    likely_questions_timeout_s: float = Field(default=20.0, gt=0)
+    # Debate keeps the 10-minute stop it always had (ADR-009: debate is unchanged).
+    voice_debate_max_s: float = Field(default=600.0, gt=0)
+    # The study partner has no wrap-up and no time pressure: one soft stop at 20 minutes (our
+    # choice, from the owner's brief "no timer pressure").
+    voice_partner_max_s: float = Field(default=1200.0, gt=0)
     # Defect D: a WebRTC connection that is not `connected` within this time is closed and
     # gets no session (no Prisma or Timbre connection is ever opened for it). Localhost ICE
     # takes well under a second; our choice.
@@ -193,7 +243,6 @@ class Settings(BaseSettings):
     # Must be >= 1 (validated below): fact checks run in the background and the move never
     # waits for this turn's verdicts (ruling 9), so a same-turn challenge cannot exist.
     fact_challenge_min_delay_turns: int = 1
-    max_turns_per_topic: int = 4
     strong_streak_to_move_on: int = 3
     reassure_latency_s: float = 4.0
     interrupt_after_words: int = 150
@@ -233,11 +282,16 @@ class Settings(BaseSettings):
     cache_prefix_token_budget: int = 18000
 
     # --- Prompt versions (prompts/<id>.v<N>.md) ---
-    prompt_listener_version: int = 3  # Round 20: Devanagari, honest-unknown markers
+    # UPSC is the panel (P7). The old board's listener.v3, actor.v3 and opener.v1 stay on disk,
+    # never edited, and are no longer used.
+    prompt_listener_version: int = 6  # v5 + Tamil-English Tanglish input
     prompt_librarian_version: int = 1
-    prompt_actor_version: int = 3  # ruling 36/37: open-ended, no quiz, no quoting
+    prompt_actor_version: int = 11  # v10 + Tamil-English Tanglish speech
     prompt_judge_version: int = 1
-    prompt_opener_version: int = 1
+    prompt_opener_version: int = 3  # v2 + Tamil-English Tanglish speech
+    prompt_repair_version: int = 1  # v2 did worse on Nova (CHANGELOG); v1 + is_script_change
+    prompt_summary_version: int = 1  # likely-question hints (P9); not in a session's trace map
+    prompt_agenda_plan_version: int = 3  # v2, plus a briefing the planner must not copy into a seed
     # Debate mode (ADR-009, CTO_NOTES_04).
     prompt_shared_debate_version: int = 1
     prompt_listener_debate_version: int = 2  # Round 20: Devanagari
@@ -245,7 +299,19 @@ class Settings(BaseSettings):
     prompt_judge_debate_version: int = 1
     prompt_motion_screen_version: int = 1
     prompt_case_file_version: int = 1
+    # Study partner mode (`modes/partner`); its listener is the UPSC one (prompt_listener_version).
+    prompt_shared_partner_version: int = 1
+    prompt_partner_actor_version: int = 2
+    prompt_partner_summary_version: int = 1
     report_language: str = Field(default="en", pattern=r"^(en|hi)$")
+
+    # --- Panel agenda planning (P6, CTO_NOTES_06 §2, CTO_NOTES_12 §7). Nova only rewrites seed
+    # text; the template agenda always exists and stands in if the plan is late, bad or missing.
+    agenda_plan_enabled: bool = True
+    # How long the opening waits for the plan before the interview starts on the templates. A late
+    # plan still upgrades the segments not yet begun. UNVERIFIED: Nova's time for the call; this is
+    # a guess until an approved real run.
+    agenda_plan_wait_s: float = Field(default=1.5, ge=0)
 
     # --- Eval gate (ENGINEERING.md §5): `make eval-gate` exits non-zero when a dev-split run
     # catches fewer planted errors than this share, or makes more false corrections than this
@@ -256,7 +322,6 @@ class Settings(BaseSettings):
 
     # --- Data locations ---
     cards_dir: Path = REPO_ROOT / "data" / "cards"
-    topics: list[str] = Field(default_factory=lambda: ["tourism", "internal_security"])
 
     # --- Feature flags: every innovation defaults to the safe setting (off). ---
     # None of these features is built in phase 1; the flags exist so later phases plug in
@@ -274,6 +339,18 @@ class Settings(BaseSettings):
     trace_dir: Path = Path("traces")  # per-turn JSONL traces (git-ignored)
     report_dir: Path = Path("runs/reports")
     langfuse_enabled: bool = False
+
+    @model_validator(mode="after")
+    def _rotation_order(self) -> Settings:
+        if self.stt_rotate_after_s > self.stt_rotate_hard_s:
+            raise ValueError("stt_rotate_after_s must not be above stt_rotate_hard_s")
+        return self
+
+    @model_validator(mode="after")
+    def _wrap_up_comes_before_the_hard_stop(self) -> Settings:
+        if self.voice_wrap_up_s >= self.voice_hard_stop_s:
+            raise ValueError("voice_wrap_up_s must be below voice_hard_stop_s")
+        return self
 
     @model_validator(mode="after")
     def _pools_cover_workers(self) -> Settings:
@@ -311,10 +388,24 @@ class Settings(BaseSettings):
             )
         return v
 
-    def prompt_versions(self, mode: str = "upsc_interview") -> dict[str, int]:
-        """The prompt id -> version map recorded in every trace line, for one mode.
+    def time_limits(self, mode: str = "upsc_interview") -> tuple[float | None, float]:
+        """(wrap-up seconds or None, hard stop seconds) of a voice session in this mode: the panel's
+        16 and 17 minutes, or debate's single 10-minute stop (debate has no wrap-up)."""
+        if mode == "debate":
+            return None, self.voice_debate_max_s
+        if mode == "study_partner":
+            return None, self.voice_partner_max_s
+        return self.voice_wrap_up_s, self.voice_hard_stop_s
 
-        The UPSC map is unchanged by modes (ADR-009); another mode lists its own prompts."""
+    def panel_voices(self) -> dict[str, str]:
+        """persona id -> voice for the panel (P8). `TTS_PANEL_VOICES` wins, `{}` included."""
+        if self.tts_panel_voices is not None:
+            return dict(self.tts_panel_voices)
+        return dict(DEFAULT_PANEL_VOICES.get(self.tts_model, {}))
+
+    def prompt_versions(self, mode: str = "upsc_interview") -> dict[str, int]:
+        """The prompt id -> version map recorded in every trace line, for one mode. Another mode
+        (ADR-009) lists its own prompts."""
         if mode != "upsc_interview":
             return self._mode_prompt_versions(mode)
         return {
@@ -323,6 +414,7 @@ class Settings(BaseSettings):
             "actor": self.prompt_actor_version,
             "judge": self.prompt_judge_version,
             "opener": self.prompt_opener_version,
+            "agenda_plan": self.prompt_agenda_plan_version,
         }
 
     def _mode_prompt_versions(self, mode: str) -> dict[str, int]:
@@ -335,6 +427,13 @@ class Settings(BaseSettings):
                 "librarian": self.prompt_librarian_version,  # the fact-check graph is shared
                 "motion_screen": self.prompt_motion_screen_version,
                 "case_file": self.prompt_case_file_version,
+            }
+        if mode == "study_partner":
+            return {
+                "shared_partner": self.prompt_shared_partner_version,
+                "listener": self.prompt_listener_version,  # the UPSC listener, unchanged
+                "partner_actor": self.prompt_partner_actor_version,
+                "partner_summary": self.prompt_partner_summary_version,
             }
         raise ValueError(f"no prompt versions for mode {mode!r}")
 

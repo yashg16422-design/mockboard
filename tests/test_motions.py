@@ -64,7 +64,7 @@ def test_only_motions_5_and_6_have_cards(motions):
 
 def test_case_file_cards_exist_and_match_the_motion_topic(motions):
     s = Settings(_env_file=None)
-    cards = load_cards(s.cards_dir, s.topics)
+    cards = load_cards(s.cards_dir)
     assert [p for m in motions.values() for p in case_card_problems(m, cards)] == []
 
 

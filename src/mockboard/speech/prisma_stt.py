@@ -367,6 +367,11 @@ class PrismaSTTService(STTService):
         if api_key is None:
             secret = settings.gnani_api_key
             api_key = secret.get_secret_value().strip() if secret is not None else ""
+        kwargs: dict[str, Any] = {
+            "rotate_after_s": settings.stt_rotate_after_s,
+            "rotate_hard_s": settings.stt_rotate_hard_s,
+            **(service_kwargs or {}),
+        }
         return cls(
             api_key=api_key,
             config=STTConfig.from_settings(settings, **config_overrides),
@@ -377,7 +382,7 @@ class PrismaSTTService(STTService):
             ),
             commit_wait_s=settings.stt_commit_wait_ms / 1000,
             commit_noop_s=settings.stt_commit_noop_ms / 1000,
-            **(service_kwargs or {}),
+            **kwargs,
         )
 
     @property

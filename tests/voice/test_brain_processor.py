@@ -79,7 +79,8 @@ class Rig:
     """Runs the offline voice pipeline for one session."""
 
     def __init__(self, session, *, stt=None, tts_ms_per_word=60, deadline_s=5.0,
-                 report_dir=None, session_max_s=None, tts_request_unit=None):
+                 report_dir=None, session_max_s=None, tts_request_unit=None, wrap_up_s=None,
+                 voice_for=None, hard_stop_grace_s=None):
         self.session = session
         self.ledger = PlaybackLedger()
         self.stt = stt or FakeCommitSTT(segment_delay_s=10.0)
@@ -89,7 +90,10 @@ class Rig:
         self.brain = BrainProcessor(session, stt=self.stt, ledger=self.ledger,
                                     deadline_s=deadline_s, settle_s=0.05,
                                     report_dir=report_dir, session_max_s=session_max_s,
-                                    tts_request_unit=tts_request_unit)
+                                    wrap_up_s=wrap_up_s, tts_request_unit=tts_request_unit,
+                                    voice_for=voice_for, **(
+                                        {} if hard_stop_grace_s is None
+                                        else {"hard_stop_grace_s": hard_stop_grace_s}))
         self.worker = PipelineWorker(
             Pipeline([PassThrough(), self.stt, self.brain, self.tts, self.playback,
                       self.collector]),
@@ -145,7 +149,7 @@ ORDER = ["vad_end", "commit_sent", "final_transcript_0", "turn_end", "end_of_tur
 async def test_a_turn_runs_in_order_with_every_mark_and_ends_with_a_report(
     settings, cards, fake_llm, form, tmp_path
 ):
-    s = upsc_session(settings, cards, fake_llm, form, tmp_path, max_turns=2)
+    s = upsc_session(settings, cards, fake_llm, form, tmp_path)
     async with Rig(s, report_dir=tmp_path / "reports") as rig:
         await rig.until(lambda: rig.brain.state == LISTENING)  # the opener played
         opener = rig.tts.texts[:]
@@ -153,6 +157,7 @@ async def test_a_turn_runs_in_order_with_every_mark_and_ends_with_a_report(
         await rig.speak()
         await rig.until(lambda: len(rig.brain.outcomes) == 1)
         await rig.until(lambda: rig.brain.state == LISTENING)
+        s.request_wrap_up()  # the panel's time is nearly up: the next answer is the last
         await rig.speak()
         await rig.until(lambda: rig.brain.report is not None, timeout=15)
 
@@ -169,7 +174,7 @@ async def test_a_turn_runs_in_order_with_every_mark_and_ends_with_a_report(
     assert rig.tts.texts == said
     users = [e for e in rig.events("caption") if e["side"] == "user"]
     assert len(users) == 2 and users[0]["text"].startswith("Main Kanpur se hoon")
-    # The session ended at the cap: the report is on the page and on disk.
+    # The session ended at the wrap-up: the report is on the page and on disk.
     report = rig.events("report")[0]
     assert "REPORT" in report["text"] and (tmp_path / "reports" / "vs.report.txt").exists()
     msgs = rig.collector.of_type(OutputTransportMessageUrgentFrame)
@@ -427,21 +432,24 @@ async def test_a_final_slower_than_the_budget_joins_its_turn_late(
 
 @pytest.mark.parametrize("unit", ["line", "first_rest"])
 async def test_ruling_38_whole_line_requests(unit, settings, cards, fake_llm, form, tmp_path):
-    s = upsc_session(settings, cards, fake_llm, form, tmp_path, max_turns=2)
+    s = upsc_session(settings, cards, fake_llm, form, tmp_path)
     async with Rig(s, tts_request_unit=unit) as rig:
         await rig.until(lambda: rig.brain.state == LISTENING)
         await rig.speak()
         await rig.until(lambda: len(rig.brain.outcomes) == 1)
-    said = [e["text"] for e in rig.events("caption") if e["side"] == "board"]
-    opener = s.state.board_lines[0].text
+    captions = [e for e in rig.events("caption") if e["side"] == "board"]
+    ritual = [e["text"] for e in captions if e["kind"] == "ritual"]
+    opener = [e["text"] for e in captions if e["kind"] == "opener"]
+    turn = [e["text"] for e in captions if e["kind"] not in ("ritual", "opener")]
     line = rig.brain.outcomes[0].trace["voice"]
-    n_opener = len([c for c in said if c in opener])
-    assert n_opener >= 2  # the opener has several sentences, captioned one by one
-    if unit == "line":  # one request for the opener and one for the turn's line
-        assert rig.tts.texts == [" ".join(said[:n_opener]), " ".join(said[n_opener:])]
+    assert len(ritual) >= 2  # "Namaste." and "Please be seated.", captioned one by one
+    assert opener and turn
+    if unit == "line":  # one request each for the ritual, the opening question and the turn
+        assert rig.tts.texts == [" ".join(ritual), " ".join(opener), " ".join(turn)]
     else:  # the first sentence alone, then the rest of each line
-        assert rig.tts.texts[:2] == [said[0], " ".join(said[1:n_opener])]
-        assert rig.tts.texts[2] == said[n_opener]
+        assert rig.tts.texts[:2] == [ritual[0], " ".join(ritual[1:])]
+        assert rig.tts.texts[2] == opener[0]
+        assert rig.tts.texts[3] == turn[0]
     assert not line["interrupted"] and line["board_line_spoken"] == line["board_line_sent"]
 
 

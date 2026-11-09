@@ -38,6 +38,7 @@ from mockboard.session import TurnParams
 from mockboard.voice.brain_processor import BOARD, LISTENING
 from mockboard.voice.strategies import (
     IDLE,
+    LOCKED,
     SPEAKING,
     THINKING,
     BoardAwareStartStrategy,
@@ -81,6 +82,32 @@ async def test_a_cough_while_the_board_speaks_does_not_start_a_turn():
         clock.t += 0.03
         await s.process_frame(audio_frame())
     assert len(started) == 1 and started[0].enable_interruptions
+
+
+async def test_nothing_the_candidate_says_starts_a_turn_while_the_close_is_locked():
+    """P9 (Ruling 61): the Chairperson's close cannot be interrupted, however long the speech."""
+    clock = Clock()
+    s, started = await strategy(LOCKED, clock)
+    await s.process_frame(VADUserStartedSpeakingFrame())
+    for _ in range(100):  # three seconds of "speech"
+        clock.t += 0.03
+        await s.process_frame(audio_frame())
+    assert started == [] and s.ignored_locked >= 1
+    await s.process_frame(VADUserStoppedSpeakingFrame())
+    assert started == []
+
+
+async def test_the_real_user_turn_processor_never_interrupts_a_locked_close():
+    stop = PausedTurnStopStrategy(turn_analyzer=LocalSmartTurnAnalyzerV3())
+    start = BoardAwareStartStrategy(board_phase=lambda: LOCKED, thresholds_ms=lambda: (150, 400))
+    utp = UserTurnProcessor(user_turn_strategies=UserTurnStrategies(start=[start], stop=[stop]))
+    async with Harness(utp) as h:
+        await h.queue(VADUserStartedSpeakingFrame())
+        await h.feed_audio(1.0)
+        await h.queue(VADUserStoppedSpeakingFrame())
+        await asyncio.sleep(0.2)
+        assert not h.collector.of_type(InterruptionFrame)
+        assert not h.collector.of_type(UserStartedSpeakingFrame)
 
 
 async def test_thresholds_follow_what_the_board_is_doing():

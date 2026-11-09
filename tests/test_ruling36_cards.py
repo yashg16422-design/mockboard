@@ -30,7 +30,7 @@ class RealModeLLM(FakeLLMClient):
 
 
 def data_cards(settings) -> CardSet:
-    return load_cards(settings.cards_dir, settings.topics)  # all SYNTHETIC test cards today
+    return load_cards(settings.cards_dir)  # all SYNTHETIC test cards today
 
 
 def real_card() -> FactCard:
@@ -38,6 +38,10 @@ def real_card() -> FactCard:
     return FactCard(id="test_real_shape", topic="tourism", statement="A sourced statement.",
                     value=5, unit="percent", year=2024, source_title="Placeholder source",
                     source_url="https://example.org/placeholder")
+
+
+def test_an_empty_card_set_is_not_called_synthetic():
+    assert CardSet(cards={}, version="empty").all_synthetic is False
 
 
 def test_offline_marker_follows_the_fake_and_its_wrappers(cards):

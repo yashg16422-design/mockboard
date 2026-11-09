@@ -1,5 +1,7 @@
 # Mock Board — project memory for Claude Code
 
+**Taking over this project? Start with `NEW_INSTRUCT.md`: it is newer than this file wherever they differ.**
+
 Mock Board is a voice-first, Hinglish UPSC Personality Test (interview) board, with a Debate mode, built for Gnani.ai's Great Indian AI Internship Challenge. Submission: **Nov 9, 2026** (contest deadline Nov 10, no extensions). Owner: Yash Pratap Singh ("Aloo"), solo builder, learning agentic AI. He wants complete plain-language explanations, commands that state which machine and folder they run from, and honest status (never fake a result).
 
 ## How work is done here (the team)
@@ -25,15 +27,20 @@ Mock Board is a voice-first, Hinglish UPSC Personality Test (interview) board, w
 - Three Bedrock lanes (actor / fast / background) with short hot-lane timeouts; chaos test proves sessions survive throttling.
 
 ## Known state (Nov 1, 2026)
-- 722 tests pass offline (`make test`); voice tests need the voice extra.
-- Owner's first real session (Round 20) exposed: fixed topics ("tourism", "internal_security" hard-coded in `config.py`), no understanding of candidate requests ("let's talk about something else"), actor sees only the last Q/A, no panel structure. **Next phase fixes these: see `docs/tasks/PANEL_PHASE.md`.**
+- `make test` passes offline; 913 tests with the voice extra installed at P1, Nov 1 (the count grows, so trust the run, not this line). Only Python 3.14 has been run; 3.12 is unverified.
+- **P7 (Nov 1): the panel is the UPSC path** on text, `make voice-fake` and `make voice-upsc`. Interview limit 17 minutes (wrap-up 960 s, hard stop 1020 s, 20 s grace at the hard stop). The UPSC golden is board-line md5 `e32140d5...` after Ruling 76; debate md5 `f2a23f33...` is unchanged.
+- **P8–P11 (Nov 1, fake only):** a voice per member (placeholder table; real choice is `make voice-lab`); likely questions (`make likely-questions`, `/api/likely-questions`, counted by access); report grouped by member with a text-only replay (`--replay`); `make check-trace TRACE=traces/<id>.jsonl`.
+- **E started (Nov 2, owner approved):** one scripted Nova panel (`traces/e-panel-1.jsonl`, listener 4, actor 5 at that run, agenda_plan 2, judge 1) and one Timbre socket with two voices. The live socket sends a second status `complete`; ignoring it is in `fbdebde`. Which voice actually spoke is still for the ear. Prisma rotation, `voice-lab`, `stt-ab` and `voice-record` have not been run. The UPSC actor is now v6 (`eef302d`); that file has not run on Nova. Clear slang gets one fixed line, then the question. There is no web search.
 - Owner still to report: voice lab choice (`make voice-lab`), Prisma mode choice (`make stt-ab`).
+- **Nov 9 (Round 54):** three modes on one server (UPSC, debate, study partner); partner has repeat/skip/think and a confirmed end; Prisma locale follows the language (English `en-IN`); Nova's broken tool calls retry once; real runs of all three modes and a Gnani round trip done (generated speech). Open: MCP App probe in Claude Desktop, the owner's own voice, a Tamil review.
 - No real fact cards yet; real sessions run without fact checks and say so.
 
 ## Commands (owner's Mac, in the repo folder, inside `.venv`)
 - `make venv` then `make voice-install` — environment (Python 3.12+).
 - `make test`, `make lint`, `make eval-gate`, `make eval-debate`.
 - `make cli-fake`, `make cli-fake-debate` — offline text runs; `make cli-real` — text on Nova.
+- `make likely-questions` — questions from the sample form, with hints (fake, free).
+- `make check-trace TRACE=traces/<session>.jsonl` — check a panel session trace.
 - `make voice-fake` — free voice run; `make voice-upsc`; `make voice-debate MOTION=1 SIDE=for`.
 - `make voice-record`, `make stt-ab`, `make voice-lab`, `make voice-summary`.
 - Traces: `traces/*.jsonl` (read them to diagnose real sessions; they contain no secrets).
@@ -43,4 +50,4 @@ Mock Board is a voice-first, Hinglish UPSC Personality Test (interview) board, w
 - Commit trailer: `Co-Authored-By: Claude <noreply@anthropic.com>`.
 - Prompts are versioned files in `src/mockboard/prompts/` (never edit an old version; add `.vN+1` and log in `prompts/CHANGELOG.md`).
 - Every new behaviour gets a test; board-behaviour invariants (`tests/test_board_invariants.py`, `tests/test_debate_invariants.py`) must keep passing.
-- Real-service checks: you can run them directly on this Mac (network and credentials are available here). Keep real calls small and say what they cost.
+- Real-service checks: never make a real Gnani or Bedrock call that costs credits without the owner's approval first (Ruling 41). This covers subagents. Say what the call does and what it costs when asking. Free targets (`make test`, `lint`, `cli-fake*`, `voice-fake`, `eval*`) need no approval.

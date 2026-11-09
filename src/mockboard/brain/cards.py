@@ -1,5 +1,5 @@
-"""Load fact cards from `data/cards/<topic>.json`, validate them, and render the cards block
-that goes into the cached system prompt.
+"""Load fact cards from every `data/cards/<topic>.json` (the file name is the topic), validate
+them, and render the cards block that goes into the cached system prompt.
 
 The card-set version is a short hash of the cards' canonical JSON. It is part of every
 librarian cache key, so editing a card automatically invalidates cached verdicts.
@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -31,7 +31,8 @@ class CardSet:
 
     @property
     def all_synthetic(self) -> bool:
-        return all(c.synthetic_example for c in self.cards.values())
+        # An empty set is not "all synthetic": a real run with no cards must not say so.
+        return bool(self.cards) and all(c.synthetic_example for c in self.cards.values())
 
 
 def without_synthetic(card_set: CardSet) -> CardSet:
@@ -57,12 +58,20 @@ def _schema(cards_dir: Path) -> dict | None:
     return json.loads(path.read_text(encoding="utf-8")) if path.exists() else None
 
 
-def load_cards(cards_dir: Path, topics: Sequence[str]) -> CardSet:
-    """Load and validate every topic file. Raises on schema errors or duplicate ids."""
+def card_files(cards_dir: Path) -> list[Path]:
+    """Every topic file in the folder, by name: the topics are whatever files are there (P7: no
+    hard-coded topic list). `schema.json` is the schema, not a topic."""
+    if not cards_dir.is_dir():
+        return []
+    return sorted(p for p in cards_dir.glob("*.json") if p.name != "schema.json")
+
+
+def load_cards(cards_dir: Path) -> CardSet:
+    """Load and validate every topic file found. Raises on schema errors or duplicate ids."""
     schema = _schema(cards_dir)
     cards: dict[str, FactCard] = {}
-    for topic in topics:
-        path = cards_dir / f"{topic}.json"
+    for path in card_files(cards_dir):
+        topic = path.stem
         doc = json.loads(path.read_text(encoding="utf-8"))
         if schema is not None:
             jsonschema.validate(doc, schema)
@@ -102,7 +111,7 @@ _BUILTIN_RAW: tuple[dict, ...] = (
 )
 
 
-def builtin_test_cards(topics: Sequence[str] | None = None) -> CardSet:
+def builtin_test_cards() -> CardSet:
     """Clearly fake cards (synthetic_example=true, source_url=null) for offline runs."""
     cards = {
         raw["id"]: FactCard.model_validate(
@@ -110,19 +119,18 @@ def builtin_test_cards(topics: Sequence[str] | None = None) -> CardSet:
              "source_title": "SYNTHETIC EXAMPLE (built-in, no source)"}
         )
         for raw in _BUILTIN_RAW
-        if topics is None or raw["topic"] in topics
     }
     return CardSet(cards=cards, version=card_set_version(cards.values()))
 
 
-def load_cards_or_builtin(cards_dir: Path, topics: Sequence[str]) -> tuple[CardSet, str]:
-    """Load data/cards/<topic>.json when every topic file exists, else the built-in cards.
+def load_cards_or_builtin(cards_dir: Path) -> tuple[CardSet, str]:
+    """Load every data/cards/<topic>.json found, or the built-in cards when there is none.
 
     Returns (card set, origin label) so callers can say which set they are using.
     """
-    if all((cards_dir / f"{t}.json").exists() for t in topics):
-        return load_cards(cards_dir, topics), f"data:{cards_dir}"
-    return builtin_test_cards(topics), "builtin-test-cards"
+    if card_files(cards_dir):
+        return load_cards(cards_dir), f"data:{cards_dir}"
+    return builtin_test_cards(), "builtin-test-cards"
 
 
 def render_card(card: FactCard) -> str:
