@@ -97,3 +97,45 @@ def clean_speech(raw: object) -> str:
             f"candidate_said: keep one answer under {MAX_SPEECH_CHARS} characters"
         )
     return text
+
+
+# --- the board's preparation (`prepare_board`, the voice room's animated graph) ----------------
+# The client model writes each member's lines of questioning with a reason and the weak spot to
+# probe. They are shown, not spoken, but they are still the model's words about a real person's
+# answers to come: no figure, link or markup, short, and at most three a member.
+MAX_PLAN_LINES = 3
+_PLAN_LIMITS = {"angle": 160, "why": 160, "weak_spot": 120}
+_PLAN_BAD = re.compile(r"\d|https?://|www\.|@|[<>`*#\[\]{}|]")
+
+
+def check_plan(raw: object, members: set[str]) -> tuple[list[dict[str, str]], int]:
+    """(kept lines, dropped count). Accepts a list of {member, angle, why, weak_spot}."""
+    if isinstance(raw, Mapping):
+        raw = raw.get("lines")
+    if not isinstance(raw, list) or not raw:
+        raise RefusedInput("plan: a list of {member, angle, why, weak_spot} objects")
+    kept: list[dict[str, str]] = []
+    per: dict[str, int] = {}
+    dropped = 0
+    for item in raw[:30]:
+        if not isinstance(item, Mapping) or item.get("member") not in members:
+            dropped += 1
+            continue
+        line: dict[str, str] = {"member": str(item["member"])}
+        ok = True
+        for key, limit in _PLAN_LIMITS.items():
+            value = item.get(key, "")
+            text = " ".join(str(value).split()) if isinstance(value, str) else ""
+            if (key == "angle" and len(text) < 8) or len(text) > limit or _PLAN_BAD.search(text):
+                ok = False
+                break
+            line[key] = text
+        if not ok or per.get(line["member"], 0) >= MAX_PLAN_LINES:
+            dropped += 1
+            continue
+        per[line["member"]] = per.get(line["member"], 0) + 1
+        kept.append(line)
+    if not kept:
+        raise RefusedInput("plan: no line passed the checks (no figures, links or markup; "
+                           "an angle of 8 to 160 characters; at most three a member)")
+    return kept, dropped

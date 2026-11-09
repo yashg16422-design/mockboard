@@ -99,7 +99,10 @@ def _question_of(turn: dict) -> str | None:
 def test_every_tool_schema_is_a_closed_object_whose_required_fields_exist():
     names = [t["name"] for t in TOOLS]
     assert names == ["start_interview", "start_partner", "next_turn", "end_session",
-                     "check_scores", "check_notes", "likely_questions"]
+                     "check_scores", "check_notes", "likely_questions",
+                     # the Gnani voice room (Option 2, Nov 9)
+                     "start_voice_interview", "start_voice_partner", "prepare_board", "say",
+                     "wait_for_answer", "voice_room_ticket"]
     for tool in TOOLS:
         schema = tool["inputSchema"]
         assert schema["type"] == "object" and schema["additionalProperties"] is False
@@ -515,9 +518,16 @@ def test_the_package_names_no_network_client_or_paid_service():
     assert len(files) >= 7
     for path in files:
         src = path.read_text(encoding="utf-8")
-        for banned in ("boto3", "urllib", "httpx", "import socket", "BedrockNovaClient",
-                       "GNANI_API_KEY", "vachana", "0.0.0.0"):
-            assert banned not in src, (path.name, banned)
+        banned = ["boto3", "urllib", "httpx", "import socket", "BedrockNovaClient",
+                  "GNANI_API_KEY", "vachana", "0.0.0.0"]
+        if path.name == "voice_bridge.py":
+            # Option 2 (owner, Nov 8-9): the Gnani voice room, at our cost, is the one place this
+            # package reaches a paid service (through `mockboard.speech`), and it listens on this
+            # machine only. It may parse a URL; it never fetches one.
+            assert "urllib.request" not in src and 'serve(self._handle, "127.0.0.1", port' in src
+            banned.remove("urllib")
+        for word in banned:
+            assert word not in src, (path.name, word)
         if "start_server" in src:  # only the probe listens, and only on this machine
             assert path.name == "probe.py" and 'start_server(self._serve_http, "127.0.0.1"' in src
         assert not re.search(r"(?<![.\w])open\(", src), (path.name, "opens a file")

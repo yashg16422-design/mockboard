@@ -228,6 +228,126 @@ TOOLS: list[dict[str, Any]] = [
     },
 ]
 
+# --- the Gnani voice room (Option 2, `voice_bridge.py`) ------------------------------------------
+
+VIEW_URI = "ui://mockboard/voice-room.html"
+APP_MIME = "text/html;profile=mcp-app"
+_UI = {"ui": {"resourceUri": VIEW_URI}, "ui/resourceUri": VIEW_URI}  # current and older key
+_SID = {"type": "string", "description": "The session_id from the start tool."}
+_PLAN_LINE = {
+    "type": "object",
+    "properties": {
+        "member": {"type": "string", "description": "The member's id from `members`."},
+        "angle": {"type": "string", "maxLength": 160,
+                  "description": "The line of questioning, in a few words or one question."},
+        "why": {"type": "string", "maxLength": 160,
+                "description": "Why this member will ask it, from the form."},
+        "weak_spot": {"type": "string", "maxLength": 120,
+                      "description": "What you expect the person may find hard."},
+    },
+    "required": ["member", "angle", "why"],
+    "additionalProperties": False,
+}
+TOOLS += [
+    {
+        "name": "start_voice_interview",
+        "title": "Start a spoken UPSC interview (Gnani voice room)",
+        "description": (
+            "Like start_interview, but spoken: Gnani Prisma hears the person and Gnani Timbre "
+            "speaks each member. Opens the voice room (a panel here, or voice_url in a browser). "
+            "Then call prepare_board, say, wait_for_answer and next_turn."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "form": FORM_SCHEMA,
+                "max_answers": {"type": "integer", "minimum": 5, "maximum": 20},
+            },
+            "required": ["form"],
+            "additionalProperties": False,
+        },
+        "_meta": _UI,
+    },
+    {
+        "name": "start_voice_partner",
+        "title": "Start a spoken study session with Mitra (Gnani voice room)",
+        "description": "Like start_partner, but spoken through Gnani's speech models.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "topic": {"type": "string", "maxLength": 80},
+                "language": {"type": "string", "enum": list(PARTNER_LANGUAGES)},
+            },
+            "required": ["topic"],
+            "additionalProperties": False,
+        },
+        "_meta": _UI,
+    },
+    {
+        "name": "prepare_board",
+        "title": "Show the board's preparation",
+        "description": (
+            "Before the first question: each member's lines of questioning from the form, with "
+            "why and the weak spot to probe (at most three a member; no figures, links or "
+            "markup). Mock Board checks them and the voice room draws them as an animated graph."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {"session_id": _SID,
+                           "plan": {"type": "array", "items": _PLAN_LINE, "maxItems": 18}},
+            "required": ["session_id", "plan"],
+            "additionalProperties": False,
+        },
+    },
+    {
+        "name": "say",
+        "title": "Speak the board's lines (Gnani Timbre)",
+        "description": (
+            "Speak lines in the voice room, each in its member's Timbre voice, in order. Returns "
+            "when they have been played. Then call wait_for_answer."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "session_id": _SID,
+                "lines": {
+                    "type": "array", "minItems": 1, "maxItems": 6,
+                    "items": {"type": "object",
+                              "properties": {"member": {"type": "string"},
+                                             "text": {"type": "string", "maxLength": 1200}},
+                              "required": ["member", "text"], "additionalProperties": False},
+                },
+            },
+            "required": ["session_id", "lines"],
+            "additionalProperties": False,
+        },
+    },
+    {
+        "name": "wait_for_answer",
+        "title": "Wait for the person's spoken answer (Gnani Prisma)",
+        "description": (
+            "Returns what Gnani Prisma heard when the person finishes speaking (or a typed "
+            "answer): status `answered` or `silence` with `candidate_said`, or `waiting` after "
+            "about fifty seconds, when you call it again."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {"session_id": _SID,
+                           "timeout_s": {"type": "number", "minimum": 5, "maximum": 50}},
+            "required": ["session_id"],
+            "additionalProperties": False,
+        },
+    },
+    {
+        "name": "voice_room_ticket",
+        "title": "Voice room connection (for the panel)",
+        "description": "Used by the voice room panel only: how to reach the latest voice room.",
+        "inputSchema": {"type": "object", "properties": {}, "required": [],
+                        "additionalProperties": False},
+        "_meta": {"ui": {"visibility": ["app"]}},
+    },
+]
+
 TOOL_NAMES = frozenset(t["name"] for t in TOOLS)
 
 PROMPTS: list[dict[str, Any]] = [
@@ -235,6 +355,8 @@ PROMPTS: list[dict[str, Any]] = [
      "description": "How to run the board: the steps, the honesty rules, the phrases."},
     {"name": "study_partner", "title": "Study with Mitra",
      "description": "How to run a study-partner session with Mock Board."},
+    {"name": "voice_room", "title": "Run Mock Board spoken (Gnani voice room)",
+     "description": "How to run the board or Mitra by voice: Gnani Prisma hears, Timbre speaks."},
 ]
 
 RESOURCES: list[dict[str, Any]] = [
@@ -250,6 +372,9 @@ RESOURCES: list[dict[str, Any]] = [
     {"uri": "mockboard://guide/rubric", "name": "rubric", "title": "Report rubric",
      "description": "The nine report dimensions and how scores are checked.",
      "mimeType": "application/json"},
+    {"uri": VIEW_URI, "name": "voice-room", "title": "Mock Board voice room",
+     "description": "The voice room view (MCP App): the room, captions and the decision graph.",
+     "mimeType": APP_MIME},
 ]
 
 
@@ -262,6 +387,8 @@ def prompt_text(name: str) -> str:
         return guidance.upsc_prompt()
     if name == "study_partner":
         return guidance.partner_prompt()
+    if name == "voice_room":
+        return guidance.voice_prompt()
     raise UnknownName(name)
 
 
@@ -300,6 +427,19 @@ async def call_tool(service: BoardService, name: str, args: Mapping[str, Any] | 
         elif name == "check_notes":
             result = await service.check_notes(a.get("session_id"), a.get("points"),
                                                a.get("next_steps"))
+        elif name == "start_voice_interview":
+            result = await service.start_voice_interview(a.get("form"), a.get("max_answers"))
+        elif name == "start_voice_partner":
+            result = await service.start_voice_partner(a.get("topic"),
+                                                       a.get("language", "hinglish"))
+        elif name == "prepare_board":
+            result = await service.prepare_board(a.get("session_id"), a.get("plan"))
+        elif name == "say":
+            result = await service.say(a.get("session_id"), a.get("lines"))
+        elif name == "wait_for_answer":
+            result = await service.wait_for_answer(a.get("session_id"), a.get("timeout_s"))
+        elif name == "voice_room_ticket":
+            result = service.voice_ticket()
         else:
             result = service.likely_questions(a.get("form"))
     except ToolError as exc:

@@ -101,6 +101,7 @@ class McpSession:
     last_used: float = 0.0
     finished: bool = False
     report: Any = None  # SessionReport or PartnerReport, after end_session
+    last_said: str = ""  # the voice room's last spoken lines: `you_said` when the AI leaves it out
     you_said: dict[str, str] = field(default_factory=dict)  # turn id -> the assistant's own line
 
 
@@ -121,6 +122,8 @@ class BoardService:
         self.idle_s = idle_s
         self.sessions: dict[str, McpSession] = {}
         self._base: BrainDeps | None = None
+        self.voice: Any = None  # VoiceBridge, made on the first voice sitting (Option 2)
+        self.voice_factory: Callable[[], Any] | None = None  # tests pass a fake-speech bridge
 
     # -- plumbing -------------------------------------------------------------
 
@@ -169,6 +172,176 @@ class BoardService:
         for ms in list(self.sessions.values()):
             await ms.session.close()
         self.sessions.clear()
+        if self.voice is not None:
+            await self.voice.aclose()
+
+    # -- the Gnani voice room (Option 2, `voice_bridge.py`) -----------------------------
+
+    def bridge(self) -> Any:
+        if self.voice is None:
+            from mockboard.mcp.voice_bridge import VoiceBridge
+
+            self.voice = self.voice_factory() if self.voice_factory else VoiceBridge()
+        return self.voice
+
+    async def _open_room(self, ms: McpSession, prep: dict[str, Any]) -> dict[str, Any]:
+        from mockboard.speech.mic_check import lang_code_for
+
+        bridge = self.bridge()
+        names = self._names(ms.mode)
+        try:
+            room = await bridge.open_room(ms.id, ms.language,
+                                          lang_code_for(ms.language, bridge.settings), names)
+        except RuntimeError as exc:
+            raise ToolError(f"the voice room could not start: {exc}") from None
+        for member in prep.get("members", []):
+            member["voice"] = room.voices.get(member["id"], "")
+        await room.publish(prep)
+        return {**bridge.ticket(room), "panel": "shown with this tool where the app supports it",
+                "how": guidance.VOICE_HOW}
+
+    def _room(self, ms: McpSession) -> Any:
+        room = self.voice.room(ms.id) if self.voice is not None else None
+        if room is None:
+            raise ToolError("this sitting has no voice room: start it with start_voice_interview "
+                            "or start_voice_partner")
+        return room
+
+    def _prep_event(self, ms: McpSession) -> dict[str, Any]:
+        names = self._names(ms.mode)
+        members = [{"id": r["id"], "name": r["name"], "title": r.get("title", "")}
+                   for r in self._members(ms)]
+        if ms.mode == UPSC:
+            agenda = ms.session.hooks.agenda
+            segments = [{"id": s.id, "member": s.member, "member_name": names.get(s.member, ""),
+                         "title": s.title, "budget": s.budget,
+                         "lines": [{"angle": seed.text, "why": "from the form" if not seed.must_ask
+                                    else "the case study"} for seed in s.seeds[:3]]}
+                        for s in agenda.segments]
+            form = ms.session.form
+            facts = [{"key": k, "value": v} for k, v in (
+                ("home state", form.home_state), ("district", form.district),
+                ("degree", form.degree_subject), ("hobbies", ", ".join(form.hobbies)),
+                ("optional", form.optional_subject), ("work", form.work_experience),
+            ) if v]
+            budget = agenda.total_budget
+        else:
+            topic = getattr(ms.session.mode_options, "topic", "")
+            segments = [{"id": "partner", "member": "mitra", "member_name": names.get("mitra", ""),
+                         "title": topic, "budget": 0, "lines": []}]
+            facts = [{"key": "topic", "value": topic}]
+            budget = 0
+        # Members follow the panel order (the order of their segments), the Chairperson first.
+        order = [s["member"] for s in segments]
+        members.sort(key=lambda m: order.index(m["id"]) if m["id"] in order else -1)
+        return {"type": "prep", "mode": ms.mode, "facts": facts, "members": members,
+                "segments": segments, "budget": budget, "plan_from": "the agenda (templates)"}
+
+    async def start_voice_interview(self, form: object, max_answers: object = None
+                                    ) -> dict[str, Any]:
+        result = await self.start_interview(form, max_answers)
+        ms = self.sessions[result["session_id"]]
+        result["voice"] = await self._open_room(ms, self._prep_event(ms))
+        result["next_step"] = guidance.VOICE_NEXT_STEP
+        return result
+
+    async def start_voice_partner(self, topic: object, language: object = "hinglish"
+                                  ) -> dict[str, Any]:
+        result = await self.start_partner(topic, language)
+        ms = self.sessions[result["session_id"]]
+        result["voice"] = await self._open_room(ms, self._prep_event(ms))
+        result["next_step"] = guidance.VOICE_NEXT_STEP
+        return result
+
+    async def prepare_board(self, session_id: object, plan: object) -> dict[str, Any]:
+        """The client model's preparation, checked, then drawn as the animated graph."""
+        from mockboard.mcp.safety import check_plan
+
+        ms = self._get(session_id)
+        room = self._room(ms)
+        try:
+            lines, dropped = check_plan(plan, set(self._names(ms.mode)))
+        except RefusedInput as exc:
+            raise ToolError(str(exc)) from None
+        prep = self._prep_event(ms)
+        for seg in prep["segments"]:
+            mine = [x for x in lines if x["member"] == seg["member"]]
+            if mine:
+                seg["lines"] = mine
+        for member in prep["members"]:
+            member["voice"] = room.voices.get(member["id"], "")
+        prep["plan_from"] = "your AI's preparation, checked by Mock Board"
+        await room.publish(prep)
+        return {"session_id": ms.id, "drawn": len(lines), "dropped": dropped,
+                "next_step": "Now call say with the opening lines from the start tool."}
+
+    async def say(self, session_id: object, lines: object) -> dict[str, Any]:
+        ms = self._get(session_id)
+        room = self._room(ms)
+        names = self._names(ms.mode)
+        if not isinstance(lines, list) or not lines or len(lines) > 6:
+            raise ToolError("lines: a list of 1 to 6 {member, text} objects, in speaking order")
+        clean: list[dict[str, str]] = []
+        for line in lines:
+            member = line.get("member") if isinstance(line, Mapping) else None
+            if member not in names:
+                raise ToolError(f"member: one of {', '.join(sorted(names))}")
+            try:
+                text = clean_speech(line.get("text"))
+            except RefusedInput as exc:
+                raise ToolError(str(exc)) from None
+            if not text:
+                raise ToolError("text: the words to say")
+            clean.append({"member": str(member), "text": text})
+        ms.last_said = " ".join(f"{names[x['member']]}: {x['text']}" for x in clean)
+        out = await room.say(clean)
+        return {"session_id": ms.id, **out,
+                "next_step": "Call wait_for_answer." if out.get("spoken") else
+                "Ask the person to open the voice room, then call say again."}
+
+    async def wait_for_answer(self, session_id: object, timeout_s: object = None
+                              ) -> dict[str, Any]:
+        from mockboard.mcp.voice_bridge import WAIT_LIMIT_S
+
+        ms = self._get(session_id)
+        room = self._room(ms)
+        wait = WAIT_LIMIT_S
+        if isinstance(timeout_s, (int, float)) and not isinstance(timeout_s, bool):
+            wait = max(5.0, min(WAIT_LIMIT_S, float(timeout_s)))
+        out = await room.wait_for_answer(wait)
+        step = ("Call next_turn with candidate_said exactly as given, your analysis, and "
+                "you_said." if out.get("status") in ("answered", "silence")
+                else "Call wait_for_answer again.")
+        return {"session_id": ms.id, **out, "next_step": step}
+
+    def voice_ticket(self) -> dict[str, Any]:
+        bridge = self.voice
+        sid = bridge.latest if bridge is not None else None
+        room = bridge.room(sid) if sid else None
+        if room is None:
+            return {"status": "no voice sitting yet"}
+        return {"voice": bridge.ticket(room)}
+
+    async def _publish_decision(self, ms: McpSession, move: Any, board: dict[str, Any],
+                                text: str, turn_id: str, finished: bool) -> None:
+        room = self.voice.room(ms.id) if self.voice is not None else None
+        if room is None:
+            return
+        names = self._names(ms.mode)
+        segment_id = "partner"
+        if ms.mode == UPSC:
+            segs = ms.session.hooks.agenda.segments
+            segment_id = next((s.id for s in segs if s.member == move.member), segs[0].id)
+        await room.publish({
+            "type": "decision", "turn_id": turn_id, "move": move.move.value,
+            "rule": move.rule_id or "", "why": move.reason or "",
+            "member": move.member, "member_name": names.get(move.member, move.member),
+            "segment_id": segment_id, "counted": bool(board.get("counted_as_answer", True)),
+            "answers_used": board.get("answers_used", 0), "situation": bool(board.get("situation")),
+            "signals": answer_signals(text), "candidate_said": text[:200],
+        })
+        if finished:
+            await room.publish({"type": "finished"})
 
     # -- tools: starting ------------------------------------------------------
 
@@ -243,7 +416,7 @@ class BoardService:
         ms = self._get(session_id)
         try:
             text = clean_speech(candidate_said)
-            said_by_you = clean_speech(you_said) if you_said is not None else ""
+            said_by_you = clean_speech(you_said) if you_said is not None else ms.last_said
         except RefusedInput as exc:
             raise ToolError(str(exc)) from None
         if analysis is not None and not isinstance(analysis, Mapping):
@@ -267,6 +440,7 @@ class BoardService:
                 say, board = self._upsc_turn(ms, move, out.line)
             else:
                 say, board = self._partner_turn(ms, move, out.line)
+            await self._publish_decision(ms, move, board, text, out.turn_id, out.finished)
         return {
             "session_id": ms.id,
             "turn_id": out.turn_id,

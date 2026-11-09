@@ -22,9 +22,11 @@ from typing import Any
 from mockboard.mcp import guidance
 from mockboard.mcp.service import BoardService
 from mockboard.mcp.tools import (
+    APP_MIME,
     PROMPTS,
     RESOURCES,
     TOOLS,
+    VIEW_URI,
     UnknownName,
     call_tool,
     prompt_text,
@@ -135,6 +137,13 @@ class StdioServer:
             return {"resources": RESOURCES}
         if method == "resources/templates/list":
             return {"resourceTemplates": []}
+        if method == "resources/read" and params.get("uri") == VIEW_URI:
+            from mockboard.mcp.voice_bridge import page_html
+
+            bridge = self.service.bridge()
+            await bridge.start()  # the page needs the bridge's port
+            return {"contents": [{"uri": VIEW_URI, "mimeType": APP_MIME,
+                                  "text": page_html(bridge.port), "_meta": bridge.view_meta()}]}
         if method == "resources/read":
             uri = params.get("uri")
             try:
