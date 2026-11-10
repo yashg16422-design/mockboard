@@ -102,7 +102,7 @@ def test_every_tool_schema_is_a_closed_object_whose_required_fields_exist():
                      "check_scores", "check_notes", "likely_questions",
                      # the Gnani voice room (Option 2, Nov 9)
                      "start_voice_interview", "start_voice_partner", "prepare_board", "say",
-                     "wait_for_answer", "voice_room_ticket"]
+                     "wait_for_answer", "nudge", "voice_room_ticket"]
     for tool in TOOLS:
         schema = tool["inputSchema"]
         assert schema["type"] == "object" and schema["additionalProperties"] is False

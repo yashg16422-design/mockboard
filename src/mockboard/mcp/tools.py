@@ -58,6 +58,22 @@ ANALYSIS_SCHEMA: dict[str, Any] = {
 
 _SESSION = {"type": "string", "description": "The session_id from the start tool."}
 
+PROPOSAL_SCHEMA: dict = {
+    "type": "object",
+    "description": "Optional: the move you propose (Mock Board allows or refuses "
+    "it, with a reason, in board.your_proposal).",
+    "properties": {
+        "action": {"type": "string",
+                   "enum": ["dig", "elaborate", "confront", "pivot", "plan"]},
+        "quote": {"type": "string", "maxLength": 300,
+                  "description": "confront: the candidate's exact words."},
+        "reason": {"type": "string", "maxLength": 200},
+    },
+    "required": ["action"],
+    "additionalProperties": False,
+}
+
+
 TOOLS: list[dict[str, Any]] = [
     {
         "name": "start_interview",
@@ -113,20 +129,13 @@ TOOLS: list[dict[str, Any]] = [
                 "analysis": ANALYSIS_SCHEMA,
                 "you_said": {"type": "string", "maxLength": 4000,
                              "description": "What you actually said for the last board line."},
-                "proposal": {
-                    "type": "object",
-                    "description": "Optional: the move you propose (Mock Board allows or refuses "
-                    "it, with a reason, in board.your_proposal).",
-                    "properties": {
-                        "action": {"type": "string",
-                                   "enum": ["dig", "elaborate", "confront", "pivot", "plan"]},
-                        "quote": {"type": "string", "maxLength": 300,
-                                  "description": "confront: the candidate's exact words."},
-                        "reason": {"type": "string", "maxLength": 200},
-                    },
-                    "required": ["action"],
-                    "additionalProperties": False,
+                "cut_in": {
+                    "type": "boolean",
+                    "description": "Voice room only: interrupt the person now (with a confront, "
+                    "elaborate or dig proposal; the study partner: a confront that quotes a "
+                    "wrong fact); candidate_said is what was heard so far.",
                 },
+                "proposal": PROPOSAL_SCHEMA,
             },
             "required": ["session_id", "candidate_said"],
             "additionalProperties": False,
@@ -327,8 +336,14 @@ TOOLS += [
                 "lines": {
                     "type": "array", "minItems": 1, "maxItems": 6,
                     "items": {"type": "object",
-                              "properties": {"member": {"type": "string"},
-                                             "text": {"type": "string", "maxLength": 1200}},
+                              "properties": {
+                                  "member": {"type": "string"},
+                                  "text": {"type": "string", "maxLength": 1200},
+                                  "speak": {"type": "string", "maxLength": 1600,
+                                            "description": "Hinglish or Hindi sittings: the same "
+                                            "words in Devanagari, which Gnani Timbre reads like a "
+                                            "Hindi speaker. `text` stays the caption."},
+                              },
                               "required": ["member", "text"], "additionalProperties": False},
                 },
             },
@@ -347,8 +362,44 @@ TOOLS += [
         "inputSchema": {
             "type": "object",
             "properties": {"session_id": _SID,
-                           "timeout_s": {"type": "number", "minimum": 5, "maximum": 50}},
+                           "timeout_s": {"type": "number", "minimum": 5, "maximum": 50},
+                           "interim": {"type": "boolean",
+                                       "description": "Also return each new piece of the "
+                                       "answer while they are still speaking (status "
+                                       "`speaking`), so you can decide to cut in."},
+                           "decide": {"type": "boolean",
+                                      "description": "When the answer ends, Mock Board decides "
+                                      "the next move at once (with your latest `read`) and "
+                                      "returns it as `turn`, as next_turn would: then call say. "
+                                      "Saves a step, so the board answers sooner."},
+                           "read": {"type": "object",
+                                    "description": "With decide: your read of the answer so "
+                                    "far, used when it ends.",
+                                    "properties": {"analysis": ANALYSIS_SCHEMA,
+                                                   "proposal": PROPOSAL_SCHEMA},
+                                    "additionalProperties": False}},
             "required": ["session_id"],
+            "additionalProperties": False,
+        },
+    },
+    {
+        "name": "nudge",
+        "title": "A few words while the person is still speaking",
+        "description": (
+            "Voice room only. While wait_for_answer says `speaking`, a member says a few words "
+            "without stopping the answer, as a real board does: \"point par aaiye\", \"aur?\", "
+            "\"be specific\", \"go on\". At most two an answer; never praise."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {"session_id": _SID,
+                           "member": {"type": "string"},
+                           "text": {"type": "string", "maxLength": 60,
+                                    "description": "The words, at most six."},
+                           "speak": {"type": "string", "maxLength": 120,
+                                     "description": "Hinglish or Hindi: the same words in "
+                                     "Devanagari, for the voice."}},
+            "required": ["session_id", "member", "text"],
             "additionalProperties": False,
         },
     },
@@ -433,7 +484,7 @@ async def call_tool(service: BoardService, name: str, args: Mapping[str, Any] | 
         elif name == "next_turn":
             result = await service.next_turn(a.get("session_id"), a.get("candidate_said"),
                                              a.get("analysis"), a.get("you_said"),
-                                             a.get("proposal"))
+                                             a.get("proposal"), a.get("cut_in", False))
         elif name == "end_session":
             result = await service.end_session(a.get("session_id"))
         elif name == "check_scores":
@@ -452,7 +503,12 @@ async def call_tool(service: BoardService, name: str, args: Mapping[str, Any] | 
         elif name == "say":
             result = await service.say(a.get("session_id"), a.get("lines"))
         elif name == "wait_for_answer":
-            result = await service.wait_for_answer(a.get("session_id"), a.get("timeout_s"))
+            result = await service.wait_for_answer(a.get("session_id"), a.get("timeout_s"),
+                                                   a.get("interim", False), a.get("decide", False),
+                                                   a.get("read"))
+        elif name == "nudge":
+            result = await service.nudge(a.get("session_id"), a.get("member"), a.get("text"),
+                                         a.get("speak"))
         elif name == "voice_room_ticket":
             result = service.voice_ticket()
         else:

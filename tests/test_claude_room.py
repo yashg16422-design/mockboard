@@ -161,6 +161,7 @@ def test_claude_gets_only_mock_boards_tools_and_none_of_its_own():
     options = agent_options(build_server(make_call(service, nothing)))
     assert options.tools == [] and options.strict_mcp_config is True
     assert options.setting_sources == []
+    assert options.effort == "low"  # a spoken sitting waits on every call (owner: latency)
     assert options.allowed_tools == [f"mcp__mockboard__{n}" for n in RUN_TOOLS]
     assert "voice_room_ticket" not in RUN_TOOLS and "start_interview" not in RUN_TOOLS
 

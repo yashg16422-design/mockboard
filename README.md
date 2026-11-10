@@ -4,6 +4,32 @@ Mock Board is a voice-first practice room for UPSC aspirants with three modes on
 
 The voice app uses **Gnani Prisma** (`prisma-v2.5`) for speech recognition and **Gnani Timbre** (`timbre-v2.5`) for speech synthesis. The page has a guide at `/guide` (where everything is, what you can say, what the report shows). Amazon Nova Pro on Bedrock handles structured listening, panel lines, and report judging. The text CLI and fake voice mode support offline development. Start with [the project and demo brief](docs/PROJECT_AND_DEMO_BRIEF.md) for current positioning, verified behavior, and known validation gaps.
 
+## Quick start (one command)
+
+For anyone with access to this repository. There is nothing to install in Claude itself: Mock
+Board is a local app with its own tools, and Claude Code is only used for its sign-in.
+
+You need: a Mac or Linux machine, Python 3.12 or newer, Chrome, [Claude Code](https://docs.claude.com/en/docs/claude-code)
+installed and signed in (Claude runs on your own Claude plan), and your own Gnani API key.
+
+```bash
+git clone https://github.com/yashg16422-design/mockboard.git && cd mockboard && bash scripts/quickstart.sh
+```
+
+The script installs Mock Board into `.venv` in that folder, asks once for your Gnani key (saved
+only in `.env`, never committed), and starts the app. Open **http://localhost:7870** in Chrome,
+with headphones on. Then choose **UPSC interview** (fill in a fictional form) or **Study partner**
+(type a topic), and press **Start with Claude**.
+
+- No Gnani key? Use `bash scripts/quickstart.sh --fake`: tones instead of voices, and you type
+  your answers (free).
+- Next time, `bash scripts/quickstart.sh` starts it again straight away.
+- Inside a sitting: speak after the board finishes; talk over it to interrupt (it stops and
+  listens); **End interview** at the top; **Show the board's thinking** for the decision graph.
+
+Other ways in: Claude Desktop or Claude Code as an MCP server (`python -m mockboard.mcp`, see
+[docs/MCP_QUICKSTART.md](docs/MCP_QUICKSTART.md)), and the Nova web app (below).
+
 ## Prerequisites
 
 - macOS, Linux or WSL with Python 3.12 or newer (the full suite has been run on Python 3.14 only).
