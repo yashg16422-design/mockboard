@@ -1,201 +1,244 @@
-# Mock Board
+<div align="center">
 
-Mock Board is a voice-first practice room for UPSC aspirants with three modes on one server: a **UPSC Personality Test** board, a **debate** opponent, and a **study partner** ("Mitra") who helps your own points get stronger. In the interview, a fictional five-member panel interviews from the candidate's form, remembers their answers, handles requests to repeat or change topic, and asks follow-ups tied to what they actually said. It supports Hinglish, Hindi, English, and Tamil-English Tanglish. Numeric fact challenges need a checked source card and are phrased as questions. The post-interview report gives evidence-based feedback and practice prompts; it is not a UPSC mark.
+# 🎙️ Mock Board
 
-The voice app uses **Gnani Prisma** (`prisma-v2.5`) for speech recognition and **Gnani Timbre** (`timbre-v2.5`) for speech synthesis. The page has a guide at `/guide` (where everything is, what you can say, what the report shows). Amazon Nova Pro on Bedrock handles structured listening, panel lines, and report judging. The text CLI and fake voice mode support offline development. Start with [the project and demo brief](docs/PROJECT_AND_DEMO_BRIEF.md) for current positioning, verified behavior, and known validation gaps.
+### A UPSC interview board with ears, a voice and a spine.
 
-## Quick start (one command)
+Five AI board members hear you in **Hinglish**, speak in their own voices, and push back like a real
+board. They hold you to your own words, cut in on a false claim, and never press an honest *"I don't know"*.
 
-For anyone with access to this repository. There is nothing to install in Claude itself: Mock
-Board is a local app with its own tools, and Claude Code is only used for its sign-in.
+[![Gnani Prisma v2.5](https://img.shields.io/badge/Gnani%20Prisma-v2.5%20·%20speech--to--text-2fbf8f)](https://www.gnani.ai/)
+[![Gnani Timbre v2.5](https://img.shields.io/badge/Gnani%20Timbre-v2.5%20·%20text--to--speech-2fbf8f)](https://www.gnani.ai/)
+[![MCP](https://img.shields.io/badge/MCP-14%20tools-8b7cff)](docs/MCP_QUICKSTART.md)
+[![Tests](https://img.shields.io/badge/tests-3%2C684%20passing-brightgreen)](docs/DEVELOPING.md#run-the-tests-and-the-linter)
+[![Python](https://img.shields.io/badge/python-3.12%2B-3776ab)](pyproject.toml)
 
-You need: a Mac or Linux machine, Python 3.12 or newer, Chrome, [Claude Code](https://docs.claude.com/en/docs/claude-code)
-installed and signed in (Claude runs on your own Claude plan), and your own Gnani API key.
+**[▶ Watch the demo](https://drive.google.com/file/d/1FqRW-nMtw_vbR4CB7Gb0z9akvbcY4x-J/view?usp=sharing)** ·
+**[One-page pitch](PITCH.md)** ([PDF](PITCH.pdf)) ·
+**[Try it in one command](#-try-it)** ·
+**[How it works](#-how-it-works)**
 
-```bash
-git clone https://github.com/yashg16422-design/mockboard.git && cd mockboard && bash scripts/quickstart.sh
-```
+</div>
 
-The script installs Mock Board into `.venv` in that folder, asks once for your Gnani key (saved
-only in `.env`, never committed), and starts the app. Open **http://localhost:7870** in Chrome,
-with headphones on. Then choose **UPSC interview** (fill in a fictional form) or **Study partner**
-(type a topic), and press **Start with Claude**.
+---
 
-- No Gnani key? Use `bash scripts/quickstart.sh --fake`: tones instead of voices, and you type
-  your answers (free).
-- Next time, `bash scripts/quickstart.sh` starts it again straight away.
-- Inside a sitting: speak after the board finishes; talk over it to interrupt (it stops and
-  listens); **End interview** at the top; **Show the board's thinking** for the decision graph.
+## Why
 
-Other ways in: Claude Desktop or Claude Code as an MCP server (`python -m mockboard.mcp`, see
-[docs/MCP_QUICKSTART.md](docs/MCP_QUICKSTART.md)), and the Nova web app (below).
+The interview is the hardest stage of UPSC to practise. Good mock boards are costly and few, mostly
+in big cities and mostly in English, while many candidates think and speak in Hinglish or Hindi.
+Typing into a chatbot doesn't train the real skill: answering **out loud, under pressure, to a
+panel that is listening**.
 
-## Prerequisites
+## What it does
 
-- macOS, Linux or WSL with Python 3.12 or newer (the full suite has been run on Python 3.14 only).
-- `make` and `git`.
-- For the offline interview, the tests and the eval, nothing else is needed: everything runs on your machine with a rule-based fake model and costs nothing.
-- For the real model only: an AWS account with access to Amazon Nova Pro (`amazon.nova-pro-v1:0`) in the Sydney region (`ap-southeast-2`), and the AWS CLI configured with a profile. Real calls cost money.
-- For the real voice app and the probes: a Gnani API key in `.env` as `GNANI_API_KEY` (real speech spends Gnani credits).
+| | |
+|---|---|
+| 🧾 **Prepares from your form** | A short, fictional form becomes each member's lines of questioning and the weak spot they expect to probe, drawn live as an animated graph. |
+| 🪑 **Runs a real board's order** | Introduction → degree subject → a case study, dug into → home district → hobbies, across five fictional members, each in a different Gnani Timbre voice. |
+| 👂 **Listens while you speak** | Gnani Prisma streams your words as you say them. The board can **cut in** on a false claim, **nudge** ("point par aaiye"), or **stop when you talk over it**, and it remembers what it hadn't said yet. |
+| ⚖️ **Is blunt, and fair** | It names a thin or hedged answer plainly, confronts contradictions with your exact words, answers a communal remark with equal dignity, and never presses an honest "I don't know". |
+| 📊 **Reports with evidence** | Scores on the qualities UPSC looks for, each backed by a quote from your answers, and each quote checked against the transcript. |
+| 🧑‍🏫 **Also includes** | **Mitra**, a study partner on any topic (it answers your questions and corrects a wrong fact kindly), and a **debate** mode. |
 
-## Setup
+Languages: Hinglish, Hindi and English; Tamil-English exists but has not been reviewed by a fluent
+speaker yet.
 
-You can either install the package once, or run it straight from the source folder.
+## 🚀 Try it
 
-**Option 1: install it.** On your laptop (WSL), in the `mockboard` folder:
+You need a Mac or Linux machine, Python 3.12 or newer, Chrome, and your own
+[Gnani API key](https://app.gnani.ai/voice). For the Claude-powered board you also need
+[Claude Code](https://docs.claude.com/en/docs/claude-code), installed and signed in.
 
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-make install
-```
-
-`make install` installs the pinned dependencies from `requirements.txt` and then installs Mock Board itself in editable mode, so your code changes take effect without reinstalling.
-
-**Option 2: run from source.** Every `make` target already sets `PYTHONPATH=src:.`, so `make` commands work without installing the package (you still need the dependencies from `requirements.txt`). If you call Python yourself instead of using `make`, you must set the path, or Python will say it cannot find the `mockboard` module. On your laptop (WSL), in the `mockboard` folder:
+**1. One command: the local app, with Claude as the brain**
 
 ```bash
-pip install -r requirements.txt
-PYTHONPATH=src python3 -m mockboard.cli --fake
+git clone https://github.com/yashg16422-design/mockboard && cd mockboard && bash scripts/quickstart.sh
 ```
 
-To change settings, copy `.env.example` to `.env` and edit it. Every setting has a safe default, so this is optional for the offline interview. The `.env` file is ignored by git, and AWS credentials never go in it.
+Open **http://localhost:7870** in Chrome with headphones on, fill a fictional form (or type a study
+topic) and press **Start with Claude**. No Gnani key? Add `--fake` to try it free, with typed answers.
 
-## Run the offline interview
-
-The offline interview uses a rule-based fake model that imitates the shape of Nova's answers. It shows how the whole pipeline behaves, but its words and judgements are not Nova's.
-
-To watch a complete scripted interview (the answers come from `examples/fake_session.txt`), with a short trace summary at the end. On your laptop (WSL), in the `mockboard` folder:
+**2. As an MCP connector in your own Claude** (run from the `mockboard` folder, after step 1)
 
 ```bash
-make cli-fake
+claude mcp add mockboard -- "$PWD/.venv/bin/python" -m mockboard.mcp
 ```
 
-In this run you can see the whole panel (since P7, the UPSC interview is always the panel): the Chairperson's ritual line, five members in order with a spoken hand-off at each change, a wrong figure questioned a turn after it was said and the acknowledgement when the candidate admits it, a repeat that costs no answer, a topic change that never comes back, an honest "I don't know" reassured, and the Chairperson's close. The full transcript, read line by line, is in [docs/tasks/P7_FAKE_TRANSCRIPT.md](docs/tasks/P7_FAKE_TRANSCRIPT.md). `--max-answers 10` caps the interview the way a test user's is capped (the old `--panel` flag still works and does nothing). `make cli-fake-hi` runs the same script and writes the report in Hindi.
+Then just say *"start a UPSC mock interview"*. Claude Desktop setup and the in-chat voice room are
+covered in [docs/MCP_QUICKSTART.md](docs/MCP_QUICKSTART.md).
 
-To be interviewed yourself, still offline. On your laptop (WSL), in the `mockboard` folder:
+**3. The web app on Amazon Nova Pro:** `make voice-install && make voice-upsc` (needs AWS Bedrock
+access in `ap-southeast-2`; see [docs/DEVELOPING.md](docs/DEVELOPING.md)).
 
-```bash
-make cli
+## 🧠 How it works
+
+### The big picture
+
+```mermaid
+flowchart LR
+  MIC["🎤 You speak<br/>Hinglish · Hindi · English"] --> PR["Gnani Prisma v2.5<br/>streaming speech-to-text"]
+  PR --> AI["🧠 Claude or Nova Pro<br/>reads the answer,<br/>proposes a move"]
+  AI --> DIR["⚖️ Mock Board director<br/>allows or refuses,<br/>checks every quote"]
+  DIR --> AI2["🧠 Words the line<br/>sent in Devanagari"]
+  AI2 --> TB["Gnani Timbre v2.5<br/>the member's own voice"]
+  TB --> SPK["🔈 You hear the board"]
+  DIR --> UI["📈 Decision graph<br/>live in the room"]
+  DIR --> REP["📊 Report<br/>every quote checked"]
 ```
 
-The program first asks a few application-form questions (home state, district, degree subject, hobbies and so on; it never asks for a name or any identifier). Then type one answer per prompt. Typing ` | ` inside an answer splits it into two transcript segments, as if the speech recogniser had heard a pause there. Type `/quit` to stop early and go straight to the report.
+**Gnani does the ears and the voice, the model does the words, and Mock Board's code makes every
+decision.** That split is the core idea: the model can be swapped (Claude, Nova, or any MCP client),
+but fairness and structure come from code that can be read and tested.
 
-The other two modes, offline and scripted:
+### One answer, end to end
 
-```bash
-make cli-fake-debate
-make cli-fake-partner
+```mermaid
+sequenceDiagram
+  autonumber
+  participant C as You
+  participant R as Voice room
+  participant P as Gnani Prisma
+  participant AI as Claude / Nova
+  participant D as Director
+  participant T as Gnani Timbre
+  C->>R: speak, in Hinglish
+  R->>P: 16 kHz audio, streamed
+  P-->>R: transcript, piece by piece
+  R-->>AI: heard so far
+  AI->>R: its read of the answer + a proposed move
+  opt a false claim, a contradiction, a communal remark
+    AI->>D: cut in, quoting your words
+    D-->>R: allowed only if Prisma really heard that quote
+  end
+  C->>R: stop (a 2.2 s pause)
+  R->>T: "हम्म" at once (made in advance)
+  R->>D: the whole answer + the AI's read
+  D->>T: a hand-off line, spoken at once
+  D-->>AI: the move and how to say it (or a refusal and why)
+  AI->>T: the member's line, in Devanagari
+  T-->>C: the member's own voice
 ```
 
-## Run the Claude room (Claude as the brain, Gnani speech)
+Because the AI's judgement travels *with* the answer, the board decides the moment you stop. Only
+one model step is left (wording the line), and the fixed lines and the "हम्म" fill the gap.
 
-The same board with a stronger mind, as a local web app. Claude runs through **your own Claude
-Code login** (no API key) with only Mock Board's tools; Gnani Prisma hears you and Gnani Timbre
-speaks each member; Mock Board's code still decides and checks every move.
+### The referee: the model proposes, code decides
 
-```bash
-.venv/bin/python -m pip install -e ".[claude]"
+```mermaid
+flowchart TD
+  P["The AI proposes a move<br/>dig · elaborate · confront · pivot"] --> Q1{"An honest<br/>'I don't know'?"}
+  Q1 -- yes --> N1["❌ Refused: never pressed"]
+  Q1 -- no --> Q2{"A confrontation?<br/>Is the quote in the transcript?"}
+  Q2 -- "not found" --> N2["❌ Refused: quote their exact words"]
+  Q2 -- "found, or not a confrontation" --> Q3{"Member's questions left?<br/>At most 2 follow-ups (3 on the case)"}
+  Q3 -- no --> N3["❌ Refused: back to the plan"]
+  Q3 -- yes --> Q4{"A pivot before<br/>the case study?"}
+  Q4 -- yes --> N4["❌ Refused: case study first"]
+  Q4 -- no --> OK["✅ Allowed: the board speaks it"]
 ```
 
-```bash
-make claude-room
+Requests (*repeat*, *skip*, *time to think*, *end the interview*) and the equal-dignity rule always
+come first. Every outcome is shown live in the decision graph, so a refused move is visible, with
+its reason.
+
+### The sitting
+
+```mermaid
+flowchart LR
+  F["📝 Form"] --> PREP["Board prepares<br/>lines + weak spots"]
+  PREP --> CH["Chairperson<br/>introduce yourself"]
+  CH --> DS["Doctor Iyer<br/>degree subject"]
+  DS --> CS["Shri Rathore<br/>a case study, dug into"]
+  CS --> HD["Shrimati Menon<br/>home district"]
+  HD --> HB["Professor Sen<br/>hobbies"]
+  HB --> RP["📊 Report<br/>scores with your quotes"]
 ```
 
-Open **http://localhost:7870** in Chrome (headphones on), fill the form or a study topic, press
-**Start with Claude**. You watch the board prepare (an animated graph of your form, the members,
-their lines of questioning and the weak spots they expect), then the sitting: the room, live
-captions, and how the board is deciding, including each move Claude proposes (dig, elaborate,
-confront with your own words, pivot) and whether Mock Board allowed it. The report appears on the
-page. `make claude-room-fake` is the same without Gnani (type your answers; free). Claude Code
-must be installed and logged in on this Mac.
+Each member's mood follows your answers: patient after an honest "I don't know", sceptical after a
+hedge, pressing when challenging, satisfied after a reasoned answer.
 
-## Run the voice app
+## 🔧 Technical walkthrough
 
-Free, in your browser, with the fake model and fake speech (nothing leaves your machine). In the `mockboard` folder:
+**Speech, built for Indian voices**
+([`mcp/voice_bridge.py`](src/mockboard/mcp/voice_bridge.py),
+[`speech/`](src/mockboard/speech/))
+- **Gnani Prisma v2.5:** audio is streamed in 1,024-byte frames while you speak. At the end of an
+  answer the bridge waits for the transcript of your *last* words before handing it on, and the
+  page low-pass filters the microphone before resampling to 16 kHz so consonants survive.
+- **Gnani Timbre v2.5:** each member has a voice, and Hindi lines are sent in Devanagari. Speech
+  is pipelined: the first sentence goes alone so the voice starts sooner, and the next piece is
+  made while the current one plays.
+- **Talking over the board:** a sustained voice stops it at once. The last 1.5 s before is kept,
+  so your first words are heard, and the AI is told what was left unsaid.
 
-```bash
-make voice-install
-make voice-fake
-```
+**Two brains, one engine** ([ADR-009](docs/adr/ADR-009-modes-as-profiles.md))
+- **MCP** ([`mcp/`](src/mockboard/mcp/)): a stdio JSON-RPC server with 14 tools. The voice room is
+  also an MCP App view inside Claude. `wait_for_answer(interim, decide, read)` streams the answer
+  in and decides at its end; `next_turn(proposal, cut_in)` and `nudge` let the model lead under
+  the director's checks.
+- **The Claude room** ([`claude_room/`](src/mockboard/claude_room/)): a local web app on the Claude
+  Agent SDK. Claude gets *only* Mock Board's tools (no shell, files or web), runs on the person's
+  own plan, and thinks at low effort, because every second is heard.
+- **The Nova web app:** "fast mouth, slow brain" on Pipecat 1.5 (SmallWebRTC, Silero VAD, Smart
+  Turn v3). LangGraph runs the slow brain ([`brain/graphs.py`](src/mockboard/brain/graphs.py)):
+  - listener → strategist;
+  - a fact-check fan-out with a numeric gate;
+  - judge → citation check → one revision → report.
 
-Then open http://localhost:7860 in Chrome, press Begin and pick a mode. The real thing (Gnani Prisma and Timbre for speech, Nova Pro for the board; costs credits) is `make voice-upsc`; the same server offers all three modes from the chooser. Use headphones so the board does not hear itself.
+  Three Bedrock lanes with short hot-lane timeouts keep it alive under throttling, and a chaos test
+  proves it.
 
-## Run against Amazon Nova Pro
+**The director** ([`brain/director.py`](src/mockboard/brain/director.py),
+[ADR-010](docs/adr/ADR-010-interview-director.md))
+- **Rules decide, not the model:** every move has a rule id (`D-HANDOFF`, `D-DEEP`, `M-CONFRONT`,
+  …), and code-computed answer signals (hedged, thin, no reason given) drive the candour.
+- **Fixed lines are fixed:** request phrases are matched by fixed rules in four languages, and
+  numeric fact challenges need a checked source card and are always phrased as questions
+  ([ADR-003](docs/adr/ADR-003-ask-never-assert.md)).
 
-This uses the real model and costs money, so try the offline interview first. Mock Board reads AWS credentials only through the standard AWS credential chain (your CLI profile on the laptop, the instance role on a server); no key is ever written in the code or in `.env`. The region and model id default to `ap-southeast-2` and `amazon.nova-pro-v1:0`, and can be changed with `AWS_REGION` and `NOVA_MODEL_ID`.
+**Quality**
+- **3,684 automated tests:** they include board-behaviour invariant suites, golden transcripts
+  checked by hash, a real local WebSocket playing the page, and scripted stand-ins for Claude.
+- **Gated commits:** every commit runs the full suite on what is staged.
+- **Versioned prompts:** each prompt is a file in [`prompts/`](src/mockboard/prompts/) with a
+  changelog.
+- **Decision records:** the reasoning behind each design is in [`docs/adr/`](docs/adr/) and the
+  [orchestrator log](docs/ORCHESTRATOR_LOG.md).
 
-On your laptop (WSL), in the `mockboard` folder:
+## 📏 Measured, honestly
 
-```bash
-aws configure --profile mockboard     # once: your access key, secret key, region ap-southeast-2
-export AWS_PROFILE=mockboard
-make cli-real
-```
+| What | Result |
+|---|---|
+| Automated tests | **3,684 passing** offline (`make test`) |
+| End of answer → the board's reasoned reply | **12–16 s → about 5 s** median (Claude, scripted speech) |
+| Reaction ("हम्म") and hand-off lines | at once, while the next line is being worded |
+| Cut-in on a planted false claim ("Newton gave relativity") | caught in **7 of 7** real Claude runs |
+| Live sittings | on Amazon Nova Pro and on Claude, with Gnani Prisma and Timbre |
 
-If the Bedrock client cannot be created (for example, the profile does not exist), the program stops with a readable message and suggests `--fake`. The timeouts used for Nova are placeholders marked `UNVERIFIED` in `src/mockboard/config.py` until the Nova probe has measured real latencies.
+**Not yet done:**
+- a review of the Tamil lines by a fluent speaker;
+- real fact cards, so real sessions run without fact checks and say so;
+- measurements across many real voices.
 
-## Run the tests and the linter
+All test data is synthetic, every board member is fictional, and their voices are generated by
+Gnani Timbre. A report from this board is practice feedback, not a UPSC mark.
 
-The test suite runs without real Gnani or Bedrock calls; the voice tests use local fake services and sockets, so a full run can take a few minutes. On your laptop, in the `mockboard` folder:
+## 🧰 Built with
 
-```bash
-make test
-make lint
-```
+**Gnani Prisma v2.5** · **Gnani Timbre v2.5** · Amazon Nova Pro (Bedrock) · Claude (MCP, Agent SDK) ·
+Pipecat · LangGraph · Silero VAD · Python
 
-Commits are gated: `make venv` (or `make hooks` on an existing checkout) switches on `.githooks/pre-commit`, which runs both checks on what is staged, not on your working folder. A full run takes a few minutes. `.githooks/pre-merge-commit` does the same for merges. A commit touching only `docs/`, `README.md` or `CLAUDE.md` skips the tests (Ruling 67). The voice extra must be installed (`make voice-install`), or the gate refuses. `--no-verify` is not used on this project. To check each commit afterwards without trusting the hook, run `make verify-range BASE=<sha>`.
+## 📚 More
 
-## Run the evaluation
+- [docs/DEVELOPING.md](docs/DEVELOPING.md): setup, offline runs, tests, evaluation, probes, traces
+  and the repository map
+- [docs/WALKTHROUGH.md](docs/WALKTHROUGH.md): the learning guide to the whole system
+- [docs/MCP_QUICKSTART.md](docs/MCP_QUICKSTART.md): Mock Board in Claude Desktop and Claude Code
+- [docs/PROJECT_AND_DEMO_BRIEF.md](docs/PROJECT_AND_DEMO_BRIEF.md): positioning and validation gaps
 
-The evaluation sends scripted answers through the real analysis graphs and counts how many planted factual errors the board catches and whether it ever "corrects" a true statement. On your laptop (WSL), in the `mockboard` folder:
+<div align="center">
 
-```bash
-make eval
-```
+Built solo by **Yash Pratap Singh** for Gnani.ai's **Great Indian AI Internship Challenge 2026**.
+<br/>#GnaniAI · #GreatIndianAIInternshipChallenge
 
-It runs the development split and writes a summary file to `eval/results/`. The held-out split refuses to run unless you pass `--allow-heldout`, because it is meant only for milestone checks. Today the eval set contains six illustrative example items that cite synthetic test cards; the real frozen golden set (60 answers and about 150 hand-checked true claims) has not been written yet. With the fake model, the numbers test the pipeline, not Nova's quality. `docs/WALKTHROUGH.md` explains each metric.
-
-The eval gate runs the same dev split and fails (with a non-zero exit code) if planted-error recall falls below a threshold or if any true claim is "corrected". The thresholds are the settings `EVAL_GATE_MIN_PLANTED_RECALL` (default 0.8) and `EVAL_GATE_MAX_FALSE_CORRECTIONS` (default 0). On your laptop (WSL), in the `mockboard` folder:
-
-```bash
-make eval-gate
-make eval-gate EVAL_BASELINE=eval/baselines/dev.json   # optional: also compare with a committed baseline summary
-```
-
-No baseline file is committed yet; the first one should be a run on the frozen golden dev set.
-
-## The probes
-
-The probes measure the three outside services (Prisma, Timbre and Nova) before we build on them, and record the results in `probes/results/RESULTS.md`. They spend real Gnani credits and AWS money, so always start with the offline self-test. On your laptop (WSL), in the `mockboard` folder:
-
-```bash
-python3 -m probes.selftest
-```
-
-Full instructions for every probe, including which machine to run each one from, are in [probes/README.md](probes/README.md).
-
-## Where traces go
-
-Every interview writes one file, `traces/<session_id>.jsonl` (the folder can be changed with `TRACE_DIR`). The file has one JSON line when the session starts, one line per candidate turn, and one line for the report. A turn line records the move the board chose and the rule that chose it, the line it spoke, the timestamp of every stage (in milliseconds since the turn started), every model call with its lane, latency and token counts, and every fallback that fired. The `traces/` folder is ignored by git, because traces contain full transcripts.
-
-Eval summaries go to `eval/results/`. A report is printed at the end of each interview, and `--report-json <path>` also saves it as JSON.
-
-## Repository map
-
-- `src/mockboard/session.py` is the session controller. It runs one interview from the opening question to the report, through the three calls the voice loop will also use: `submit_segment`, `end_of_turn` and `speak`.
-- `src/mockboard/brain/` is the "slow brain". `graphs.py` holds the three LangGraph graphs (fast analysis, fact check, report). `listener.py`, `librarian.py`, `strategist.py` and `judge.py` hold the logic of each graph node. `actor.py` turns a chosen move into the spoken line and enforces the guards. `llm.py` is the only module that talks to Bedrock. `numbers.py` and `spoken.py` handle Indian number words and how figures are spoken. `cards.py`, `schemas.py`, `tools.py`, `prompts.py` and `deps.py` hold the data models and the wiring. `personas/` has one YAML file per panel member (the debate's are in `personas/debate/`). `director.py`, `agenda.py` and `agenda_plan.py` are the panel's interview director, agenda and agenda planner, and `modes/upsc_panel/` holds its session hooks. `fake_responders.py` is the offline fake model.
-- `src/mockboard/prompts/` holds every prompt as a versioned file, with a changelog.
-- `src/mockboard/obs/` holds the per-turn trace recorder and an optional Langfuse hook (off by default).
-- `src/mockboard/cli.py` is the text-mode interview, and `src/mockboard/config.py` holds every setting.
-- `data/cards/` holds the fact cards and the guide for writing real ones ([data/cards/README.md](data/cards/README.md)).
-- `eval/` holds the evaluation harness, `tests/` the offline tests, `probes/` the service probes, and `examples/` the scripted session.
-- `docs/` holds the plan, the engineering standards, the CTO reviews, the orchestrator's rulings, the learning guide [docs/WALKTHROUGH.md](docs/WALKTHROUGH.md), and the decision records in [docs/adr/](docs/adr/).
-
-## Honest status (November 9, 2026)
-
-Built and tested: the five-member voice panel (agenda from the form, hand-offs, repeat, think time, topic change, a confirmed end, DM situations with a twist), the debate (curated motions, rounds, a judged verdict), the study partner (why, example, counterpoint, recap; repeat, skip, think and a confirmed end), the report with "How the board heard you", a microphone and language check, and the guide. `make test` and `make lint` pass offline.
-
-Checked live on November 9 (owner-approved, in text on Nova and with **generated** speech on Gnani): a full UPSC sitting, a debate and a study-partner session on Nova Pro; a Timbre-to-Prisma round trip in Hinglish, Hindi, English and Tamil, with every Hinglish and English request phrase recognised from Prisma's real output. These are not measurements on human voices. A scripted text run sends turns every few seconds and hits Bedrock's request limit; sessions survive it on fixed lines.
-
-Not yet done: a sitting in a real candidate's voice, a fluent-speaker review of the Tamil lines, real fact cards (real sessions run without fact checks and say so), and the "bring your own AI" MCP panel, which waits on a check in Claude Desktop. The fact cards and much of the test set are synthetic and must not be presented as real-world evidence; a report from this board is not a UPSC mark. See [the project and demo brief](docs/PROJECT_AND_DEMO_BRIEF.md) for details.
+</div>
