@@ -60,6 +60,10 @@ body[data-phase="prep"] #prep { display: block; }
 #room { flex: 1; display: none; grid-template-columns: minmax(300px, 5fr) minmax(340px, 7fr); }
 body[data-phase="room"] #room, body[data-phase="done"] #room { display: grid; }
 @media (max-width: 900px) { #room { grid-template-columns: 1fr; } }
+body[data-graph="off"] #room { grid-template-columns: minmax(0, 860px); justify-content: center; }
+body[data-graph="off"] #thinking { display: none; }
+#endBtn { display: none; border-color: var(--coral); color: var(--coral); }
+body[data-phase="room"] #endBtn { display: inline-block; }
 #room > section { padding: 20px 24px; }
 #room > section + section { border-left: 1px solid var(--line); }
 @media (max-width: 900px) { #room > section + section { border-left: 0; border-top: 1px solid var(--line); } }
@@ -121,7 +125,7 @@ body[data-phase="done"] #reportBox.has { display: block; }
 footer { position: relative; z-index: 1; padding: 12px 24px 18px; color: var(--faint); font-size: var(--text-xs); border-top: 1px solid var(--line); }
 </style>
 </head>
-<body data-phase="prep" data-view="form">
+<body data-phase="prep" data-view="form" data-graph="off">
 <canvas id="field" aria-hidden="true"></canvas>
 <div class="shell">
 <header>
@@ -133,6 +137,7 @@ footer { position: relative; z-index: 1; padding: 12px 24px 18px; color: var(--f
     <span class="chip"><b>Mock Board</b> decides every move</span>
   </div>
   <span class="pill" id="pill" data-s="waiting">connecting</span>
+  <button id="endBtn" type="button">End interview</button>
 </header>
 
 <div id="prep">
@@ -157,13 +162,15 @@ footer { position: relative; z-index: 1; padding: 12px 24px 18px; color: var(--f
     <div class="controls">
       <button class="primary" id="start" type="button">Start microphone</button>
       <button id="done" type="button" disabled>I have finished</button>
+      <button id="graphBtn" type="button">Show the board's thinking</button>
+      <button id="bargeBtn" type="button" aria-pressed="true" title="Speak while the board is talking and it stops to listen. Best with headphones.">Talking over the board: on</button>
       <button id="showPrep" type="button">The board's preparation</button>
     </div>
     <form class="type" id="typeform"><input id="typed" placeholder="Or type your answer and press Enter" autocomplete="off"></form>
     <p class="eyebrow">What was said</p>
     <div class="captions" id="captions"></div>
   </section>
-  <section>
+  <section id="thinking">
     <div class="panel" id="reportBox"><p class="eyebrow">Your report</p><div id="report"></div></div>
     <p class="eyebrow">How the board is deciding</p>
     <div class="meter"><div id="meter"></div></div>
@@ -290,13 +297,17 @@ you a moment, to change topic or to end, in your own words.</footer>
 
   // ---------- events ----------
   function onEvent(m) {
-    if (m.type === "state") { serverState = m.state; setPill(m.state); stateText(m.state);
+    if (m.type === "state") { if (m.state === "speaking") barged = false; serverState = m.state; setPill(m.state); stateText(m.state); setTimeout(maybeEnd, 0);
       P().state(m.state); P().who(m.state === "speaking" ? "board" : m.state === "listening" ? "you" : "");
       if (m.state === "speaking" && prepDone) enterRoom(); }
     else if (m.type === "prep") { drawPrep(m); }
     else if (m.type === "caption") { enterRoom(); addCaption(m.speaker || m.member, m.text, false); lightSeat(m.member); }
+    else if (m.type === "cut_in") { banner(m.text || "The board cuts in."); }
+    else if (m.type === "interrupted") { stopPlayback(); banner("You spoke over the board: it stopped to listen, and will remember what it had not said."); }
     else if (m.type === "heard") { addCaption("You · " + (m.source === "typed" ? "typed" : "heard by Gnani Prisma"), m.text || "(nothing heard)", true); }
     else if (m.type === "decision") { decisions.push(m); drawGraph(); showCard(m); P().pulse();
+      if (endRequested && m.rule === "D-END-CONFIRM" && !yesSent) {  // already confirmed on the page
+        yesSent = true; const say = () => { if (serverState === "listening") sendTyped(YES_SAY[language] || YES_SAY.english); else setTimeout(say, 200); }; say(); }
       const md = $("mood-" + m.member); if (md) md.textContent = m.mood && m.mood !== "neutral" ? m.mood : ""; }
     else if (m.type === "audio") { pendingAudio = m; }
     else if (m.type === "problem") { banner(m.text); }
@@ -320,7 +331,7 @@ you a moment, to change topic or to end, in your own words.</footer>
     b.textContent = head; st.append(b, document.createTextNode(sub)); }
   function stateText(s) {
     if (s === "speaking") setStatus("The board is speaking", "Listen. Your microphone waits until the board has finished.");
-    else if (s === "listening") setStatus("Your turn", micOn ? "Speak when ready. A pause of about a second and a half ends your answer." : "Start the microphone, or type your answer.");
+    else if (s === "listening") setStatus("Your turn", micOn ? "Speak when ready. A pause of about two seconds ends your answer." : "Start the microphone, or type your answer.");
     else if (s === "thinking") setStatus("The board is deciding", "Your AI reads your answer; Mock Board's rules choose the move.");
   }
   const DIM = { mental_alertness: "Mental alertness", critical_assimilation: "Critical assimilation",
@@ -348,6 +359,7 @@ you a moment, to change topic or to end, in your own words.</footer>
     if (!(m.scores || []).length && m.notes) { const p = document.createElement("div"); p.className = "r";
       p.textContent = typeof m.notes === "string" ? m.notes : JSON.stringify(m.notes).slice(0, 600); box.append(p); }
     $("reportBox").classList.add("has"); document.body.dataset.phase = "done";
+    document.body.dataset.graph = "on"; $("graphBtn").textContent = "Hide the board's thinking";
   }
   function banner(text) { $("banner").textContent = text; $("banner").style.display = "block"; }
   function lightSeat(id) { document.querySelectorAll(".seat").forEach((s) => s.classList.remove("on"));
@@ -366,8 +378,17 @@ you a moment, to change topic or to end, in your own words.</footer>
   function wrap(text, max) { const words = String(text || "").split(/\s+/); const out = []; let cur = "";
     for (const w of words) { if ((cur + " " + w).trim().length > max) { if (cur) out.push(cur); cur = w; } else cur = (cur + " " + w).trim(); }
     if (cur) out.push(cur); return out.slice(0, 3); }
+  let language = "hinglish", endRequested = false, endSent = false, yesSent = false;
+  const END_SAY = { hinglish: "Interview yahin khatam karte hain.", english: "Can we end the interview here?",
+    hindi: "इंटरव्यू यहीं खत्म करते हैं।", tanglish: "நேர்காணலை இங்கே முடித்துக்கொள்ளலாமா?" };
+  const YES_SAY = { hinglish: "Haan.", english: "Yes.", hindi: "हाँ।", tanglish: "ஆமாம்." };
+  function sendTyped(text) { if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: "typed_answer", text })); }
+  function maybeEnd() {  // the page speaks the end request, then the yes, in the sitting's language
+    if (!endRequested || serverState !== "listening") return;
+    if (!endSent) { endSent = true; addCaption("You · End interview button", END_SAY[language] || END_SAY.english, true); sendTyped(END_SAY[language] || END_SAY.english); }
+  }
   function drawPrep(m) {
-    segments = m.segments || []; budget = m.budget || 0;
+    segments = m.segments || []; budget = m.budget || 0; language = m.language || language;
     const seats = $("seats"); seats.textContent = "";
     (m.members || []).forEach((x) => {
       const d = document.createElement("div"); d.className = "seat"; d.id = "seat-" + x.id; d.title = x.title || "";
@@ -510,6 +531,7 @@ you a moment, to change topic or to end, in your own words.</footer>
     if (audioCtx.state === "suspended") audioCtx.resume(); return audioCtx; }
   function playPcm(buf) {
     const head = pendingAudio; pendingAudio = null; if (!head) return;
+    if (barged && !head.nudge && !head.reaction) return;  // the rest of a line they spoke over
     enterRoom();
     const ctx = ensureAudio();
     const pcm = new Int16Array(buf); const f = new Float32Array(pcm.length);
@@ -517,13 +539,25 @@ you a moment, to change topic or to end, in your own words.</footer>
     const ab = ctx.createBuffer(1, Math.max(1, f.length), head.rate || TARGET_RATE); ab.copyToChannel(f, 0);
     const src = ctx.createBufferSource(); src.buffer = ab; src.connect(ctx.destination);
     const at = Math.max(ctx.currentTime + 0.03, playHead); src.start(at); playHead = at + ab.duration;
-    lightSeat(head.member);
-    src.onended = () => { if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: "played", seq: head.seq })); };
+    if (head.nudge) muteUntil = at + ab.duration + 0.25;  // the board's nudge is not their answer
+    sources.push(src); lightSeat(head.member);
+    src.onended = () => { sources = sources.filter((x) => x !== src);
+      if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: "played", seq: head.seq })); };
     if (ctx.state !== "running") banner("Press “Start microphone” so the board's voices can play.");
   }
 
+  function stopPlayback() {
+    for (const src of sources) { try { src.stop(); } catch (e) { /* already ended */ } }
+    sources = []; playHead = 0; pendingAudio = null;
+  }
+
   // ---------- microphone: Gnani Prisma, with a simple voice-activity detector ----------
+  const END_SILENCE_MS = 2200;
   let floor = 0.006, speaking = false, voicedMs = 0, silentMs = 0, preroll = [];
+  // Talking over the board (owner, Nov 10): while it speaks, a sustained voice louder than the
+  // echo the browser leaves stops it; the last moments are kept so the first words are heard.
+  const BARGE_MS = 350;
+  let sources = [], barged = false, bargeOn = true, bargeMs = 0, ring = [], muteUntil = 0;
   async function startMic() {
     const ctx = ensureAudio();
     try {
@@ -541,32 +575,65 @@ you a moment, to change topic or to end, in your own words.</footer>
       banner("The microphone is not available here (" + ((err && err.name) || "blocked") + "). You can type your answers, or open the voice room in a browser tab.");
     }
   }
-  function downsample(input, rate) {
-    const ratio = rate / TARGET_RATE, n = Math.floor(input.length / ratio), out = new Int16Array(n);
-    for (let i = 0; i < n; i++) {
-      let sum = 0; const a = Math.floor(i * ratio), b = Math.min(input.length, Math.floor((i + 1) * ratio));
-      for (let j = a; j < b; j++) sum += input[j];
-      const v = Math.max(-1, Math.min(1, sum / Math.max(1, b - a))); out[i] = v < 0 ? v * 32768 : v * 32767;
+  // 48 kHz (or 44.1 kHz) to Prisma's 16 kHz: a windowed-sinc low-pass, then resampling, with the
+  // filter's state carried across frames. Plain averaging let high sounds fold back as noise and
+  // blurred consonants, which costs words (owner's test, Nov 10).
+  let rs = null;
+  function makeResampler(rate) {
+    const N = 63, fc = 0.45 * TARGET_RATE / rate, h = new Float32Array(N); let s = 0;
+    for (let i = 0; i < N; i++) {
+      const m = i - (N - 1) / 2, sinc = m === 0 ? 2 * fc : Math.sin(2 * Math.PI * fc * m) / (Math.PI * m);
+      const w = 0.42 - 0.5 * Math.cos(2 * Math.PI * i / (N - 1)) + 0.08 * Math.cos(4 * Math.PI * i / (N - 1));
+      h[i] = sinc * w; s += h[i];
     }
-    return out.buffer;
+    for (let i = 0; i < N; i++) h[i] /= s;
+    return { rate, ratio: rate / TARGET_RATE, h, N, hist: new Float32Array(N - 1), pos: 0 };
+  }
+  function downsample(input, rate) {
+    if (!rs || rs.rate !== rate) rs = makeResampler(rate);
+    const { h, N, ratio } = rs, buf = new Float32Array(N - 1 + input.length);
+    buf.set(rs.hist); buf.set(input, N - 1);
+    const fir = (c) => { let a = 0; for (let i = 0; i < N; i++) a += h[i] * buf[c + i]; return a; };
+    const out = new Int16Array(Math.max(0, Math.ceil((input.length - rs.pos) / ratio))); let n = 0, pos = rs.pos;
+    while (pos < input.length && n < out.length) {
+      const c = Math.floor(pos), fr = pos - c;
+      let v = fir(c); if (fr > 0 && c + 1 < input.length) v += fr * (fir(c + 1) - v);
+      v = Math.max(-1, Math.min(1, v)); out[n++] = v < 0 ? v * 32768 : v * 32767; pos += ratio;
+    }
+    rs.pos = pos - input.length; rs.hist = buf.slice(buf.length - (N - 1));
+    return out.slice(0, n).buffer;
   }
   function onFrame(data, rate) {
     let sum = 0; for (let i = 0; i < data.length; i++) sum += data[i] * data[i];
     const rms = Math.sqrt(sum / data.length), ms = 1000 * data.length / rate;
     if (serverState === "listening") P().level(Math.min(100, rms * 900));
-    if (serverState !== "listening" || !ws || ws.readyState !== 1) { speaking = false; preroll = []; return; }
+    if (serverState === "speaking" && bargeOn && !barged && ws && ws.readyState === 1) {
+      ring.push(downsample(data, rate)); if (ring.length > 18) ring.shift();  // about 1.5 s
+      bargeMs = rms > Math.max(0.035, floor * 4) ? bargeMs + ms : Math.max(0, bargeMs - ms / 2);
+      if (bargeMs >= BARGE_MS) {
+        barged = true; bargeMs = 0; stopPlayback();
+        ws.send(JSON.stringify({ type: "barge_in" }));
+        serverState = "listening"; speaking = true; voicedMs = 600; silentMs = 0;
+        ring.forEach((p) => ws.send(p)); ring = [];
+        setPill("listening"); stateText("listening");
+      }
+      return;
+    }
+    if (serverState !== "listening" || !ws || ws.readyState !== 1) { speaking = false; preroll = []; ring = []; bargeMs = 0; return; }
     const loud = rms > Math.max(0.012, floor * 2.6);
     if (!speaking) floor = 0.95 * floor + 0.05 * Math.min(rms, 0.05);
     const pcm = downsample(data, rate);
+    if (audioCtx && audioCtx.currentTime < muteUntil) return;  // the board is nudging
     if (!speaking) {
-      preroll.push(pcm); if (preroll.length > 4) preroll.shift();
+      preroll.push(pcm); if (preroll.length > 6) preroll.shift();  // half a second before speech
       voicedMs = loud ? voicedMs + ms : 0;
       if (voicedMs >= 120) { speaking = true; silentMs = 0; preroll.forEach((p) => ws.send(p)); preroll = []; }
       return;
     }
     ws.send(pcm);
     silentMs = loud ? 0 : silentMs + ms; voicedMs += ms;
-    if (silentMs >= 1500 && voicedMs >= 600) endTurn();
+    // A pause to think must not end the answer (owner's test, Nov 10): 2.2 s of quiet ends it.
+    if (silentMs >= END_SILENCE_MS && voicedMs >= 600) endTurn();
   }
   function endTurn() {
     if (!ws || ws.readyState !== 1 || serverState !== "listening") return;
@@ -577,6 +644,21 @@ you a moment, to change topic or to end, in your own words.</footer>
   $("startPrep").addEventListener("click", startMic);
   $("done").addEventListener("click", endTurn);
   $("showPrep").addEventListener("click", () => showPrep(true));
+  $("bargeBtn").addEventListener("click", () => {
+    bargeOn = !bargeOn; $("bargeBtn").setAttribute("aria-pressed", String(bargeOn));
+    $("bargeBtn").textContent = "Talking over the board: " + (bargeOn ? "on" : "off");
+  });
+  $("graphBtn").addEventListener("click", () => {
+    const on = document.body.dataset.graph !== "on";
+    document.body.dataset.graph = on ? "on" : "off";
+    $("graphBtn").textContent = on ? "Hide the board's thinking" : "Show the board's thinking";
+    if (on) drawGraph();
+  });
+  $("endBtn").addEventListener("click", () => {
+    if (endRequested) return;
+    if (!window.confirm("End the interview now? The board will close and your report will follow.")) return;
+    endRequested = true; $("endBtn").disabled = true; $("endBtn").textContent = "Ending…"; maybeEnd();
+  });
   $("backRoom").addEventListener("click", () => showPrep(false));
   $("typeform").addEventListener("submit", (e) => {
     e.preventDefault(); const v = $("typed").value.trim();

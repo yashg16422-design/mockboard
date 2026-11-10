@@ -136,6 +136,26 @@ WEAK_SKIP_MAX_WORDS = 6
 _LEADS = tuple(sorted({*REPEAT_LEADS.values(), *RESUME_LEADS.values()}, key=len, reverse=True))
 
 
+# A study partner is asked to stop in plainer words than an interview ("can we stop here?"), and
+# a false alarm costs one "shall we stop here?" before anything ends, so short turns like these
+# count as a request to end (owner's run, Nov 10). The frozen detector is unchanged.
+PARTNER_END_MAX_WORDS = 8
+_PARTNER_END = re.compile(
+    r"^(?:ok |okay |sorry |please )?(?:(?:can|could|shall|may) we(?: please)?|lets|let us)"
+    r" (?:stop|end|finish|wrap up|pause)(?: it| this| the session)?"
+    r"(?: here| now| for today| for now)?(?: please)?$"
+    r"|^(?:that is|thats) (?:enough|all) for (?:today|now)(?: please)?$"
+    r"|^(?:bas |chaliye )?(?:yahin|ab|aaj ke liye) (?:rukte|ruk jaate|rok dete|khatam karte|band"
+    r" karte|bas karte) hain$|^aaj ke liye bas$|^bas karte hain$"
+    r"|^(?:बस )?(?:यहीं|अब|आज के लिए) (?:रुकते|रोक देते|खत्म करते|बस करते) हैं$|^आज के लिए बस$")
+
+
+def _partner_end(text: str) -> bool:
+    plain = " ".join(re.sub(r"[^\w\s\u0900-\u0963\u0966-\u097f]", " ",
+                            text.lower().replace("'", "")).split())
+    return len(plain.split()) <= PARTNER_END_MAX_WORDS and bool(_PARTNER_END.match(plain))
+
+
 def _request(text: str) -> str:
     """"end", "repeat", "skip", "think" or "" for one turn's raw transcript. The frozen
     detector goes first (its own short-turn and tail windows apply), then the Tamil list, then
@@ -155,6 +175,8 @@ def _request(text: str) -> str:
             weak = hit.strength is ChangeStrength.WEAK
             if not weak or len(text.split()) <= WEAK_SKIP_MAX_WORDS:
                 return "skip"
+    if _partner_end(text):
+        return "end"
     if is_think_request(text):
         return "think"
     return ""

@@ -55,6 +55,8 @@ PARTNER = "study_partner"
 MAX_SESSIONS = 4
 IDLE_S = 3 * 3600
 MIN_ANSWERS, MAX_ANSWERS = 5, 20  # five members, one question each at least
+NUDGE_MAX_WORDS = 6  # a nudge is a few words, said over the answer
+CUT_IN_MIN_WORDS = 6  # a cut-in needs at least this much heard
 MOVE_DEADLINE_S = 5.0  # our "listener" is instant; this only bounds a broken task
 MAX_RATIONALE_CHARS = 300
 FIXED_GUARDS = frozenset({"fixed_line", "clarify_template", "no_card", "partner_template"})
@@ -104,6 +106,8 @@ class McpSession:
     last_said: str = ""  # the voice room's last spoken lines: `you_said` when the AI leaves it out
     moods: dict[str, str] = field(default_factory=dict)  # member -> mood, from the answers so far
     you_said: dict[str, str] = field(default_factory=dict)  # turn id -> the assistant's own line
+    read: dict[str, Any] = field(default_factory=dict)  # the AI's read of the answer in progress
+    awaiting_say: str = ""  # a turn decided at the answer's end, not yet spoken
 
 
 class BoardService:
@@ -235,7 +239,8 @@ class BoardService:
         # Members follow the panel order (the order of their segments), the Chairperson first.
         order = [s["member"] for s in segments]
         members.sort(key=lambda m: order.index(m["id"]) if m["id"] in order else -1)
-        return {"type": "prep", "mode": ms.mode, "facts": facts, "members": members,
+        return {"type": "prep", "mode": ms.mode, "language": ms.language, "facts": facts,
+                "members": members,
                 "segments": segments, "budget": budget, "plan_from": "the agenda (templates)"}
 
     async def start_voice_interview(self, form: object, max_answers: object = None
@@ -294,15 +299,24 @@ class BoardService:
                 raise ToolError(str(exc)) from None
             if not text:
                 raise ToolError("text: the words to say")
-            clean.append({"member": str(member), "text": text})
+            entry = {"member": str(member), "text": text}
+            speak = line.get("speak")
+            if isinstance(speak, str) and speak.strip():
+                try:
+                    entry["speak"] = clean_speech(speak)
+                except RefusedInput as exc:
+                    raise ToolError(str(exc)) from None
+            clean.append(entry)
         ms.last_said = " ".join(f"{names[x['member']]}: {x['text']}" for x in clean)
+        ms.awaiting_say = ""
         out = await room.say(clean)
         return {"session_id": ms.id, **out,
                 "next_step": "Call wait_for_answer." if out.get("spoken") else
                 "Ask the person to open the voice room, then call say again."}
 
-    async def wait_for_answer(self, session_id: object, timeout_s: object = None
-                              ) -> dict[str, Any]:
+    async def wait_for_answer(self, session_id: object, timeout_s: object = None,
+                              interim: object = False, decide: object = False,
+                              read: object = None) -> dict[str, Any]:
         from mockboard.mcp.voice_bridge import WAIT_LIMIT_S
 
         ms = self._get(session_id)
@@ -310,11 +324,66 @@ class BoardService:
         wait = WAIT_LIMIT_S
         if isinstance(timeout_s, (int, float)) and not isinstance(timeout_s, bool):
             wait = max(5.0, min(WAIT_LIMIT_S, float(timeout_s)))
-        out = await room.wait_for_answer(wait)
-        step = ("Call next_turn with candidate_said exactly as given, your analysis, and "
-                "you_said." if out.get("status") in ("answered", "silence")
-                else "Call wait_for_answer again.")
+        if room.interim_seen == 0:  # a read from before this answer began is stale
+            ms.read = {}
+        elif isinstance(read, Mapping):  # the AI's read of this answer, for when it ends
+            ms.read = {k: read[k] for k in ("analysis", "proposal") if isinstance(
+                read.get(k), Mapping)}
+        out = await room.wait_for_answer(wait, interim=interim is True)
+        status = out.get("status")
+        read_now, ms.read = ms.read, ({} if status != "speaking" else ms.read)
+        if status in ("answered", "silence") and decide is True and read_now:
+            # One step fewer for the AI (owner, Nov 10: "wait only a second or two"): the board
+            # decides now, from the whole answer and the AI's read of it while it was spoken. A
+            # short answer the AI has not read goes back to it (next_turn), where a request such
+            # as "can we stop here?" is understood.
+            turn = await self._decide_now(ms, out.get("candidate_said", ""), read_now)
+            ms.awaiting_say = turn.get("turn_id", "") or "decided"
+            return {"session_id": ms.id, **out, "turn": turn,
+                    "next_step": "The board has decided (turn). Call say with turn.say now: "
+                    "verbatim lines word for word (leave out any being_spoken), own_words lines "
+                    "in your words. If turn.finished, call end_session instead."}
+        if status in ("answered", "silence"):
+            step = ("Call next_turn with candidate_said exactly as given, your analysis, and "
+                    "you_said.")
+        elif status == "speaking":
+            step = ("Still speaking. To cut in, call next_turn with candidate_said = heard_so_far, "
+                    "cut_in true and a confront (quoting their words), elaborate or dig proposal; "
+                    "otherwise call wait_for_answer again with interim true.")
+        else:
+            step = "Call wait_for_answer again."
         return {"session_id": ms.id, **out, "next_step": step}
+
+    async def _decide_now(self, ms: McpSession, said: str, read: dict[str, Any]) -> dict[str, Any]:
+        analysis, proposal = read.get("analysis"), read.get("proposal")
+        try:
+            return await self.next_turn(ms.id, said, analysis=analysis, proposal=proposal)
+        except ToolError:
+            if proposal is None and analysis is None:
+                raise
+            # a read that no longer fits the whole answer: the board decides without it
+            return await self.next_turn(ms.id, said)
+
+    async def nudge(self, session_id: object, member: object, text: object,
+                    speak: object = None) -> dict[str, Any]:
+        ms = self._get(session_id)
+        room = self._room(ms)
+        names = self._names(ms.mode)
+        if member not in names:
+            raise ToolError(f"member: one of {', '.join(sorted(names))}")
+        try:
+            words = clean_speech(text)
+            spoken = clean_speech(speak) if isinstance(speak, str) and speak.strip() else None
+        except RefusedInput as exc:
+            raise ToolError(str(exc)) from None
+        if not words or len(words.split()) > NUDGE_MAX_WORDS:
+            raise ToolError(f"text: a nudge is at most {NUDGE_MAX_WORDS} words")
+        try:
+            out = await room.nudge(str(member), words, spoken)
+        except ValueError as exc:
+            raise ToolError(f"nudge refused: {exc}") from None
+        return {"session_id": ms.id, **out,
+                "next_step": "Call wait_for_answer again (interim true): they are still speaking."}
 
     def voice_ticket(self) -> dict[str, Any]:
         bridge = self.voice
@@ -342,6 +411,7 @@ class BoardService:
             "answers_used": board.get("answers_used", 0), "situation": bool(board.get("situation")),
             "signals": answer_signals(text), "candidate_said": text[:200],
             "proposal": board.get("your_proposal"), "mood": board.get("mood", "neutral"),
+            "cut_in": bool(board.get("cut_in")),
         })
         if finished:
             await room.publish({"type": "finished"})
@@ -416,8 +486,16 @@ class BoardService:
         analysis: object = None,
         you_said: object = None,
         proposal: object = None,
+        cut_in: object = False,
     ) -> dict[str, Any]:
         ms = self._get(session_id)
+        if ms.awaiting_say and cut_in is not True:
+            raise ToolError("the board already decided this answer (wait_for_answer's turn): "
+                            "call say with turn.say, then wait_for_answer")
+        cut = False
+        if cut_in is True:  # the board interrupts the person mid-answer (owner, Nov 10)
+            candidate_said = await self._cut_in(ms, proposal, analysis)
+            cut = True
         try:
             text = clean_speech(candidate_said)
             said_by_you = clean_speech(you_said) if you_said is not None else ms.last_said
@@ -446,7 +524,9 @@ class BoardService:
                 say, board = self._upsc_turn(ms, move, out.line)
             else:
                 say, board = self._partner_turn(ms, move, out.line)
+            board["cut_in"] = cut
             await self._publish_decision(ms, move, board, text, out.turn_id, out.finished)
+            self._prespeak(ms, say)
         return {
             "session_id": ms.id,
             "turn_id": out.turn_id,
@@ -455,6 +535,52 @@ class BoardService:
             "finished": out.finished,
             "next_step": _DONE_STEP if out.finished else _NEXT_STEP,
         }
+
+    def _prespeak(self, ms: McpSession, say: list[dict[str, Any]]) -> None:
+        """In the voice room, the fixed lines that open the board's reply (a hand-off, the
+        close) start playing now, while the AI words the rest (owner: latency, Nov 10)."""
+        room = self.voice.room(ms.id) if self.voice is not None else None
+        lead = []
+        for line in say:
+            if line.get("how") != "verbatim":
+                break
+            lead.append(line)
+        if room is None or not lead:
+            return
+        if room.prespeak([{"member": x["member"], "text": x["text"]} for x in lead]):
+            for line in lead:
+                line["being_spoken"] = ("already being spoken in the room: leave this line out "
+                                        "of say")
+
+    async def _cut_in(self, ms: McpSession, proposal: object, analysis: object) -> str:
+        """Check a cut-in, then stop listening: what Prisma heard so far becomes the answer.
+        Refused (and the person goes on speaking) unless it is a confront, elaborate or dig
+        proposal (the study partner: a confront only, to correct a wrong fact), once per
+        answer, on at least a few words, never on an honest "I don't know",
+        and, for a confrontation, quoting words Prisma really heard."""
+        from mockboard.brain.judge import _norm
+
+        room = self._room(ms)
+        allowed = ("confront", "elaborate", "dig") if ms.mode == UPSC else ("confront",)
+        if not isinstance(proposal, Mapping) or proposal.get("action") not in allowed:
+            if ms.mode != UPSC:  # Mitra stops the person only to put a wrong fact right
+                raise ToolError("cut-in refused: the study partner cuts in only to correct a "
+                                "wrong fact; send a confront proposal quoting it")
+            raise ToolError("cut-in refused: send a confront, elaborate or dig proposal with it")
+        if room.cut_this_answer:
+            raise ToolError("cut-in refused: one cut-in per answer; let them finish")
+        heard = room.heard_so_far()
+        if len(heard.split()) < CUT_IN_MIN_WORDS:
+            raise ToolError("cut-in refused: too little heard yet; keep listening")
+        if isinstance(analysis, Mapping) and analysis.get("honest_unknown"):
+            raise ToolError("cut-in refused: an honest 'I don't know' is never interrupted")
+        quote = " ".join(str(proposal.get("quote", "")).split())
+        if proposal["action"] == "confront" and (not quote or _norm(quote) not in _norm(heard)):
+            raise ToolError("cut-in refused: quote words Prisma really heard (heard_so_far)")
+        try:
+            return await room.cut_in()
+        except ValueError as exc:
+            raise ToolError(f"cut-in refused: {exc}") from None
 
     def _proposal(self, ms: McpSession, raw: object, text: str) -> Any:
         """The client's proposed move, checked: a confrontation must quote the candidate's own

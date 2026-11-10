@@ -44,6 +44,9 @@ class ClaudeRoomBridge(VoiceBridge):
         self.service = service
         self.agent = agent
         self.run: ClaudeRun | None = None
+        from mockboard.config import REPO_ROOT
+
+        self.log_dir = REPO_ROOT / "traces"  # each sitting's log, for diagnosis (never committed)
 
     # -- HTTP: the start page, then the voice room's own routes ---------------------------
 

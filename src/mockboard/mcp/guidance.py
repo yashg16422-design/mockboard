@@ -274,11 +274,32 @@ def voice_prompt() -> str:
         "2. Call prepare_board: for each member, up to three lines of questioning drawn from the "
         "form, each with `why` and the `weak_spot` you expect to probe. No figures, names you "
         "were not given, links or markup. The room draws it as an animated graph.",
-        "3. Call say with the returned lines in order: `verbatim` lines word for word, `own_words` "
-        "lines in your words within `max_words`, one question, in the sitting's language.",
-        "4. Call wait_for_answer. When it returns `answered` or `silence`, call next_turn with "
-        "`candidate_said` exactly as returned, your analysis, and what you said. If it returns "
-        "`waiting`, call wait_for_answer again.",
+        "3. Call say with the returned lines in order: `verbatim` lines word for word (leave out "
+        "any marked `being_spoken`: the room is already saying them), `own_words` "
+        "lines in your words within `max_words`, one question, in the sitting's language. In a "
+        "Hinglish or Hindi sitting give every line a `speak` too: the same words written fully "
+        "in Devanagari, English words spelled as an Indian speaker says them (\"सिविल "
+        "सर्विसेज़\"), so Gnani Timbre pronounces them like a Hindi speaker. `text` is the caption.",
+        "4. Call wait_for_answer with interim true and decide true. While it returns "
+        "`speaking`, read `heard_so_far` and pass your current read of the answer with the next "
+        "call (`read`: your analysis, and a proposal if you would make one), so the board can "
+        "decide the moment they finish. While they speak you may: nudge (a few words that do "
+        "not stop them, at most two an answer: \"point par aaiye\", \"aur?\", \"thoda "
+        "specific boliye\") when they ramble, stay vague or stall; or cut in at once, when they "
+        "say something a real board would not let pass (a false or exaggerated claim, a "
+        "contradiction of an earlier answer, a communal or demeaning remark): call next_turn "
+        "with candidate_said = heard_so_far, cut_in true, and a confront proposal quoting their "
+        "exact words. At most one cut-in an answer; never for an honest 'I don't know' or a "
+        "merely weak answer. Mitra, the study partner, cuts in only to put a wrong fact right "
+        "(a confront quoting it), and then corrects it kindly in one sentence before asking on; "
+        "when the person asks Mitra a question, Mitra answers it plainly in one or two "
+        "sentences first, then asks on. "
+        "When it returns `answered` or `silence` with `turn`, the board has already decided: "
+        "call say with turn.say at once (if turn.finished, call end_session); without `turn` "
+        "(a short answer you had not read), call next_turn as usual. If it returns "
+        "`waiting`, call it again. If an answer carries `interrupted_you`, the person spoke over "
+        "you: answer what they said first, and pick up what you had not said only if it still "
+        "matters. If say returns `interrupted`, call wait_for_answer.",
         "5. Say the next lines with say. Repeat until `finished`, then call end_session and show "
         "the report; to score, use check_scores.",
         "",

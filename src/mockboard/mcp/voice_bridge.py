@@ -52,8 +52,16 @@ PORT_TRIES = 20
 MAX_EVENTS = 400
 MAX_TTS_CHARS = 380  # Timbre takes at most 400 characters a request
 WAIT_LIMIT_S = 50.0  # a tool call returns before a host's timeout; the AI calls again
-FINAL_WAIT_S = 2.5  # after the turn ends: time for Prisma's in-flight final transcript
-QUIET_S = 0.7  # no new final for this long after the turn ended: the answer is complete
+FINAL_WAIT_S = 3.5  # after the turn ends: at most this long for Prisma's last final transcript
+QUIET_S = 0.3  # after that final, a moment for one more
+SPEECH_RMS = 500  # 16-bit RMS above which a chunk holds speech, not the room's quiet
+NUDGES_PER_ANSWER = 2
+# The instant reaction when an answer ends: neutral sounds a listener makes, never approval.
+FILLERS = {
+    "hinglish": ["हम्म।", "जी।"], "hindi": ["हम्म।", "जी।"],
+    "english": ["Hmm.", "I see."], "tanglish": ["Hmm.", "I see."],  # Tamil: UNVERIFIED, English
+}
+INTERIM_MIN_WORDS = 8  # an interim piece goes to the AI only with this many new words
 READY_WAIT_S = 30.0  # the first `say` waits for the page's preparation animation to finish
 ANSWER_MAX_CHARS = 4000
 _SENTENCE = re.compile(r"(?<=[.?!।])\s+")
@@ -70,6 +78,18 @@ def gnani_key(settings: Settings) -> str:
     if not key or key.startswith("replace-me"):
         raise RuntimeError("the Gnani key is not set in the repository's .env")
     return key
+
+
+def _rms(pcm: bytes) -> float:
+    """Root mean square of 16-bit mono PCM, from every fourth sample (cheap, good enough)."""
+    import array
+
+    samples = array.array("h")
+    samples.frombytes(pcm[: len(pcm) - len(pcm) % 2])
+    picked = samples[::4]
+    if not picked:
+        return 0.0
+    return (sum(x * x for x in picked) / len(picked)) ** 0.5
 
 
 def tts_chunks(text: str) -> list[str]:
@@ -89,6 +109,26 @@ def tts_chunks(text: str) -> list[str]:
         else:
             out.append(sentence)
     return out
+
+
+def _same(text: str) -> str:
+    """A line's words without case or punctuation, to know a line already spoken."""
+    return " ".join(re.sub(r"[^\w\s]", " ", text.lower()).split())
+
+
+FIRST_PIECE_CHARS = 120  # the first words of a turn go alone, so the voice starts sooner
+
+
+def speech_pieces(text: str, first: bool = False) -> list[str]:
+    """`tts_chunks`, except that the first piece of a turn is a single short sentence: Timbre
+    makes a short piece faster, and the rest is made while it plays."""
+    chunks = tts_chunks(text)
+    if not first or not chunks or len(chunks[0]) <= FIRST_PIECE_CHARS:
+        return chunks
+    sentences = [s.strip() for s in _SENTENCE.split(chunks[0]) if s.strip()]
+    if len(sentences) < 2 or len(sentences[0]) > FIRST_PIECE_CHARS:
+        return chunks
+    return [sentences[0], " ".join(sentences[1:]), *chunks[1:]]
 
 
 # --- speech ---------------------------------------------------------------------------------
@@ -120,6 +160,8 @@ class PrismaListener:
         self._buf = b""
         self._recv: asyncio.Task | None = None
         self._last_final = 0.0
+        self._last_speech = 0.0  # when audio with speech in it was last sent
+        self.on_final: Callable[[str], None] | None = None  # each new final, while still speaking
 
     async def connect(self) -> None:
         from websockets.asyncio.client import connect
@@ -138,8 +180,12 @@ class PrismaListener:
                 if msg.type == "transcript" and not msg.is_partial and msg.text.strip():
                     self.finals.append(msg.text.strip())
                     self._last_final = msg.arrived
+                    if self.on_final is not None:
+                        self.on_final(msg.text.strip())
 
     async def feed(self, pcm: bytes) -> None:
+        if _rms(pcm) > SPEECH_RMS:
+            self._last_speech = time.monotonic()
         self._buf += pcm
         whole = len(self._buf) - len(self._buf) % g.FRAME_BYTES
         for frame in g.iter_frames(self._buf[:whole]):
@@ -152,16 +198,18 @@ class PrismaListener:
             for frame in g.iter_frames(self._buf + silence):
                 await self.ws.send(frame)
         self._buf = b""
-        sent = time.monotonic()
-        deadline = sent + FINAL_WAIT_S
+        # Speech sent after Prisma's last final has not been transcribed yet: wait for its final.
+        # Returning on older text alone dropped the candidate's last words (owner's test, Nov 10).
+        deadline = time.monotonic() + FINAL_WAIT_S
         while time.monotonic() < deadline:
-            await asyncio.sleep(0.1)
-            # Prisma has usually closed the answer during the candidate's own pause, before the
-            # turn ended (a live check, Nov 9: 2.1 s spent waiting for a new final). Once there
-            # is text and nothing new for a moment, the answer is complete.
-            if self.finals and time.monotonic() - max(self._last_final, sent) > QUIET_S:
+            await asyncio.sleep(0.05)
+            caught_up = self._last_final >= self._last_speech
+            if caught_up and time.monotonic() - max(self._last_final, 0.0) > QUIET_S:
                 break
         await self.close()
+        return " ".join(self.finals).strip()
+
+    def heard(self) -> str:
         return " ".join(self.finals).strip()
 
     async def close(self) -> None:
@@ -188,7 +236,8 @@ class GnaniSpeech:
         from mockboard.speech.replay_speech import synthesize
         from mockboard.speech.tts_text import hinglish_for_tts
 
-        spoken = hinglish_for_tts(text) if language == "hinglish" else text
+        devanagari = any("\u0900" <= ch <= "\u097f" for ch in text)
+        spoken = hinglish_for_tts(text) if language == "hinglish" and not devanagari else text
         return await synthesize(spoken, voice, self.settings, api_key=self.key)
 
     async def listener(self, lang_code: str) -> Listener:
@@ -243,15 +292,36 @@ class VoiceRoom:
     listener: Listener | None = None
     listening_since: float = 0.0
     seq: int = 0
+    log_path: Path | None = None  # the Claude room's local log (traces/, never committed)
     played: dict[int, asyncio.Event] = field(default_factory=dict)
     finished: bool = False
     ready: asyncio.Event = field(default_factory=asyncio.Event)  # the page's preparation is drawn
+    segment: asyncio.Event = field(default_factory=asyncio.Event)  # a new final while speaking
+    interim_seen: int = 0  # finals already returned to the AI during this answer
+    prespeaking: asyncio.Future | None = None  # fixed lines started at the board's decision
+    prespoken: set[tuple[str, str]] = field(default_factory=set)
+    cut_this_answer: bool = False
+    # The person may talk over the board (owner, Nov 10: "even if I interrupt him while it is
+    # speaking he should keep that in mind"): playing stops and what was left unsaid is kept.
+    stop_play: bool = False
+    playing: list[str] = field(default_factory=list)  # the pieces being spoken now
+    play_index: int = -1
+    interruption: dict[str, str] | None = None
+    last_member: str | None = None
+    fillers: dict[tuple[str, str], bytes] = field(default_factory=dict)  # instant reactions
+    filler_turn: int = 0
+    warming: asyncio.Future | None = None
+    nudges_this_answer: int = 0
 
     # -- to the page --------------------------------------------------------------------
 
     async def publish(self, event: dict[str, Any]) -> None:
         self.events.append(event)
         del self.events[:-MAX_EVENTS]
+        if self.log_path is not None:
+            with contextlib.suppress(OSError), self.log_path.open("a", encoding="utf-8") as fh:
+                fh.write(json.dumps({"t": round(time.time(), 3), **event},
+                                    ensure_ascii=False) + "\n")
         await self._send(json.dumps(event, ensure_ascii=False))
 
     async def _send(self, data: str | bytes) -> None:
@@ -277,15 +347,83 @@ class VoiceRoom:
         if not self.ready.is_set():  # let the preparation graph finish before the first word
             with contextlib.suppress(TimeoutError):
                 await asyncio.wait_for(self.ready.wait(), READY_WAIT_S)
-        await self.set_state("speaking")
         total_ms = 0
+        if self.prespeaking is not None:  # the board's fixed lines, started at its decision
+            with contextlib.suppress(Exception):
+                total_ms += await self.prespeaking
+            self.prespeaking = None
+        done_already, self.prespoken = self.prespoken, set()
+        rest = [x for x in lines if (x["member"], _same(x["text"])) not in done_already]
+        if self.interruption is not None:  # they talked over the fixed lines: listen, not speak
+            unsaid = " ".join(x["text"] for x in rest)
+            self.interruption["not_said"] = " ".join(
+                t for t in (self.interruption.get("not_said", ""), unsaid) if t)
+            return self._interrupted_result(len(lines), total_ms)
+        self.stop_play = False
+        await self.set_state("speaking")
+        total_ms += await self._play(rest)
+        if self.interruption is not None:
+            return self._interrupted_result(len(lines), total_ms)
+        await self._start_listening()
+        return {"spoken": True, "lines": len(lines), "audio_ms": total_ms}
+
+    def _interrupted_result(self, n: int, total_ms: int) -> dict[str, Any]:
+        return {"spoken": True, "lines": n, "audio_ms": total_ms, "interrupted": True,
+                **(self.interruption or {}),
+                "note": "the person spoke over you and the room is listening to them now: call "
+                        "wait_for_answer. Answer what they said; pick up what you did not say "
+                        "only if it still matters."}
+
+    def prespeak(self, lines: list[dict[str, str]]) -> bool:
+        """Start the board's fixed lines (a hand-off, the close) the moment the board decides,
+        while the AI words the next question (owner: latency, Nov 10). `say` skips them."""
+        if not self.pages or not self.ready.is_set() or self.state == "listening" or not lines:
+            return False
+        if self.prespeaking is not None:
+            return False
+
+        async def run() -> int:
+            self.stop_play = False
+            await self.set_state("speaking")
+            return await self._play(lines)
+
+        self.prespoken = {(x["member"], _same(x["text"])) for x in lines}
+        self.prespeaking = asyncio.ensure_future(run())
+        return True
+
+    async def _play(self, lines: list[dict[str, str]]) -> int:
+        """Speak the lines in order; returns the audio's length in ms once all of it played."""
+        # Every piece of speech in order: (member, caption for the line's first piece, words).
+        # The Hindi voices read Devanagari like a Hindi speaker; Latin Hinglish they mangle
+        # (owner's test, Nov 10). The client sends the same words in Devanagari as `speak`.
+        jobs: list[tuple[str, str | None, str]] = []
         for line in lines:
-            member, text = line["member"], line["text"]
-            voice = self.voices.get(member) or next(iter(self.voices.values()))
-            await self.publish({"type": "caption", "side": "board", "member": member,
-                                "speaker": self.names.get(member, member), "text": text})
-            for chunk in tts_chunks(text):
-                pcm = await self.speech.synthesize(chunk, voice, self.language)
+            pieces = speech_pieces(line.get("speak") or line["text"], first=not jobs)
+            jobs += [(line["member"], line["text"] if i == 0 else None, p)
+                     for i, p in enumerate(pieces)]
+
+        def synth(job: tuple[str, str | None, str]) -> asyncio.Task:
+            voice = self.voices.get(job[0]) or next(iter(self.voices.values()))
+            return asyncio.ensure_future(self.speech.synthesize(job[2], voice, self.language))
+
+        # The next piece is made while this one plays (owner: latency, Nov 10), so there is no
+        # silence between a hand-off and the next member's question while Timbre works.
+        total_ms, task = 0, synth(jobs[0]) if jobs else None
+        self.playing, self.play_index = [j[2] for j in jobs], -1
+        if jobs and self.warming is None:  # each voice's short reactions, made once, in advance
+            self.warming = asyncio.ensure_future(self._warm_fillers())
+        try:
+            for i, (member, caption, _words) in enumerate(jobs):
+                assert task is not None
+                pcm = await task
+                if self.stop_play:
+                    break
+                self.play_index, self.last_member = i, member
+                task = synth(jobs[i + 1]) if i + 1 < len(jobs) else None
+                if caption is not None:
+                    await self.publish({"type": "caption", "side": "board", "member": member,
+                                        "speaker": self.names.get(member, member),
+                                        "text": caption})
                 self.seq += 1
                 seq = self.seq
                 done = self.played[seq] = asyncio.Event()
@@ -297,26 +435,151 @@ class VoiceRoom:
                 with contextlib.suppress(TimeoutError):
                     await asyncio.wait_for(done.wait(), ms / 1000 + 4.0)
                 self.played.pop(seq, None)
+                if self.stop_play:
+                    break
+        finally:
+            if task is not None and not task.done():
+                task.cancel()
+            self.playing, self.play_index = [], -1
+        return total_ms
+
+    # -- talking over the board, reacting at once, nudging ----------------------------------
+
+    async def on_barge_in(self) -> None:
+        """The person started speaking while the board spoke: stop at once and listen. What
+        was said and what was left unsaid go to the AI with the answer."""
+        if self.state != "speaking" or self.stop_play:
+            return
+        self.stop_play = True
+        i = self.play_index
+        said = " ".join(self.playing[: i + 1]) if i >= 0 else ""
+        self.interruption = {"said_before_interruption": said,
+                             "not_said": " ".join(self.playing[i + 1:])}
+        for event in list(self.played.values()):
+            event.set()
+        await self.publish({"type": "interrupted"})
         await self._start_listening()
-        return {"spoken": True, "lines": len(lines), "audio_ms": total_ms}
+
+    def _filler_text(self) -> list[str]:
+        return FILLERS.get(self.language, FILLERS["english"])
+
+    async def _warm_fillers(self) -> None:
+        for voice in dict.fromkeys(self.voices.values()):
+            for text in self._filler_text():
+                if (voice, text) in self.fillers:
+                    continue
+                try:
+                    self.fillers[(voice, text)] = await self.speech.synthesize(
+                        text, voice, self.language)
+                except Exception as exc:  # no reaction is better than a late one
+                    logger.info("voice: a reaction was not made: %s", type(exc).__name__)
+
+    async def _react(self) -> None:
+        """A short "hmm" / "ji" in the last speaker's voice the moment the answer ends, so the
+        person is not left in silence while the board thinks (owner: latency, Nov 10)."""
+        member = self.last_member
+        voice = self.voices.get(member or "") if member else None
+        if voice is None or not self.pages:
+            return
+        options = self._filler_text()
+        text = options[self.filler_turn % len(options)]
+        self.filler_turn += 1
+        pcm = self.fillers.get((voice, text))
+        if pcm is None:  # not made yet: stay silent rather than answer late
+            return
+        self.seq += 1
+        await self._send(json.dumps({"type": "audio", "seq": self.seq, "member": member,
+                                     "rate": self.speech.sample_rate, "reaction": True}))
+        await self._send(pcm)
+
+    async def nudge(self, member: str, text: str, speak: str | None = None) -> dict[str, Any]:
+        """A few words while the person goes on speaking ("point par aaiye", "aur?"): played
+        without ending their answer; the page does not send the microphone meanwhile."""
+        if self.state != "listening" or self.listener is None:
+            raise ValueError("the person is not speaking now")
+        if self.nudges_this_answer >= NUDGES_PER_ANSWER:
+            raise ValueError("two nudges in this answer already; let them finish")
+        self.nudges_this_answer += 1
+        voice = self.voices.get(member) or next(iter(self.voices.values()))
+        pcm = await self.speech.synthesize(speak or text, voice, self.language)
+        await self.publish({"type": "caption", "side": "board", "member": member,
+                            "speaker": self.names.get(member, member), "text": text,
+                            "nudge": True})
+        self.seq += 1
+        await self._send(json.dumps({"type": "audio", "seq": self.seq, "member": member,
+                                     "rate": self.speech.sample_rate, "nudge": True}))
+        await self._send(pcm)
+        return {"nudged": True, "text": text}
 
     async def _start_listening(self) -> None:
         loop = asyncio.get_running_loop()
         if self.answer is None or self.answer.done():
             self.answer = loop.create_future()
         self.listening_since = time.monotonic()
+        self.interim_seen, self.cut_this_answer, self.nudges_this_answer = 0, False, 0
+        self.segment.clear()
         await self.set_state("listening")
 
-    async def wait_for_answer(self, timeout_s: float) -> dict[str, Any]:
+    def heard_so_far(self) -> str:
+        lst = self.listener
+        return lst.heard() if lst is not None and hasattr(lst, "heard") else ""
+
+    async def wait_for_answer(self, timeout_s: float, interim: bool = False) -> dict[str, Any]:
+        """The answer when the person finishes; with `interim`, also each new piece of it while
+        they are still speaking (Prisma closes a segment at each short pause), so the AI can
+        decide to cut in."""
         if self.answer is None:
+            if self.prespeaking is not None:  # the board's fixed lines are still playing
+                with contextlib.suppress(Exception):
+                    await self.prespeaking
+                self.prespeaking, self.prespoken = None, set()
             await self._start_listening()
         assert self.answer is not None
-        try:
-            got = await asyncio.wait_for(asyncio.shield(self.answer), timeout_s)
-        except TimeoutError:
-            return {"status": "waiting", "note": "no answer yet: call wait_for_answer again"}
+        deadline = time.monotonic() + timeout_s
+        finals: list[str] = []
+        while True:
+            waits = [asyncio.ensure_future(asyncio.shield(self.answer))]
+            if interim:
+                self.segment.clear()
+                waits.append(asyncio.ensure_future(self.segment.wait()))
+            _done, pending = await asyncio.wait(waits, timeout=max(0.0, deadline -
+                                                                   time.monotonic()),
+                                               return_when=asyncio.FIRST_COMPLETED)
+            for task in pending:
+                task.cancel()
+            if self.answer.done():
+                got = self.answer.result()
+                self.answer = None
+                return got
+            finals = list(getattr(self.listener, "finals", []) or [])
+            new_words = len(" ".join(finals[self.interim_seen:]).split())
+            # Each look costs the AI a turn, during which the person may finish: a piece goes
+            # out only with enough new words to judge (owner: latency, Nov 10).
+            if not interim or new_words >= INTERIM_MIN_WORDS or time.monotonic() >= deadline:
+                break
+        if interim and len(finals) > self.interim_seen:
+            new = " ".join(finals[self.interim_seen:])
+            self.interim_seen = len(finals)
+            return {"status": "speaking", "heard_so_far": " ".join(finals), "new": new,
+                    "note": "they are still speaking: cut in only for something a real board "
+                            "would not let pass, else call wait_for_answer again"}
+        return {"status": "waiting", "note": "no answer yet: call wait_for_answer again"}
+
+    async def cut_in(self) -> str:
+        """Stop listening now: what Prisma has heard so far is the answer. Returns it."""
+        if self.state != "listening" or self.listener is None:
+            raise ValueError("the person is not speaking now")
+        text = self.listener.heard() if hasattr(self.listener, "heard") else ""
+        await self.listener.close()
+        self.listener = None
+        self.cut_this_answer = True
+        await self.set_state("thinking")
+        await self.publish({"type": "cut_in", "text": "The board cuts in."})
+        await self.publish({"type": "heard", "text": text, "source": "voice, cut in"})
+        if self.answer is not None and not self.answer.done():
+            self.answer.set_result({"status": "cut_in", "candidate_said": text, "source": "voice"})
         self.answer = None
-        return got
+        return text
 
     # -- from the page ------------------------------------------------------------------
 
@@ -326,6 +589,8 @@ class VoiceRoom:
         if self.listener is None:
             try:
                 self.listener = await self.speech.listener(self.lang_code)
+                if hasattr(self.listener, "on_final"):
+                    self.listener.on_final = lambda _text: self.segment.set()
             except Exception as exc:
                 logger.warning("voice: Prisma did not open: %s", type(exc).__name__)
                 await self.publish({"type": "problem", "text": "Speech recognition did not "
@@ -337,6 +602,7 @@ class VoiceRoom:
         if self.state != "listening":
             return
         await self.set_state("thinking")
+        await self._react()
         text = ""
         if self.listener is not None:
             try:
@@ -357,6 +623,9 @@ class VoiceRoom:
         result = {"status": "answered" if text else "silence", "candidate_said": text,
                   "source": source,
                   "spoke_after_ms": int((time.monotonic() - self.listening_since) * 1000)}
+        if self.interruption is not None:  # this answer talked over the board
+            result["interrupted_you"] = self.interruption
+            self.interruption = None
         if self.answer is not None and not self.answer.done():
             self.answer.set_result(result)
 
@@ -394,6 +663,7 @@ class VoiceBridge:
         self.port = port or 0
         self.rooms: dict[str, VoiceRoom] = {}
         self.latest: str | None = None
+        self.log_dir: Path | None = None  # set by the Claude room; the MCP channel keeps no file
         self._server: Any = None
 
     @property
@@ -443,6 +713,9 @@ class VoiceBridge:
         voices = {m: table.get(m, self.settings.tts_voice) for m in names}
         room = VoiceRoom(session_id, secrets.token_urlsafe(16), language, lang_code, voices,
                          names, self.speech)
+        if self.log_dir is not None:
+            self.log_dir.mkdir(parents=True, exist_ok=True)
+            room.log_path = self.log_dir / f"claude-{session_id}.jsonl"
         self.rooms[session_id] = room
         self.latest = session_id
         return room
@@ -516,6 +789,8 @@ class VoiceBridge:
             await room.on_played(msg["seq"])
         elif kind == "ready":
             room.ready.set()
+        elif kind == "barge_in":
+            await room.on_barge_in()
 
 
 # The web app's own look, built into the page so it is the same in a Claude panel (where the page

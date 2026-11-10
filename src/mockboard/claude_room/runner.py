@@ -32,10 +32,14 @@ SERVER = "mockboard"
 # starts (the person is in the voice room), not the panel's own ticket.
 RUN_TOOLS = (
     "start_voice_interview", "start_voice_partner", "prepare_board", "say", "wait_for_answer",
-    "next_turn", "end_session", "check_scores", "check_notes",
+    "next_turn", "nudge", "end_session", "check_scores", "check_notes",
 )
 MAX_TURNS = 400  # one sitting is about fifteen answers, three or four tool calls each
 DEFAULT_MODEL = "opus"  # the strongest model of the person's plan; MOCKBOARD_CLAUDE_MODEL overrides
+# How long Claude thinks before each tool call. A spoken sitting waits on every call, so the
+# default is low (owner: latency, Nov 10); MOCKBOARD_CLAUDE_EFFORT overrides (low ... max).
+DEFAULT_EFFORT = "low"
+EFFORTS = ("low", "medium", "high", "xhigh", "max")
 
 Notify = Callable[[str, dict[str, Any], dict[str, Any], bool], Awaitable[None]]
 Call = Callable[[str, dict[str, Any]], Awaitable[tuple[dict[str, Any], bool]]]
@@ -57,6 +61,11 @@ def system_prompt() -> str:
         "praise a weak answer. Keep every line within its max_words.",
         "Use `proposal` on next_turn to lead: dig, elaborate, confront (with their exact words) or "
         "pivot when you judge it right; Mock Board rules on each and the board speaks its move.",
+        "Speed matters as much as depth: the person hears silence while you think. Always wait "
+        "with interim true and decide true, and keep your `read` current while they speak, so "
+        "the board decides the moment they stop and you only word the line. Write no notes "
+        "between tool calls. Nudge when they ramble or stay vague; cut in, as a real board "
+        "does, the moment they say something that must not pass. Keep cut-ins rare.",
         "When the sitting is finished, call end_session, then score it with check_scores "
         "(interview) or check_notes (study partner), quoting the person word for word. Then stop.",
     ])
@@ -116,6 +125,8 @@ def agent_options(server: Any) -> Any:
         setting_sources=[],  # none of the person's own settings or memory files
         max_turns=MAX_TURNS,
         model=os.environ.get("MOCKBOARD_CLAUDE_MODEL", DEFAULT_MODEL),
+        effort=effort if (effort := os.environ.get("MOCKBOARD_CLAUDE_EFFORT")) in EFFORTS
+        else DEFAULT_EFFORT,
         cwd=tempfile.gettempdir(),
     )
 
