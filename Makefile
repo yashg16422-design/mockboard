@@ -6,7 +6,7 @@ VENV_PY := .venv/bin/python
 PYTHON ?= $(if $(wildcard $(VENV_PY)),$(VENV_PY),python3)
 export PYTHONPATH := src:.
 
-.PHONY: help venv hooks verify-range install test lint format cli cli-fake cli-fake-hi cli-real cli-fake-debate cli-fake-partner cli-debate cli-real-debate likely-questions check-trace eval eval-gate eval-motions eval-debate eval-requests clean-traces voice-install voice-fake voice-upsc voice-debate voice-summary voice-record stt-ab voice-lab voice-lab-fake claude-room claude-room-fake
+.PHONY: help venv hooks verify-range install test lint format cli cli-fake cli-fake-hi cli-real cli-fake-debate cli-fake-partner cli-debate cli-real-debate likely-questions check-trace eval eval-gate eval-motions eval-debate eval-requests clean-traces voice-install voice-fake voice-upsc voice-debate voice-summary voice-record stt-ab voice-lab voice-lab-fake claude-room claude-room-fake quickstart
 
 help:
 	@echo "venv         create .venv and install everything (run this first on macOS)"
@@ -136,6 +136,10 @@ voice-fake:
 # The local app with Claude as the brain (your own Claude Code login) and Gnani speech (Round 60).
 claude-room:
 	$(PYTHON) -m mockboard.claude_room
+
+# Everything in one command for a new machine (scripts/quickstart.sh); add FAKE=1 for no Gnani.
+quickstart:
+	bash scripts/quickstart.sh $(if $(FAKE),--fake,)
 
 # The same, free of Gnani: a tone for each line, and you type your answers.
 claude-room-fake:
